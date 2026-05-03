@@ -1,74 +1,55 @@
 import { useEffect, useState } from 'react'
-import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Alert } from 'react-native'
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
 import type { HeartRateZone } from '../../types'
 
 export default function ZonesScreen() {
   const [zones, setZones] = useState<HeartRateZone[]>([])
-  const [editing, setEditing] = useState<string | null>(null)
+  const [editingZone, setEditingZone] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetchZones()
-  }, [])
+  useEffect(() => { load() }, [])
 
-  async function fetchZones() {
+  async function load() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     const { data } = await supabase
-      .from('heart_rate_zones')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('zone_number')
+      .from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number')
     setZones(data ?? [])
   }
 
   async function saveZone(zone: HeartRateZone) {
-    const { error } = await supabase
-      .from('heart_rate_zones')
-      .update({
-        name: zone.name,
-        min_bpm: zone.min_bpm,
-        max_bpm: zone.max_bpm,
-        met_value: zone.met_value,
-      })
+    const { error } = await supabase.from('heart_rate_zones')
+      .update({ name: zone.name, min_bpm: zone.min_bpm, max_bpm: zone.max_bpm })
       .eq('id', zone.id)
     if (error) Alert.alert('Error', error.message)
-    else setEditing(null)
+    else setEditingZone(null)
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.header}>Heart Rate Zones</Text>
-      <Text style={styles.note}>Changes apply to future activities only.</Text>
-      <FlatList
-        data={zones}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 16 }}
-        renderItem={({ item }) => (
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.header}>Heart Rate Zones</Text>
+        <Text style={styles.note}>Changes only apply to future syncs.</Text>
+
+        {zones.map(zone => (
           <ZoneCard
-            zone={item}
-            isEditing={editing === item.id}
-            onEdit={() => setEditing(item.id)}
+            key={zone.id}
+            zone={zone}
+            isEditing={editingZone === zone.id}
+            onEdit={() => setEditingZone(zone.id)}
             onSave={saveZone}
-            onCancel={() => setEditing(null)}
-            onChange={(updated) =>
-              setZones((prev) => prev.map((z) => (z.id === updated.id ? updated : z)))
-            }
+            onCancel={() => setEditingZone(null)}
+            onChange={updated => setZones(prev => prev.map(z => z.id === updated.id ? updated : z))}
           />
-        )}
-      />
+        ))}
+      </ScrollView>
     </SafeAreaView>
   )
 }
 
 function ZoneCard({
-  zone,
-  isEditing,
-  onEdit,
-  onSave,
-  onCancel,
-  onChange,
+  zone, isEditing, onEdit, onSave, onCancel, onChange,
 }: {
   zone: HeartRateZone
   isEditing: boolean
@@ -79,47 +60,35 @@ function ZoneCard({
 }) {
   if (!isEditing) {
     return (
-      <Pressable style={styles.card} onPress={onEdit}>
+      <Pressable style={styles.zoneCard} onPress={onEdit}>
         <View>
           <Text style={styles.zoneName}>{zone.name}</Text>
-          <Text style={styles.zoneMeta}>{zone.min_bpm}–{zone.max_bpm} bpm · MET {zone.met_value}</Text>
+          <Text style={styles.zoneMeta}>{zone.min_bpm}–{zone.max_bpm} bpm</Text>
         </View>
         <Text style={styles.editHint}>Edit</Text>
       </Pressable>
     )
   }
-
   return (
-    <View style={[styles.card, styles.cardEditing]}>
+    <View style={[styles.zoneCard, styles.zoneCardEditing]}>
       <TextInput
         style={styles.input}
         value={zone.name}
-        onChangeText={(v) => onChange({ ...zone, name: v })}
+        onChangeText={v => onChange({ ...zone, name: v })}
       />
-      <View style={styles.row}>
-        <TextInput
-          style={[styles.input, styles.inputSmall]}
-          value={String(zone.min_bpm)}
-          keyboardType="numeric"
-          onChangeText={(v) => onChange({ ...zone, min_bpm: parseInt(v) || 0 })}
-          placeholder="Min BPM"
-        />
-        <TextInput
-          style={[styles.input, styles.inputSmall]}
-          value={String(zone.max_bpm)}
-          keyboardType="numeric"
-          onChangeText={(v) => onChange({ ...zone, max_bpm: parseInt(v) || 0 })}
-          placeholder="Max BPM"
-        />
-        <TextInput
-          style={[styles.input, styles.inputSmall]}
-          value={String(zone.met_value)}
-          keyboardType="numeric"
-          onChangeText={(v) => onChange({ ...zone, met_value: parseFloat(v) || 0 })}
-          placeholder="MET"
-        />
+      <View style={styles.inputRow}>
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Min BPM</Text>
+          <TextInput style={styles.input} value={String(zone.min_bpm)} keyboardType="numeric"
+            onChangeText={v => onChange({ ...zone, min_bpm: parseInt(v) || 0 })} />
+        </View>
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Max BPM</Text>
+          <TextInput style={styles.input} value={String(zone.max_bpm)} keyboardType="numeric"
+            onChangeText={v => onChange({ ...zone, max_bpm: parseInt(v) || 0 })} />
+        </View>
       </View>
-      <View style={styles.row}>
+      <View style={styles.inputRow}>
         <Pressable style={styles.saveBtn} onPress={() => onSave(zone)}>
           <Text style={styles.saveBtnText}>Save</Text>
         </Pressable>
@@ -133,41 +102,29 @@ function ZoneCard({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  header: { fontSize: 28, fontWeight: '700', padding: 16, paddingBottom: 4 },
-  note: { fontSize: 13, color: '#999', paddingHorizontal: 16, marginBottom: 8 },
-  card: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    marginBottom: 8,
-    borderRadius: 8,
-    backgroundColor: '#f5f5f5',
+  content: { padding: 16, paddingBottom: 48 },
+  header: { fontSize: 22, fontWeight: '700', marginBottom: 4 },
+  note: { fontSize: 13, color: '#999', marginBottom: 16 },
+  zoneCard: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 14, marginBottom: 8, borderRadius: 10, backgroundColor: '#f5f5f5',
   },
-  cardEditing: { flexDirection: 'column', alignItems: 'stretch' },
+  zoneCardEditing: { flexDirection: 'column', alignItems: 'stretch' },
   zoneName: { fontSize: 15, fontWeight: '600' },
   zoneMeta: { fontSize: 13, color: '#666', marginTop: 2 },
   editHint: { fontSize: 13, color: '#FC4C02', fontWeight: '600' },
+  inputRow: { flexDirection: 'row', gap: 10, marginBottom: 0 },
+  inputGroup: { flex: 1, marginBottom: 10 },
+  inputLabel: { fontSize: 11, fontWeight: '600', color: '#888', marginBottom: 4, textTransform: 'uppercase' },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
-    padding: 8,
-    fontSize: 14,
-    marginBottom: 8,
-    backgroundColor: '#fff',
+    borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
+    padding: 10, fontSize: 14, backgroundColor: '#fff', marginBottom: 10,
   },
-  inputSmall: { flex: 1, marginRight: 8 },
-  row: { flexDirection: 'row' },
   saveBtn: {
-    flex: 1,
-    backgroundColor: '#FC4C02',
-    padding: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-    marginRight: 8,
+    flex: 1, backgroundColor: '#FC4C02', padding: 12,
+    borderRadius: 8, alignItems: 'center', marginTop: 4,
   },
-  saveBtnText: { color: '#fff', fontWeight: '600' },
-  cancelBtn: { flex: 1, padding: 10, borderRadius: 6, alignItems: 'center' },
-  cancelBtnText: { color: '#666' },
+  saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  cancelBtn: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 4 },
+  cancelBtnText: { color: '#666', fontSize: 14 },
 })
