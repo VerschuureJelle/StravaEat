@@ -1,0 +1,29 @@
+[project]
+# Set via: supabase link --project-ref <your-ref>
+
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[functions.strava-auth]
+verify_jwt = false
+
+[functions.strava-callback]
+verify_jwt = false   # public endpoint — called by Strava directly, no JWT
+
+[functions.sync-strava]
+verify_jwt = true
+
+[functions.sync-recent]
+verify_jwt = true
