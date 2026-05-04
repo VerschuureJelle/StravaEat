@@ -143,9 +143,11 @@ Deno.serve(async (req) => {
     // Determine energy method for this sport
     const sportSetting = sportSettings?.find(s => s.sport_type === act.type)
     const method = sportSetting?.method ?? 'standard'
+    // If linked to another sport, use that sport's burn schema
+    const effectiveSport = sportSetting?.linked_sport_type ?? act.type
 
     // Sport-specific burn points (need ≥ 2 for custom)
-    const sportBurnPts = (burnSchema ?? []).filter(p => p.sport_type === act.type)
+    const sportBurnPts = (burnSchema ?? []).filter(p => p.sport_type === effectiveSport)
     const useCustom = method === 'custom' && sportBurnPts.length >= 2
 
     // Calculate per zone

@@ -1,24 +1,26 @@
 import { useEffect, useState } from 'react'
 import {
-  View, Text, TextInput, Pressable, ScrollView, StyleSheet,
-  Alert, useWindowDimensions,
+  View, Text, TextInput, Pressable, ScrollView,
+  StyleSheet, Alert,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useRouter } from 'expo-router'
 import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
-import Svg, { Polyline, Line, Text as SvgText } from 'react-native-svg'
 import { supabase } from '../../lib/supabase'
-import type { UserProfile, BurnSchemaPoint } from '../../types'
+import type { UserProfile, HeartRateZone } from '../../types'
 
 const STRAVA_CLIENT_ID = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID!
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
 const CALLBACK_URL = `${SUPABASE_URL}/functions/v1/strava-callback`
 
-type BlankForm = { hr: string; kcal: string; fat: string; carb: string }
-const BLANK_FORM: BlankForm = { hr: '', kcal: '', fat: '', carb: '' }
+type SettingsTab = 'profile' | 'zones'
+type SportMode = 'standard' | 'custom' | 'linked'
+interface SportConfig { mode: SportMode; linkedTo: string | null }
 
 export default function SettingsScreen() {
-  const { width } = useWindowDimensions()
+  const router = useRouter()
+  const [activeTab, setActiveTab] = useState<SettingsTab>('profile')
   const [userId, setUserId] = useState<string | null>(null)
 
   // Profile
@@ -26,13 +28,14 @@ export default function SettingsScreen() {
   const [editedProfile, setEditedProfile] = useState<Partial<UserProfile>>({})
   const [savingProfile, setSavingProfile] = useState(false)
 
-  // Energy expenditure
+  // Zones
+  const [zones, setZones] = useState<HeartRateZone[]>([])
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null)
+
+  // Sport energy
   const [sports, setSports] = useState<string[]>([])
-  const [sportMethods, setSportMethods] = useState<Record<string, 'standard' | 'custom'>>({})
-  const [burnPoints, setBurnPoints] = useState<Record<string, BurnSchemaPoint[]>>({})
-  const [expandedSport, setExpandedSport] = useState<string | null>(null)
-  const [forms, setForms] = useState<Record<string, BlankForm>>({})
-  const [savingPt, setSavingPt] = useState(false)
+  const [sportConfigs, setSportConfigs] = useState<Record<string, SportConfig>>({})
+  const [savingConfig, setSavingConfig] = useState<string | null>(null)
 
   const isDirty = JSON.stringify(editedProfile) !== JSON.stringify(savedProfile)
 
@@ -47,35 +50,32 @@ export default function SettingsScreen() {
     if (!user) return
     setUserId(user.id)
 
-    const [profileRes, activitiesRes, settingsRes, burnRes] = await Promise.all([
+    const [profileRes, zonesRes, activitiesRes, settingsRes] = await Promise.all([
       supabase.from('users').select('*').eq('id', user.id).single(),
+      supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('activities').select('type').eq('user_id', user.id),
       supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
-      supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
     ])
 
     if (profileRes.data) {
       setSavedProfile(profileRes.data)
       setEditedProfile(profileRes.data)
     }
+    setZones(zonesRes.data ?? [])
 
     const sportSet = new Set<string>(
       (activitiesRes.data ?? []).map((a: { type: string }) => a.type).filter(Boolean),
     )
     setSports([...sportSet].sort())
 
-    const methodMap: Record<string, 'standard' | 'custom'> = {}
+    const configs: Record<string, SportConfig> = {}
     for (const s of (settingsRes.data ?? [])) {
-      methodMap[s.sport_type] = s.method as 'standard' | 'custom'
+      const mode: SportMode = s.linked_sport_type
+        ? 'linked'
+        : s.method === 'custom' ? 'custom' : 'standard'
+      configs[s.sport_type] = { mode, linkedTo: s.linked_sport_type ?? null }
     }
-    setSportMethods(methodMap)
-
-    const burnMap: Record<string, BurnSchemaPoint[]> = {}
-    for (const pt of (burnRes.data ?? [])) {
-      if (!burnMap[pt.sport_type]) burnMap[pt.sport_type] = []
-      burnMap[pt.sport_type].push(pt)
-    }
-    setBurnPoints(burnMap)
+    setSportConfigs(configs)
   }
 
   async function handleStravaDeepLink(event: { url: string }) {
@@ -115,50 +115,26 @@ export default function SettingsScreen() {
     setSavedProfile(editedProfile)
   }
 
-  async function setMethod(sport: string, method: 'standard' | 'custom') {
+  async function saveZone(zone: HeartRateZone) {
+    const { error } = await supabase.from('heart_rate_zones')
+      .update({ name: zone.name, min_bpm: zone.min_bpm, max_bpm: zone.max_bpm })
+      .eq('id', zone.id)
+    if (error) Alert.alert('Error', error.message)
+    else setEditingZoneId(null)
+  }
+
+  async function saveSportConfig(sport: string, mode: SportMode, linkedTo: string | null) {
     if (!userId) return
+    setSavingConfig(sport)
+    const method = mode === 'standard' ? 'standard' : 'custom'
+    const linked_sport_type = mode === 'linked' ? linkedTo : null
     const { error } = await supabase.from('sport_energy_settings').upsert(
-      { user_id: userId, sport_type: sport, method },
+      { user_id: userId, sport_type: sport, method, linked_sport_type },
       { onConflict: 'user_id,sport_type' },
     )
+    setSavingConfig(null)
     if (error) { Alert.alert('Error', error.message); return }
-    setSportMethods(prev => ({ ...prev, [sport]: method }))
-    if (method === 'custom') setExpandedSport(sport)
-  }
-
-  async function addBurnPoint(sport: string) {
-    if (!userId) return
-    const form = forms[sport] ?? BLANK_FORM
-    if (!form.hr || !form.kcal) { Alert.alert('Required', 'HR and kcal/hr are required.'); return }
-    const hr = parseInt(form.hr), kcal = parseFloat(form.kcal)
-    if (isNaN(hr) || isNaN(kcal) || hr <= 0 || kcal <= 0) {
-      Alert.alert('Invalid', 'Enter valid positive numbers.')
-      return
-    }
-    setSavingPt(true)
-    const { error } = await supabase.from('burn_schema_points').upsert({
-      user_id: userId,
-      sport_type: sport,
-      hr_value: hr,
-      kcal_per_hour: kcal,
-      fat_g_per_hour: form.fat ? parseFloat(form.fat) : null,
-      carb_g_per_hour: form.carb ? parseFloat(form.carb) : null,
-    }, { onConflict: 'user_id,sport_type,hr_value' })
-    setSavingPt(false)
-    if (error) { Alert.alert('Error', error.message); return }
-    setForms(prev => ({ ...prev, [sport]: BLANK_FORM }))
-    const { data } = await supabase.from('burn_schema_points')
-      .select('*').eq('user_id', userId).eq('sport_type', sport).order('hr_value')
-    setBurnPoints(prev => ({ ...prev, [sport]: data ?? [] }))
-  }
-
-  async function deleteBurnPoint(sport: string, id: string) {
-    await supabase.from('burn_schema_points').delete().eq('id', id)
-    setBurnPoints(prev => ({ ...prev, [sport]: (prev[sport] ?? []).filter(p => p.id !== id) }))
-  }
-
-  function updateForm(sport: string, key: keyof BlankForm, value: string) {
-    setForms(prev => ({ ...prev, [sport]: { ...(prev[sport] ?? BLANK_FORM), [key]: value } }))
+    setSportConfigs(prev => ({ ...prev, [sport]: { mode, linkedTo: linked_sport_type } }))
   }
 
   const profileField = (label: string, key: keyof UserProfile, numeric?: boolean) => (
@@ -175,240 +151,236 @@ export default function SettingsScreen() {
     </View>
   )
 
-  const chartWidth = width - 64
-
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-
-        {/* ── Profile ───────────────────────────────────── */}
-        <Text style={styles.sectionHeader}>Profile</Text>
-
-        <View style={styles.stravaRow}>
-          <View>
-            <Text style={styles.stravaLabel}>Strava</Text>
-            <Text style={styles.stravaStatus}>
-              {savedProfile.strava_id ? `Connected (ID: ${savedProfile.strava_id})` : 'Not connected'}
-            </Text>
-          </View>
-          <Pressable style={styles.stravaBtn} onPress={handleConnectStrava}>
-            <Text style={styles.stravaBtnText}>
-              {savedProfile.strava_id ? 'Reconnect' : 'Connect'}
+      {/* Segmented control */}
+      <View style={styles.segRow}>
+        {(['profile', 'zones'] as const).map(tab => (
+          <Pressable
+            key={tab}
+            style={[styles.segBtn, activeTab === tab && styles.segBtnActive]}
+            onPress={() => setActiveTab(tab)}
+          >
+            <Text style={[styles.segText, activeTab === tab && styles.segTextActive]}>
+              {tab === 'profile' ? 'Personal Info' : 'Heart Rate Zones'}
             </Text>
           </Pressable>
-        </View>
+        ))}
+      </View>
 
-        {profileField('Name', 'name')}
-        {profileField('Age', 'age', true)}
-        {profileField('Weight (kg)', 'weight_kg', true)}
-        {profileField('Height (cm)', 'height_cm', true)}
-        {profileField('Max Heart Rate (bpm)', 'max_hr', true)}
-        {profileField('Resting Heart Rate (bpm)', 'resting_hr', true)}
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
-        <Pressable
-          style={[styles.saveBtn, (!isDirty || savingProfile) && styles.saveBtnDisabled]}
-          onPress={saveProfile}
-          disabled={!isDirty || savingProfile}
-        >
-          <Text style={styles.saveBtnText}>{savingProfile ? 'Saving…' : 'Save'}</Text>
-        </Pressable>
-
-        {/* ── Energy Expenditure ────────────────────────── */}
-        {sports.length > 0 && (
+        {/* ── Personal Info ──────────────────────────────── */}
+        {activeTab === 'profile' && (
           <>
-            <Text style={[styles.sectionHeader, { marginTop: 40 }]}>Energy Expenditure</Text>
-            <Text style={styles.sectionNote}>
-              Choose how calories are calculated per sport type. Custom uses your HR → kcal/hr burn schema (min. 2 points required).
-            </Text>
+            <View style={styles.stravaRow}>
+              <View>
+                <Text style={styles.stravaLabel}>Strava</Text>
+                <Text style={styles.stravaStatus}>
+                  {savedProfile.strava_id ? `Connected (ID: ${savedProfile.strava_id})` : 'Not connected'}
+                </Text>
+              </View>
+              <Pressable style={styles.stravaBtn} onPress={handleConnectStrava}>
+                <Text style={styles.stravaBtnText}>
+                  {savedProfile.strava_id ? 'Reconnect' : 'Connect'}
+                </Text>
+              </Pressable>
+            </View>
 
-            {sports.map(sport => {
-              const method = sportMethods[sport] ?? 'standard'
-              const pts = burnPoints[sport] ?? []
-              const isExpanded = expandedSport === sport && method === 'custom'
-              const form = forms[sport] ?? BLANK_FORM
+            {profileField('Name', 'name')}
+            {profileField('Age', 'age', true)}
+            {profileField('Weight (kg)', 'weight_kg', true)}
+            {profileField('Height (cm)', 'height_cm', true)}
+            {profileField('Max Heart Rate (bpm)', 'max_hr', true)}
+            {profileField('Resting Heart Rate (bpm)', 'resting_hr', true)}
+            {profileField('Daily calorie target (kcal)', 'daily_kcal_target', true)}
 
-              return (
-                <View key={sport} style={styles.sportCard}>
-                  {/* Sport header */}
-                  <Pressable
-                    style={styles.sportHeader}
-                    onPress={() => method === 'custom' && setExpandedSport(isExpanded ? null : sport)}
-                  >
-                    <Text style={styles.sportName}>{sport}</Text>
-                    {method === 'custom' && (
-                      <Text style={styles.expandChevron}>{isExpanded ? '▲' : '▼'}</Text>
-                    )}
-                  </Pressable>
+            <Pressable
+              style={[styles.saveBtn, (!isDirty || savingProfile) && styles.saveBtnDisabled]}
+              onPress={saveProfile}
+              disabled={!isDirty || savingProfile}
+            >
+              <Text style={styles.saveBtnText}>{savingProfile ? 'Saving…' : 'Save'}</Text>
+            </Pressable>
 
-                  {/* Method toggle */}
-                  <View style={styles.methodRow}>
-                    <Pressable
-                      style={[styles.methodBtn, method === 'standard' && styles.methodBtnActive]}
-                      onPress={() => setMethod(sport, 'standard')}
-                    >
-                      <Text style={[styles.methodBtnText, method === 'standard' && styles.methodBtnTextActive]}>
-                        Standard
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.methodBtn, method === 'custom' && styles.methodBtnActive]}
-                      onPress={() => setMethod(sport, 'custom')}
-                    >
-                      <Text style={[styles.methodBtnText, method === 'custom' && styles.methodBtnTextActive]}>
-                        Custom
-                      </Text>
-                    </Pressable>
-                  </View>
-
-                  {/* Custom panel */}
-                  {isExpanded && (
-                    <View style={styles.customPanel}>
-                      {pts.length < 2 && (
-                        <View style={styles.warnBox}>
-                          <Text style={styles.warnText}>
-                            Add at least 2 points to enable custom calorie calculation.
-                          </Text>
-                        </View>
-                      )}
-
-                      {pts.length > 0 && (
-                        <>
-                          <View style={styles.tableHeaderRow}>
-                            <Text style={[styles.tableCell, styles.tableHeaderCell]}>HR</Text>
-                            <Text style={[styles.tableCell, styles.tableHeaderCell]}>kcal/hr</Text>
-                            <Text style={[styles.tableCell, styles.tableHeaderCell]}>fat g/hr</Text>
-                            <Text style={[styles.tableCell, styles.tableHeaderCell]}>carb g/hr</Text>
-                            <View style={{ width: 28 }} />
-                          </View>
-                          {pts.map(pt => (
-                            <View key={pt.id} style={styles.tableDataRow}>
-                              <Text style={styles.tableCell}>{pt.hr_value}</Text>
-                              <Text style={styles.tableCell}>{pt.kcal_per_hour}</Text>
-                              <Text style={styles.tableCell}>{pt.fat_g_per_hour ?? '—'}</Text>
-                              <Text style={styles.tableCell}>{pt.carb_g_per_hour ?? '—'}</Text>
-                              <Pressable onPress={() => deleteBurnPoint(sport, pt.id)} hitSlop={8}>
-                                <Text style={styles.deleteBtn}>×</Text>
-                              </Pressable>
-                            </View>
-                          ))}
-                        </>
-                      )}
-
-                      {pts.length >= 2 && <BurnChart points={pts} width={chartWidth} />}
-
-                      {/* Add form */}
-                      <Text style={styles.addFormLabel}>Add point</Text>
-                      <View style={styles.inputRow}>
-                        <View style={styles.inputGroup}>
-                          <Text style={styles.inputLabel}>HR (bpm)</Text>
-                          <TextInput
-                            style={styles.input}
-                            placeholder="e.g. 150"
-                            keyboardType="numeric"
-                            value={form.hr}
-                            onChangeText={v => updateForm(sport, 'hr', v)}
-                          />
-                        </View>
-                        <View style={styles.inputGroup}>
-                          <Text style={styles.inputLabel}>kcal/hr</Text>
-                          <TextInput
-                            style={styles.input}
-                            placeholder="e.g. 570"
-                            keyboardType="numeric"
-                            value={form.kcal}
-                            onChangeText={v => updateForm(sport, 'kcal', v)}
-                          />
-                        </View>
-                      </View>
-                      <View style={styles.inputRow}>
-                        <View style={styles.inputGroup}>
-                          <Text style={styles.inputLabel}>Fat (g/hr)</Text>
-                          <TextInput
-                            style={styles.input}
-                            placeholder="optional"
-                            keyboardType="numeric"
-                            value={form.fat}
-                            onChangeText={v => updateForm(sport, 'fat', v)}
-                          />
-                        </View>
-                        <View style={styles.inputGroup}>
-                          <Text style={styles.inputLabel}>Carb (g/hr)</Text>
-                          <TextInput
-                            style={styles.input}
-                            placeholder="optional"
-                            keyboardType="numeric"
-                            value={form.carb}
-                            onChangeText={v => updateForm(sport, 'carb', v)}
-                          />
-                        </View>
-                      </View>
-                      <Pressable
-                        style={[styles.addBtn, savingPt && styles.addBtnDisabled]}
-                        onPress={() => addBurnPoint(sport)}
-                        disabled={savingPt}
-                      >
-                        <Text style={styles.addBtnText}>Add</Text>
-                      </Pressable>
-                    </View>
-                  )}
-                </View>
-              )
-            })}
+            <Pressable style={styles.signOutBtn} onPress={() => supabase.auth.signOut()}>
+              <Text style={styles.signOutText}>Sign out</Text>
+            </Pressable>
           </>
         )}
 
-        {/* Sign out */}
-        <Pressable style={styles.signOutBtn} onPress={() => supabase.auth.signOut()}>
-          <Text style={styles.signOutText}>Sign out</Text>
-        </Pressable>
+        {/* ── Heart Rate Zones ───────────────────────────── */}
+        {activeTab === 'zones' && (
+          <>
+            {/* Zone editing */}
+            <Text style={styles.sectionHeader}>Zones</Text>
+            <Text style={styles.sectionNote}>Changes apply to future syncs only.</Text>
+
+            {zones.map(zone => (
+              <ZoneCard
+                key={zone.id}
+                zone={zone}
+                isEditing={editingZoneId === zone.id}
+                onEdit={() => setEditingZoneId(zone.id)}
+                onSave={saveZone}
+                onCancel={() => setEditingZoneId(null)}
+                onChange={updated => setZones(prev => prev.map(z => z.id === updated.id ? updated : z))}
+              />
+            ))}
+
+            {/* Energy per sport */}
+            {sports.length > 0 && (
+              <>
+                <Text style={[styles.sectionHeader, { marginTop: 32 }]}>Energy method per sport</Text>
+                <Text style={styles.sectionNote}>
+                  Standard uses MET × weight. Custom uses your HR → kcal/hr burn schema.
+                  "Same as" shares another sport's schema.
+                </Text>
+
+                {sports.map(sport => {
+                  const config = sportConfigs[sport] ?? { mode: 'standard', linkedTo: null }
+                  const isSaving = savingConfig === sport
+                  const otherSports = sports.filter(s => s !== sport)
+
+                  return (
+                    <View key={sport} style={styles.sportCard}>
+                      <Text style={styles.sportName}>{sport}</Text>
+
+                      {/* Mode selector */}
+                      <View style={styles.modeRow}>
+                        {(['standard', 'custom', 'linked'] as SportMode[]).map(mode => (
+                          <Pressable
+                            key={mode}
+                            style={[styles.modeBtn, config.mode === mode && styles.modeBtnActive]}
+                            onPress={() => saveSportConfig(sport, mode, mode === 'linked' ? (otherSports[0] ?? null) : null)}
+                            disabled={isSaving}
+                          >
+                            <Text style={[styles.modeBtnText, config.mode === mode && styles.modeBtnTextActive]}>
+                              {mode === 'linked' ? 'Same as…' : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+
+                      {/* Custom: navigate to schema editor */}
+                      {config.mode === 'custom' && (
+                        <Pressable
+                          style={styles.editSchemaBtn}
+                          onPress={() => router.push(`/energy/${encodeURIComponent(sport)}`)}
+                        >
+                          <Text style={styles.editSchemaBtnText}>Edit burn schema →</Text>
+                        </Pressable>
+                      )}
+
+                      {/* Linked: pick which sport */}
+                      {config.mode === 'linked' && otherSports.length > 0 && (
+                        <>
+                          <Text style={styles.linkLabel}>Link to:</Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+                            {otherSports.map(s => (
+                              <Pressable
+                                key={s}
+                                style={[styles.chip, config.linkedTo === s && styles.chipActive]}
+                                onPress={() => saveSportConfig(sport, 'linked', s)}
+                                disabled={isSaving}
+                              >
+                                <Text style={[styles.chipText, config.linkedTo === s && styles.chipTextActive]}>
+                                  {s}
+                                </Text>
+                              </Pressable>
+                            ))}
+                          </ScrollView>
+                          {config.linkedTo && (
+                            <Pressable
+                              style={styles.viewSchemaBtn}
+                              onPress={() => router.push(`/energy/${encodeURIComponent(config.linkedTo!)}`)}
+                            >
+                              <Text style={styles.viewSchemaBtnText}>View {config.linkedTo}'s schema →</Text>
+                            </Pressable>
+                          )}
+                        </>
+                      )}
+                    </View>
+                  )
+                })}
+              </>
+            )}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   )
 }
 
-function BurnChart({ points, width }: { points: BurnSchemaPoint[]; width: number }) {
-  const H = 160
-  const PAD = { top: 12, right: 12, bottom: 28, left: 48 }
-  const chartW = Math.max(width - PAD.left - PAD.right, 1)
-  const chartH = H - PAD.top - PAD.bottom
-
-  const hrMin = points[0].hr_value
-  const hrMax = points[points.length - 1].hr_value
-  const kcalMax = Math.max(...points.map(p => p.kcal_per_hour)) * 1.1 || 1
-  const hrRange = hrMax - hrMin || 1
-
-  const toX = (hr: number) => PAD.left + ((hr - hrMin) / hrRange) * chartW
-  const toY = (k: number) => PAD.top + chartH - (k / kcalMax) * chartH
-
-  const polyline = points.map(p => `${toX(p.hr_value)},${toY(p.kcal_per_hour)}`).join(' ')
-
+function ZoneCard({
+  zone, isEditing, onEdit, onSave, onCancel, onChange,
+}: {
+  zone: HeartRateZone
+  isEditing: boolean
+  onEdit: () => void
+  onSave: (z: HeartRateZone) => void
+  onCancel: () => void
+  onChange: (z: HeartRateZone) => void
+}) {
+  if (!isEditing) {
+    return (
+      <Pressable style={styles.zoneCard} onPress={onEdit}>
+        <View>
+          <Text style={styles.zoneName}>{zone.name}</Text>
+          <Text style={styles.zoneMeta}>{zone.min_bpm}–{zone.max_bpm} bpm</Text>
+        </View>
+        <Text style={styles.editHint}>Edit</Text>
+      </Pressable>
+    )
+  }
   return (
-    <Svg width={width} height={H} style={styles.chart}>
-      <Line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top + chartH} stroke="#e0e0e0" strokeWidth={1} />
-      <Line x1={PAD.left} y1={PAD.top + chartH} x2={PAD.left + chartW} y2={PAD.top + chartH} stroke="#e0e0e0" strokeWidth={1} />
-      <Polyline points={polyline} fill="none" stroke="#FC4C02" strokeWidth={2.5} strokeLinejoin="round" />
-      {points.map(p => (
-        <SvgText key={p.id} x={toX(p.hr_value)} y={PAD.top + chartH + 16} fontSize={10} fill="#aaa" textAnchor="middle">
-          {p.hr_value}
-        </SvgText>
-      ))}
-      <SvgText
-        x={10} y={PAD.top + chartH / 2 + 20}
-        fontSize={9} fill="#bbb"
-        rotation={-90} originX={10} originY={PAD.top + chartH / 2}
-      >
-        kcal/hr
-      </SvgText>
-    </Svg>
+    <View style={[styles.zoneCard, styles.zoneCardEditing]}>
+      <TextInput
+        style={styles.input}
+        value={zone.name}
+        onChangeText={v => onChange({ ...zone, name: v })}
+      />
+      <View style={styles.inputRow}>
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Min BPM</Text>
+          <TextInput style={styles.input} value={String(zone.min_bpm)} keyboardType="numeric"
+            onChangeText={v => onChange({ ...zone, min_bpm: parseInt(v) || 0 })} />
+        </View>
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Max BPM</Text>
+          <TextInput style={styles.input} value={String(zone.max_bpm)} keyboardType="numeric"
+            onChangeText={v => onChange({ ...zone, max_bpm: parseInt(v) || 0 })} />
+        </View>
+      </View>
+      <View style={styles.inputRow}>
+        <Pressable style={styles.zoneSaveBtn} onPress={() => onSave(zone)}>
+          <Text style={styles.zoneSaveBtnText}>Save</Text>
+        </Pressable>
+        <Pressable style={styles.zoneCancelBtn} onPress={onCancel}>
+          <Text style={styles.zoneCancelBtnText}>Cancel</Text>
+        </Pressable>
+      </View>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 20, paddingBottom: 60 },
 
-  sectionHeader: { fontSize: 22, fontWeight: '800', marginBottom: 16 },
-  sectionNote: { fontSize: 13, color: '#888', marginBottom: 18, lineHeight: 18 },
+  // Segmented control
+  segRow: {
+    flexDirection: 'row', margin: 16, marginBottom: 0,
+    backgroundColor: '#f0f0f0', borderRadius: 10, padding: 3,
+  },
+  segBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
+  segBtnActive: { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
+  segText: { fontSize: 13, fontWeight: '600', color: '#888' },
+  segTextActive: { color: '#111' },
+
+  content: { padding: 16, paddingBottom: 60 },
+
+  sectionHeader: { fontSize: 18, fontWeight: '800', marginBottom: 4 },
+  sectionNote: { fontSize: 12, color: '#999', marginBottom: 14, lineHeight: 17 },
 
   // Profile
   stravaRow: {
@@ -420,67 +392,61 @@ const styles = StyleSheet.create({
   stravaBtn: { backgroundColor: '#FC4C02', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   stravaBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   fieldGroup: { marginTop: 14 },
-  fieldLabel: { fontSize: 12, fontWeight: '600', color: '#666', marginBottom: 6, textTransform: 'uppercase' },
-  saveBtn: {
-    backgroundColor: '#FC4C02', padding: 14, borderRadius: 10,
-    alignItems: 'center', marginTop: 24,
-  },
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: '#888', marginBottom: 5, textTransform: 'uppercase' },
+  saveBtn: { backgroundColor: '#FC4C02', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 24 },
   saveBtnDisabled: { opacity: 0.35 },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  signOutBtn: { padding: 20, alignItems: 'center' },
+  signOutText: { color: '#bbb', fontSize: 14 },
 
-  // Energy
-  sportCard: {
-    borderWidth: 1, borderColor: '#ececec', borderRadius: 14,
-    marginBottom: 12, overflow: 'hidden',
-  },
-  sportHeader: {
+  // Zone cards
+  zoneCard: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#fafafa',
+    padding: 14, marginBottom: 8, borderRadius: 10, backgroundColor: '#f5f5f5',
   },
-  sportName: { fontSize: 15, fontWeight: '700' },
-  expandChevron: { fontSize: 12, color: '#aaa' },
-  methodRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 14 },
-  methodBtn: {
-    flex: 1, paddingVertical: 8, borderRadius: 8,
-    borderWidth: 1, borderColor: '#ddd', alignItems: 'center',
-  },
-  methodBtnActive: { backgroundColor: '#FC4C02', borderColor: '#FC4C02' },
-  methodBtnText: { fontSize: 13, fontWeight: '600', color: '#888' },
-  methodBtnTextActive: { color: '#fff' },
-
-  customPanel: { paddingHorizontal: 16, paddingBottom: 16, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  warnBox: { backgroundColor: '#FFF8E1', borderRadius: 8, padding: 12, marginTop: 12, marginBottom: 8 },
-  warnText: { fontSize: 13, color: '#795548', lineHeight: 18 },
-
-  tableHeaderRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingTop: 12, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
-  },
-  tableDataRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f8f8f8',
-  },
-  tableCell: { flex: 1, fontSize: 13, color: '#333' },
-  tableHeaderCell: { fontSize: 10, fontWeight: '700', color: '#bbb', textTransform: 'uppercase' },
-  deleteBtn: { fontSize: 18, color: '#ccc', width: 28, textAlign: 'center' },
-
-  chart: { marginVertical: 12, alignSelf: 'center' },
-
-  addFormLabel: { fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 10, color: '#555' },
+  zoneCardEditing: { flexDirection: 'column', alignItems: 'stretch' },
+  zoneName: { fontSize: 15, fontWeight: '600' },
+  zoneMeta: { fontSize: 13, color: '#666', marginTop: 2 },
+  editHint: { fontSize: 13, color: '#FC4C02', fontWeight: '600' },
+  zoneSaveBtn: { flex: 1, backgroundColor: '#FC4C02', padding: 11, borderRadius: 8, alignItems: 'center', marginTop: 4 },
+  zoneSaveBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  zoneCancelBtn: { flex: 1, padding: 11, borderRadius: 8, alignItems: 'center', marginTop: 4 },
+  zoneCancelBtnText: { color: '#666', fontSize: 14 },
   inputRow: { flexDirection: 'row', gap: 10 },
   inputGroup: { flex: 1, marginBottom: 10 },
   inputLabel: { fontSize: 10, fontWeight: '700', color: '#aaa', marginBottom: 4, textTransform: 'uppercase' },
   input: {
     borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 8,
-    padding: 10, fontSize: 14, backgroundColor: '#fff',
+    padding: 10, fontSize: 14, backgroundColor: '#fff', marginBottom: 10,
   },
-  addBtn: {
-    backgroundColor: '#FC4C02', padding: 12,
-    borderRadius: 8, alignItems: 'center', marginTop: 4,
-  },
-  addBtnDisabled: { opacity: 0.5 },
-  addBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
-  signOutBtn: { padding: 20, alignItems: 'center', marginTop: 20 },
-  signOutText: { color: '#bbb', fontSize: 14 },
+  // Sport cards
+  sportCard: {
+    borderWidth: 1, borderColor: '#ececec', borderRadius: 12,
+    padding: 14, marginBottom: 10,
+  },
+  sportName: { fontSize: 15, fontWeight: '700', marginBottom: 10 },
+  modeRow: { flexDirection: 'row', gap: 6, marginBottom: 10 },
+  modeBtn: {
+    flex: 1, paddingVertical: 7, borderRadius: 8,
+    borderWidth: 1, borderColor: '#ddd', alignItems: 'center',
+  },
+  modeBtnActive: { backgroundColor: '#FC4C02', borderColor: '#FC4C02' },
+  modeBtnText: { fontSize: 12, fontWeight: '600', color: '#888' },
+  modeBtnTextActive: { color: '#fff' },
+  editSchemaBtn: {
+    backgroundColor: '#FFF0EB', borderRadius: 8, padding: 11, alignItems: 'center',
+  },
+  editSchemaBtnText: { color: '#FC4C02', fontWeight: '700', fontSize: 13 },
+  linkLabel: { fontSize: 11, fontWeight: '700', color: '#aaa', marginBottom: 8, textTransform: 'uppercase' },
+  chipRow: { marginBottom: 8 },
+  chip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
+    borderWidth: 1, borderColor: '#ddd', marginRight: 8, backgroundColor: '#fafafa',
+  },
+  chipActive: { backgroundColor: '#FC4C02', borderColor: '#FC4C02' },
+  chipText: { fontSize: 13, fontWeight: '600', color: '#666' },
+  chipTextActive: { color: '#fff' },
+  viewSchemaBtn: { paddingTop: 4 },
+  viewSchemaBtnText: { color: '#FC4C02', fontSize: 13, fontWeight: '600' },
 })

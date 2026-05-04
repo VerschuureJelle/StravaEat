@@ -16,6 +16,7 @@ export interface UserProfile {
   strava_access_token: string | null
   strava_refresh_token: string | null
   strava_token_expires_at: string | null
+  daily_kcal_target: number | null
 }
 
 export interface HeartRateZone {
@@ -63,6 +64,7 @@ export interface SportEnergySetting {
   user_id: string
   sport_type: string
   method: 'standard' | 'custom'
+  linked_sport_type: string | null
 }
 
 export interface Lap {

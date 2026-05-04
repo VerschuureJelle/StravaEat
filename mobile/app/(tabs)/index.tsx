@@ -1,27 +1,49 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   View, Text, SectionList, ScrollView, Pressable, StyleSheet,
-  RefreshControl, Alert, ActivityIndicator,
+  RefreshControl, Alert, ActivityIndicator, Modal, TextInput,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
+import { Ionicons } from '@expo/vector-icons'
+import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import type { Activity } from '../../types'
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
 
-type Period = 'total' | 'day' | 'week' | 'month' | 'year'
-const PERIODS: { label: string; value: Period }[] = [
-  { label: 'Alles', value: 'total' },
-  { label: 'Dag', value: 'day' },
+type Period = 'total' | 'day' | 'week' | 'month' | 'year' | 'custom'
+
+const PERIOD_OPTIONS: { label: string; value: Period }[] = [
+  { label: 'All activities', value: 'total' },
+  { label: 'Day', value: 'day' },
   { label: 'Week', value: 'week' },
-  { label: 'Maand', value: 'month' },
-  { label: 'Jaar', value: 'year' },
+  { label: 'Month', value: 'month' },
+  { label: 'Year', value: 'year' },
+  { label: 'Custom range…', value: 'custom' },
 ]
+
+// ─── sport helpers ─────────────────────────────────────────────────────────
+
+function getSportColor(type: string): string {
+  if (/swim/i.test(type)) return '#29B6F6'
+  if (/run|jog/i.test(type)) return '#EF5350'
+  if (/walk/i.test(type)) return '#FF8A65'
+  if (/ride|bike|cycling|virtual/i.test(type)) return '#66BB6A'
+  return '#90A4AE'
+}
+
+function getSportIcon(type: string): string {
+  if (/swim/i.test(type)) return 'swim'
+  if (/run|jog/i.test(type)) return 'run'
+  if (/walk/i.test(type)) return 'walk'
+  if (/ride|bike|cycling|virtual/i.test(type)) return 'bike'
+  return 'lightning-bolt'
+}
 
 // ─── date helpers ──────────────────────────────────────────────────────────
 
-function startOf(period: Exclude<Period, 'total'>, anchor: Date): Date {
+function startOf(period: Exclude<Period, 'total' | 'custom'>, anchor: Date): Date {
   const d = new Date(anchor)
   switch (period) {
     case 'day': d.setHours(0, 0, 0, 0); return d
@@ -30,7 +52,7 @@ function startOf(period: Exclude<Period, 'total'>, anchor: Date): Date {
     case 'year': d.setMonth(0, 1); d.setHours(0, 0, 0, 0); return d
   }
 }
-function endOf(period: Exclude<Period, 'total'>, start: Date): Date {
+function endOf(period: Exclude<Period, 'total' | 'custom'>, start: Date): Date {
   const d = new Date(start)
   switch (period) {
     case 'day': d.setHours(23, 59, 59, 999); return d
@@ -39,7 +61,7 @@ function endOf(period: Exclude<Period, 'total'>, start: Date): Date {
     case 'year': d.setMonth(11, 31); d.setHours(23, 59, 59, 999); return d
   }
 }
-function advance(period: Exclude<Period, 'total'>, anchor: Date, delta: number): Date {
+function advance(period: Exclude<Period, 'total' | 'custom'>, anchor: Date, delta: number): Date {
   const d = new Date(anchor)
   switch (period) {
     case 'day': d.setDate(d.getDate() + delta); break
@@ -49,7 +71,8 @@ function advance(period: Exclude<Period, 'total'>, anchor: Date, delta: number):
   }
   return d
 }
-function formatNavLabel(period: Exclude<Period, 'total'>, anchor: Date): string {
+
+function formatNavLabel(period: Exclude<Period, 'total' | 'custom'>, anchor: Date): string {
   const start = startOf(period, anchor), end = endOf(period, start)
   const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString(undefined, o)
   switch (period) {
@@ -60,20 +83,29 @@ function formatNavLabel(period: Exclude<Period, 'total'>, anchor: Date): string 
   }
 }
 
+function parseDDMMYYYY(s: string): string | null {
+  const m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
+  if (!m) return null
+  const [, d, mo, y] = m
+  const date = new Date(Number(y), Number(mo) - 1, Number(d))
+  if (isNaN(date.getTime())) return null
+  return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`
+}
+
 function dayKey(iso: string) { return iso.slice(0, 10) }
 function monthKey(iso: string) { return iso.slice(0, 7) }
 
 function formatDayHeader(dateStr: string): string {
   const today = dayKey(new Date().toISOString())
   const yest = new Date(); yest.setDate(yest.getDate() - 1)
-  if (dateStr === today) return 'Vandaag'
-  if (dateStr === dayKey(yest.toISOString())) return 'Gisteren'
+  if (dateStr === today) return 'Today'
+  if (dateStr === dayKey(yest.toISOString())) return 'Yesterday'
   return new Date(dateStr + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
 function formatDuration(sec: number) {
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60)
-  return h > 0 ? `${h}u ${m}m` : `${m}m`
+  return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 function formatDist(type: string, meters: number): string {
   return /swim/i.test(type) ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`
@@ -88,7 +120,7 @@ type ListItem =
 interface ListSection {
   key: string
   title: string
-  isTotal: boolean        // true = Total mode section (month), false = day section
+  isTotal: boolean
   monthStart?: Date
   monthActivities?: Activity[]
   data: ListItem[]
@@ -108,21 +140,29 @@ function SummaryCard({ activities }: { activities: Activity[] }) {
   }
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={sumSt.row}>
-      {Object.entries(byType).map(([type, s]) => (
-        <View key={type} style={sumSt.card}>
-          <Text style={sumSt.type}>{type}</Text>
-          <Text style={sumSt.line}>{s.n}×  {formatDuration(s.sec)}</Text>
-          {s.distM > 0 && <Text style={sumSt.line}>{formatDist(type, s.distM)}</Text>}
-          {s.elevM > 0 && !/swim/i.test(type) && <Text style={sumSt.line}>+{Math.round(s.elevM)} m</Text>}
-        </View>
-      ))}
+      {Object.entries(byType).map(([type, s]) => {
+        const color = getSportColor(type)
+        const icon = getSportIcon(type)
+        return (
+          <View key={type} style={[sumSt.card, { borderTopColor: color }]}>
+            <View style={sumSt.typeRow}>
+              <MaterialCommunityIcons name={icon as any} size={13} color={color} style={{ marginRight: 4 }} />
+              <Text style={[sumSt.type, { color }]}>{type}</Text>
+            </View>
+            <Text style={sumSt.line}>{formatDuration(s.sec)}</Text>
+            {s.distM > 0 && <Text style={sumSt.line}>{formatDist(type, s.distM)}</Text>}
+            {s.elevM > 0 && !/swim/i.test(type) && <Text style={sumSt.line}>+{Math.round(s.elevM)} m</Text>}
+          </View>
+        )
+      })}
     </ScrollView>
   )
 }
 const sumSt = StyleSheet.create({
   row: { paddingHorizontal: 16, paddingVertical: 10, gap: 10 },
-  card: { backgroundColor: '#f8f8f8', borderRadius: 10, padding: 12, minWidth: 110 },
-  type: { fontSize: 13, fontWeight: '700', marginBottom: 4 },
+  card: { backgroundColor: '#f8f8f8', borderRadius: 10, padding: 12, minWidth: 100, borderTopWidth: 3 },
+  typeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  type: { fontSize: 12, fontWeight: '700' },
   line: { fontSize: 12, color: '#666', marginTop: 1 },
 })
 
@@ -138,7 +178,7 @@ function MonthCalendar({ monthStart, activities }: { monthStart: Date; activitie
   return (
     <View style={calSt.cal}>
       <View style={calSt.labels}>
-        {['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'].map(d => <Text key={d} style={calSt.label}>{d}</Text>)}
+        {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(d => <Text key={d} style={calSt.label}>{d}</Text>)}
       </View>
       <View style={calSt.grid}>
         {cells.map((day, i) => {
@@ -215,7 +255,7 @@ function buildMonthSections(acts: Activity[]): ListSection[] {
 
 // ─── screen ────────────────────────────────────────────────────────────────
 
-export default function HomeScreen() {
+export default function ActivitiesScreen() {
   const router = useRouter()
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
@@ -225,15 +265,27 @@ export default function HomeScreen() {
   const [monthsBack, setMonthsBack] = useState(5)
   const [expandedCals, setExpandedCals] = useState<Set<string>>(new Set())
   const [fixedCalVisible, setFixedCalVisible] = useState(false)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [customStartText, setCustomStartText] = useState('')
+  const [customEndText, setCustomEndText] = useState('')
+  const [customStart, setCustomStart] = useState<string | null>(null)
+  const [customEnd, setCustomEnd] = useState<string | null>(null)
 
-  const fetchActivities = useCallback(async (p: Period, a: Date, mb: number) => {
+  const isTotal = period === 'total'
+  const isFixed = !isTotal && period !== 'custom'
+
+  const fetchActivities = useCallback(async (
+    p: Period, a: Date, mb: number, cStart: string | null, cEnd: string | null,
+  ) => {
     let q = supabase.from('activities').select('*').order('date', { ascending: false })
     if (p === 'total') {
       const start = new Date(); start.setMonth(start.getMonth() - mb); start.setDate(1); start.setHours(0, 0, 0, 0)
       q = q.gte('date', start.toISOString())
+    } else if (p === 'custom') {
+      if (!cStart || !cEnd) { setActivities([]); return }
+      q = q.gte('date', cStart).lte('date', cEnd + 'T23:59:59')
     } else {
-      const s = startOf(p as Exclude<Period, 'total'>, a)
-      const e = endOf(p as Exclude<Period, 'total'>, s)
+      const s = startOf(p, a), e = endOf(p, s)
       q = q.gte('date', s.toISOString()).lte('date', e.toISOString())
     }
     const { data } = await q
@@ -242,8 +294,8 @@ export default function HomeScreen() {
 
   useEffect(() => {
     setLoading(true)
-    fetchActivities(period, anchor, monthsBack).finally(() => setLoading(false))
-  }, [period, anchor, monthsBack, fetchActivities])
+    fetchActivities(period, anchor, monthsBack, customStart, customEnd).finally(() => setLoading(false))
+  }, [period, anchor, monthsBack, customStart, customEnd, fetchActivities])
 
   const syncStrava = useCallback(async () => {
     setSyncing(true)
@@ -256,16 +308,16 @@ export default function HomeScreen() {
       const json = await res.json()
       if (!res.ok) {
         if (json.error === 'strava_not_connected') {
-          Alert.alert('Strava niet gekoppeld', 'Koppel je Strava account via het Profiel tab.')
+          Alert.alert('Strava not connected', 'Link your Strava account via the Settings tab.')
           return
         }
         throw new Error(json.error ?? String(res.status))
       }
-      await fetchActivities(period, anchor, monthsBack)
+      await fetchActivities(period, anchor, monthsBack, customStart, customEnd)
     } catch (err: any) {
-      Alert.alert('Sync mislukt', err.message ?? 'Er is iets misgegaan')
+      Alert.alert('Sync failed', err.message ?? 'Something went wrong')
     } finally { setSyncing(false) }
-  }, [period, anchor, monthsBack, fetchActivities])
+  }, [period, anchor, monthsBack, customStart, customEnd, fetchActivities])
 
   function toggleCal(mk: string) {
     setExpandedCals(prev => {
@@ -275,55 +327,101 @@ export default function HomeScreen() {
     })
   }
 
-  function switchPeriod(p: Period) {
-    setPeriod(p); setAnchor(new Date()); setMonthsBack(5)
-    setExpandedCals(new Set()); setFixedCalVisible(false)
+  function selectPeriod(p: Period) {
+    setPeriod(p)
+    setAnchor(new Date())
+    setMonthsBack(5)
+    setExpandedCals(new Set())
+    setFixedCalVisible(false)
+    if (p !== 'custom') { setCustomStart(null); setCustomEnd(null) }
+    setDropdownOpen(false)
   }
 
-  const isTotal = period === 'total'
-  const sections = isTotal ? buildMonthSections(activities) : buildDaySections(activities)
+  function applyCustomDates() {
+    const s = parseDDMMYYYY(customStartText)
+    const e = parseDDMMYYYY(customEndText)
+    if (s && e && s <= e) { setCustomStart(s); setCustomEnd(e) }
+  }
+
+  function getPeriodButtonLabel(): string {
+    if (period === 'total') return 'All activities'
+    if (period === 'custom') {
+      if (customStart && customEnd) {
+        const fmt = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+        return `${fmt(customStart)} – ${fmt(customEnd)}`
+      }
+      return 'Custom range'
+    }
+    return formatNavLabel(period, anchor)
+  }
+
+  const sections = isTotal || period === 'custom'
+    ? buildMonthSections(activities)
+    : buildDaySections(activities)
 
   const listHeader = (
     <View>
-      {/* Period tabs */}
-      <View style={st.periodRow}>
-        {PERIODS.map(p => (
-          <Pressable key={p.value}
-            style={[st.periodBtn, period === p.value && st.periodBtnActive]}
-            onPress={() => switchPeriod(p.value)}>
-            <Text style={[st.periodText, period === p.value && st.periodTextActive]}>{p.label}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {/* Period selector */}
+      <Pressable style={st.selectorBtn} onPress={() => setDropdownOpen(true)}>
+        <Text style={st.selectorText} numberOfLines={1}>{getPeriodButtonLabel()}</Text>
+        <Ionicons name="chevron-down" size={14} color="#555" style={{ marginLeft: 6 }} />
+      </Pressable>
 
-      {/* Navigation (fixed periods only) */}
-      {!isTotal && (
+      {/* Custom date inputs */}
+      {period === 'custom' && (
+        <View style={st.customRange}>
+          <View style={st.customField}>
+            <Text style={st.customLabel}>FROM</Text>
+            <TextInput
+              style={st.customInput}
+              placeholder="DD-MM-YYYY"
+              value={customStartText}
+              onChangeText={setCustomStartText}
+              onBlur={applyCustomDates}
+              keyboardType="numbers-and-punctuation"
+            />
+          </View>
+          <Text style={st.customSep}>–</Text>
+          <View style={st.customField}>
+            <Text style={st.customLabel}>TO</Text>
+            <TextInput
+              style={st.customInput}
+              placeholder="DD-MM-YYYY"
+              value={customEndText}
+              onChangeText={setCustomEndText}
+              onBlur={applyCustomDates}
+              keyboardType="numbers-and-punctuation"
+            />
+          </View>
+          <Pressable style={st.applyBtn} onPress={applyCustomDates}>
+            <Text style={st.applyBtnText}>Go</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Navigation for fixed periods */}
+      {isFixed && (
         <View style={st.navRow}>
-          <Pressable onPress={() => setAnchor(a => advance(period as Exclude<Period, 'total'>, a, -1))} style={st.navBtn}>
+          <Pressable onPress={() => setAnchor(a => advance(period, a, -1))} style={st.navBtn}>
             <Text style={st.navArrow}>‹</Text>
           </Pressable>
-          <Text style={st.navLabel}>{formatNavLabel(period as Exclude<Period, 'total'>, anchor)}</Text>
-          <Pressable onPress={() => setAnchor(a => advance(period as Exclude<Period, 'total'>, a, 1))} style={st.navBtn}>
+          <Pressable onPress={() => setAnchor(a => advance(period, a, 1))} style={st.navBtn}>
             <Text style={st.navArrow}>›</Text>
           </Pressable>
         </View>
       )}
 
-      {/* Calendar toggle (month mode only) */}
+      {/* Calendar toggle for month mode */}
       {period === 'month' && (
         <View>
           <Pressable style={st.calToggleBtn} onPress={() => setFixedCalVisible(v => !v)}>
-            <Text style={st.calToggleText}>{fixedCalVisible ? 'Verberg kalender ▲' : 'Toon kalender ▼'}</Text>
+            <Text style={st.calToggleText}>{fixedCalVisible ? 'Hide calendar ▲' : 'Show calendar ▼'}</Text>
           </Pressable>
-          {fixedCalVisible && (
-            <MonthCalendar monthStart={startOf('month', anchor)} activities={activities} />
-          )}
+          {fixedCalVisible && <MonthCalendar monthStart={startOf('month', anchor)} activities={activities} />}
         </View>
       )}
 
       <View style={st.divider} />
-
-      {/* Summary */}
       <SummaryCard activities={activities} />
       {activities.length > 0 && <View style={st.divider} />}
     </View>
@@ -345,7 +443,7 @@ export default function HomeScreen() {
         keyExtractor={item => item._k}
         stickySectionHeadersEnabled={false}
         ListHeaderComponent={listHeader}
-        contentContainerStyle={sections.length === 0 ? st.emptyContainer : { paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={<RefreshControl refreshing={syncing} onRefresh={syncStrava} tintColor="#FC4C02" />}
         renderSectionHeader={({ section: s }) => {
           if (s.isTotal) {
@@ -355,32 +453,32 @@ export default function HomeScreen() {
                 <View style={st.monthHeaderRow}>
                   <Text style={st.monthHeaderText}>{s.title}</Text>
                   <Pressable onPress={() => toggleCal(s.key)} style={st.calToggleBtn2}>
-                    <Text style={st.calToggleText2}>{expanded ? '▲' : '▼'} Kalender</Text>
+                    <Text style={st.calToggleText2}>{expanded ? '▲' : '▼'} Calendar</Text>
                   </Pressable>
                 </View>
                 {expanded && <MonthCalendar monthStart={s.monthStart!} activities={s.monthActivities!} />}
               </View>
             )
           }
-          // Fixed period: day section header
-          return (
-            <View style={st.dayHeader}>
-              <Text style={st.dayHeaderText}>{s.title}</Text>
-            </View>
-          )
+          return <View style={st.dayHeader}><Text style={st.dayHeaderText}>{s.title}</Text></View>
         }}
         renderItem={({ item }) => {
           if (item._t === 'day') {
             return <View style={st.dayHeader}><Text style={st.dayHeaderText}>{item.label}</Text></View>
           }
           const a = item.act
+          const color = getSportColor(a.type)
+          const icon = getSportIcon(a.type)
           return (
-            <Pressable style={st.card} onPress={() => router.push(`/activity/${a.id}`)}>
+            <Pressable style={[st.card, { borderLeftColor: color }]} onPress={() => router.push(`/activity/${a.id}`)}>
               <View style={st.cardLeft}>
                 <Text style={st.actName} numberOfLines={1}>{a.name}</Text>
-                <Text style={st.actMeta}>
-                  {a.type}{a.distance_m ? ` · ${formatDist(a.type, a.distance_m)}` : ''} · {formatDuration(a.duration_sec)}
-                </Text>
+                <View style={st.actMetaRow}>
+                  <MaterialCommunityIcons name={icon as any} size={12} color={color} style={{ marginRight: 4 }} />
+                  <Text style={st.actMeta}>
+                    {a.type}{a.distance_m ? ` · ${formatDist(a.type, a.distance_m)}` : ''} · {formatDuration(a.duration_sec)}
+                  </Text>
+                </View>
               </View>
               <View style={st.cardRight}>
                 {a.total_kcal != null
@@ -392,56 +490,121 @@ export default function HomeScreen() {
         }}
         ListFooterComponent={isTotal ? (
           <Pressable style={st.loadMoreBtn} onPress={() => setMonthsBack(n => n + 3)}>
-            <Text style={st.loadMoreText}>Meer maanden laden</Text>
+            <Text style={st.loadMoreText}>Load more months</Text>
           </Pressable>
         ) : null}
         ListEmptyComponent={
-          <View style={st.empty}>
-            <Text style={st.emptyTitle}>Geen activiteiten</Text>
-            <Text style={st.emptySub}>Trek omlaag om te synchroniseren met Strava.</Text>
+          <View style={st.emptyBox}>
+            <Text style={st.emptyTitle}>No activities</Text>
+            <Text style={st.emptySub}>
+              {period === 'custom' && (!customStart || !customEnd)
+                ? 'Enter a date range above.'
+                : 'Pull down to sync with Strava.'}
+            </Text>
           </View>
         }
       />
+
+      {/* Period dropdown modal */}
+      <Modal visible={dropdownOpen} transparent animationType="fade">
+        <Pressable style={st.modalOverlay} onPress={() => setDropdownOpen(false)}>
+          <Pressable style={st.dropdownSheet} onPress={e => e.stopPropagation()}>
+            <Text style={st.dropdownTitle}>View period</Text>
+            {PERIOD_OPTIONS.map(opt => (
+              <Pressable key={opt.value} style={st.dropdownRow} onPress={() => selectPeriod(opt.value)}>
+                <Text style={[st.dropdownRowText, period === opt.value && st.dropdownRowActive]}>
+                  {opt.label}
+                </Text>
+                {period === opt.value && <Ionicons name="checkmark" size={16} color="#FC4C02" />}
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   )
 }
 
 const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  periodRow: { flexDirection: 'row', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8, gap: 6 },
-  periodBtn: { flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: 'center', backgroundColor: '#f0f0f0' },
-  periodBtnActive: { backgroundColor: '#FC4C02' },
-  periodText: { fontSize: 12, fontWeight: '600', color: '#555' },
-  periodTextActive: { color: '#fff' },
-  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingBottom: 8 },
-  navBtn: { padding: 8 },
-  navArrow: { fontSize: 28, color: '#333', lineHeight: 32 },
-  navLabel: { fontSize: 15, fontWeight: '700', color: '#333' },
+
+  selectorBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: 16, marginTop: 12, marginBottom: 6,
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: '#f5f5f5', borderRadius: 10,
+  },
+  selectorText: { fontSize: 15, fontWeight: '700', color: '#111', flex: 1 },
+
+  customRange: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
+    paddingHorizontal: 16, paddingBottom: 10,
+  },
+  customField: { flex: 1 },
+  customLabel: { fontSize: 10, fontWeight: '700', color: '#aaa', marginBottom: 4, textTransform: 'uppercase' },
+  customInput: {
+    borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
+    padding: 9, fontSize: 13, backgroundColor: '#fff',
+  },
+  customSep: { fontSize: 18, color: '#aaa', marginBottom: 10 },
+  applyBtn: { backgroundColor: '#FC4C02', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 1 },
+  applyBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  navRow: { flexDirection: 'row', paddingHorizontal: 8, paddingBottom: 6, gap: 4 },
+  navBtn: { padding: 6 },
+  navArrow: { fontSize: 26, color: '#555', lineHeight: 30 },
+
   calToggleBtn: { paddingHorizontal: 16, paddingVertical: 8 },
   calToggleText: { fontSize: 13, color: '#FC4C02', fontWeight: '600' },
   divider: { height: 1, backgroundColor: '#f0f0f0' },
+
   monthHeader: { backgroundColor: '#fff', paddingTop: 16 },
   monthHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, marginBottom: 6 },
   monthHeaderText: { fontSize: 16, fontWeight: '800', color: '#111' },
   calToggleBtn2: { paddingVertical: 4, paddingHorizontal: 8 },
   calToggleText2: { fontSize: 12, color: '#FC4C02', fontWeight: '600' },
+
   dayHeader: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 5 },
   dayHeaderText: { fontSize: 12, fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.8 },
+
   card: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 14, marginHorizontal: 16, marginBottom: 8, borderRadius: 12, backgroundColor: '#f8f8f8',
+    padding: 14, marginHorizontal: 16, marginBottom: 8,
+    borderRadius: 12, backgroundColor: '#f8f8f8',
+    borderLeftWidth: 4,
   },
   cardLeft: { flex: 1, marginRight: 12 },
-  actName: { fontSize: 15, fontWeight: '700', marginBottom: 3 },
+  actName: { fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  actMetaRow: { flexDirection: 'row', alignItems: 'center' },
   actMeta: { fontSize: 13, color: '#888' },
   cardRight: { alignItems: 'flex-end' },
   kcal: { fontSize: 20, fontWeight: '800', color: '#FC4C02' },
   kcalLbl: { fontSize: 11, color: '#FC4C02', fontWeight: '600' },
   noData: { fontSize: 20, color: '#ccc', fontWeight: '300' },
+
   loadMoreBtn: { margin: 20, padding: 14, borderRadius: 10, backgroundColor: '#f0f0f0', alignItems: 'center' },
   loadMoreText: { fontSize: 14, color: '#666', fontWeight: '600' },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
-  empty: { alignItems: 'center' },
-  emptyTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
-  emptySub: { fontSize: 14, color: '#999', textAlign: 'center' },
+
+  emptyBox: { paddingHorizontal: 24, paddingVertical: 32, alignItems: 'center' },
+  emptyTitle: { fontSize: 16, fontWeight: '700', marginBottom: 6, color: '#333' },
+  emptySub: { fontSize: 13, color: '#aaa', textAlign: 'center', lineHeight: 19 },
+
+  // Dropdown modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end',
+  },
+  dropdownSheet: {
+    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingTop: 8, paddingBottom: 40,
+  },
+  dropdownTitle: {
+    fontSize: 12, fontWeight: '700', color: '#aaa', textTransform: 'uppercase',
+    letterSpacing: 0.8, paddingHorizontal: 20, paddingVertical: 12,
+  },
+  dropdownRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, paddingVertical: 15, borderTopWidth: 1, borderTopColor: '#f5f5f5',
+  },
+  dropdownRowText: { fontSize: 16, color: '#222' },
+  dropdownRowActive: { color: '#FC4C02', fontWeight: '700' },
 })
