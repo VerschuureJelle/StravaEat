@@ -96,3 +96,17 @@ export interface ActivityWithZones extends Activity {
   zone_splits: (ActivityZoneSplit & { zone: HeartRateZone })[]
   laps: Lap[]
 }
+
+export interface PlannedWorkout {
+  id: string
+  user_id: string
+  sport_type: string
+  target_kcal: number
+  zone_id: string | null
+  target_duration_min: number | null
+  target_hr: number | null
+  planned_for: string
+  created_at: string
+  distance_m: number | null
+  workout_description: string | null
+}
