@@ -17,6 +17,26 @@ export interface UserProfile {
   strava_refresh_token: string | null
   strava_token_expires_at: string | null
   daily_kcal_target: number | null
+  push_token: string | null
+}
+
+export interface FoodLog {
+  id: string
+  user_id: string
+  date: string
+  name: string
+  kcal: number
+  protein_g: number | null
+  meal_name: string | null
+  logged_at: string
+}
+
+export interface MealTemplate {
+  id: string
+  user_id: string
+  meal_index: number
+  name: string
+  scheduled_time: string  // HH:MM
 }
 
 export interface HeartRateZone {

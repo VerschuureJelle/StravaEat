@@ -167,6 +167,11 @@ function formatDate(): string {
   return new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+function localDate(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function getSportColor(type: string): string {
   if (/swim/i.test(type)) return '#29B6F6'
   if (/run|jog/i.test(type)) return '#EF5350'
@@ -212,14 +217,14 @@ export default function HomeScreen() {
   async function loadProfileAndActivities() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
-    const todayDate = todayStart.toISOString().slice(0, 10)
+    const todayDate = localDate()                         // YYYY-MM-DD in device local time
+    const todayISOStart = `${todayDate}T00:00:00`        // local midnight, no TZ suffix
     const [profileRes, actsRes, plannedRes] = await Promise.all([
       supabase.from('users').select('name, daily_kcal_target').eq('id', user.id).single(),
       supabase.from('activities')
         .select('id, name, type, total_kcal')
         .eq('user_id', user.id)
-        .gte('date', todayStart.toISOString())
+        .gte('date', todayISOStart)
         .not('total_kcal', 'is', null),
       supabase.from('planned_workouts')
         .select('id, sport_type, target_kcal, target_duration_min, target_hr, workout_description')
@@ -377,7 +382,7 @@ export default function HomeScreen() {
         baseline={dailyTarget}
         activities={todayActivities}
         planned={plannedWorkouts}
-        totalTarget={totalTarget}
+        totalTarget={projectedTotal ?? totalTarget}
         onClose={() => setCalorieModalOpen(false)}
       />
     </SafeAreaView>

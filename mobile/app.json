@@ -35,6 +35,14 @@
         {
           "locationWhenInUsePermission": "StravaEat uses your location to show local weather."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#FC4C02",
+          "sounds": []
+        }
       ]
     ],
     "extra": {

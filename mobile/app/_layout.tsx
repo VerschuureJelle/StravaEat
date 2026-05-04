@@ -3,6 +3,7 @@ import { View, ActivityIndicator } from 'react-native'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { supabase } from '../lib/supabase'
+import { registerForNotifications } from '../lib/notifications'
 
 export default function RootLayout() {
   const router = useRouter()
@@ -13,12 +14,14 @@ export default function RootLayout() {
     // Check for an existing persisted session on app start
     supabase.auth.getSession().then(({ data: { session } }) => {
       redirect(session != null)
+      if (session) registerForNotifications()
       setReady(true)
     })
 
     // Then keep listening for sign-in / sign-out events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (ready) redirect(session != null)
+      if (session) registerForNotifications()
     })
 
     return () => subscription.unsubscribe()

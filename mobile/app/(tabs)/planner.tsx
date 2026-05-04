@@ -7,9 +7,14 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
-import type { HeartRateZone, BurnSchemaPoint, SportEnergySetting } from '../../types'
+import type { HeartRateZone, BurnSchemaPoint, SportEnergySetting, PlannedWorkout } from '../../types'
 
 // ─── helpers ───────────────────────────────────────────────────────────────
+
+function localDate(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 function getSportColor(type: string): string {
   if (/swim/i.test(type)) return '#29B6F6'
@@ -28,7 +33,7 @@ function getSportIcon(type: string): string {
 }
 
 function formatDuration(min: number): string {
-  const h = Math.floor(min / 60), m = min % 60
+  const h = Math.floor(min / 60), m = Math.round(min % 60)
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
@@ -50,7 +55,7 @@ function interpolateKcalPerHour(hr: number, pts: BurnSchemaPoint[]): number {
 
 // ─── types ─────────────────────────────────────────────────────────────────
 
-type PlannerMode = 'kcal' | 'describe' | 'ai'
+type PlannerMode = 'kcal' | 'build' | 'ai'
 
 interface ZoneSuggestion {
   zone: HeartRateZone
@@ -61,12 +66,18 @@ interface ZoneSuggestion {
   paceFormatted: string | null
 }
 
-interface DescribeResult {
-  estimatedKcal: number
-  durationMin: number
-  zone: HeartRateZone
-  midHR: number
-  distanceFormatted: string
+interface WorkoutSegment {
+  id: string
+  inputType: 'distance' | 'time'
+  value: string
+  zoneId: string
+  repeats: string
+}
+
+interface SegmentResult {
+  totalKcal: number
+  totalDurationMin: number
+  segments: Array<{ label: string; kcal: number; durationMin: number }>
 }
 
 interface AiResult {
@@ -88,6 +99,10 @@ export default function PlannerScreen() {
   const [sportSettings, setSportSettings] = useState<SportEnergySetting[]>([])
   const [avgSpeedBySport, setAvgSpeedBySport] = useState<Record<string, number>>({})
 
+  // Today's saved plans
+  const [todayPlans, setTodayPlans] = useState<PlannedWorkout[]>([])
+  const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null)
+
   // Mode
   const [mode, setMode] = useState<PlannerMode>('kcal')
 
@@ -96,10 +111,11 @@ export default function PlannerScreen() {
   const [suggestions, setSuggestions] = useState<ZoneSuggestion[]>([])
   const [calculated, setCalculated] = useState(false)
 
-  // describe mode
-  const [descDistance, setDescDistance] = useState('')
-  const [descZoneId, setDescZoneId] = useState<string>('')
-  const [descResult, setDescResult] = useState<DescribeResult | null>(null)
+  // build mode (multi-segment)
+  const [segments, setSegments] = useState<WorkoutSegment[]>([
+    { id: '1', inputType: 'distance', value: '', zoneId: '', repeats: '1' },
+  ])
+  const [segResult, setSegResult] = useState<SegmentResult | null>(null)
 
   // ai mode
   const [aiInput, setAiInput] = useState('')
@@ -115,28 +131,29 @@ export default function PlannerScreen() {
     if (!user) return
     setUserId(user.id)
 
-    const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes] = await Promise.all([
+    const todayStr = localDate()
+
+    const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes] = await Promise.all([
       supabase.from('users').select('weight_kg').eq('id', user.id).single(),
       supabase.from('activities').select('type, distance_m, duration_sec').eq('user_id', user.id),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
       supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
+      supabase.from('planned_workouts').select('*').eq('user_id', user.id).eq('planned_for', todayStr).order('created_at'),
     ])
 
     setWeightKg(profileRes.data?.weight_kg ?? null)
     setZones(zonesRes.data ?? [])
     setBurnSchema(burnRes.data ?? [])
     setSportSettings(settingsRes.data ?? [])
+    setTodayPlans(plansRes.data ?? [])
 
     const sportSet = new Set<string>(
       (activitiesRes.data ?? []).map((a: any) => a.type).filter(Boolean),
     )
     const sportList = [...sportSet].sort()
     setSports(sportList)
-    if (sportList.length > 0) {
-      setSelectedSport(sportList[0])
-      setDescZoneId('')
-    }
+    if (sportList.length > 0) setSelectedSport(sportList[0])
 
     const speedMap: Record<string, number> = {}
     for (const sport of sportSet) {
@@ -162,6 +179,13 @@ export default function PlannerScreen() {
     return useCustom
       ? interpolateKcalPerHour(midHR, schemaPts)
       : zone.met_value * (weightKg ?? 70)
+  }
+
+  async function deletePlan(id: string) {
+    setDeletingPlanId(id)
+    await supabase.from('planned_workouts').delete().eq('id', id)
+    setTodayPlans(prev => prev.filter(p => p.id !== id))
+    setDeletingPlanId(null)
   }
 
   // ─── kcal mode ─────────────────────────────────────────────────────────────
@@ -209,9 +233,6 @@ export default function PlannerScreen() {
   async function planFromKcalMode(suggestion: ZoneSuggestion) {
     if (!userId) return
     setSaving(true)
-    const todayStr = new Date().toISOString().slice(0, 10)
-    await supabase.from('planned_workouts').delete()
-      .eq('user_id', userId).eq('sport_type', selectedSport).eq('planned_for', todayStr)
     const { error } = await supabase.from('planned_workouts').insert({
       user_id: userId,
       sport_type: selectedSport,
@@ -219,61 +240,101 @@ export default function PlannerScreen() {
       zone_id: suggestion.zone.id,
       target_duration_min: suggestion.durationMin,
       target_hr: suggestion.midHR,
-      planned_for: todayStr,
+      planned_for: localDate(),
     })
     setSaving(false)
     if (error) { Alert.alert('Error', error.message); return }
     Alert.alert('Planned!', `${selectedSport} in ${suggestion.zone.name} added to today.`)
+    load()
   }
 
-  // ─── describe mode ─────────────────────────────────────────────────────────
+  // ─── build mode (multi-segment) ─────────────────────────────────────────────
 
-  function calculateDescribe() {
-    const distKm = parseFloat(descDistance)
-    if (isNaN(distKm) || distKm <= 0) { Alert.alert('Invalid', 'Enter a valid distance.'); return }
-    if (!descZoneId) { Alert.alert('No zone', 'Select a heart rate zone.'); return }
-    const zone = zones.find(z => z.id === descZoneId)
-    if (!zone) return
+  function addSegment() {
+    setSegments(prev => [...prev, { id: String(Date.now()), inputType: 'distance', value: '', zoneId: '', repeats: '1' }])
+    setSegResult(null)
+  }
 
-    const avgSpeed = avgSpeedBySport[selectedSport]
-    if (!avgSpeed) {
-      Alert.alert('No pace data', 'No historical activities found for this sport to estimate duration.')
-      return
+  function removeSegment(id: string) {
+    setSegments(prev => prev.filter(s => s.id !== id))
+    setSegResult(null)
+  }
+
+  function updateSegment(id: string, patch: Partial<WorkoutSegment>) {
+    setSegments(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s))
+    setSegResult(null)
+  }
+
+  function calculateSegments() {
+    if (zones.length === 0) { Alert.alert('No zones', 'Set up your HR zones in Settings first.'); return }
+    if (!weightKg) { Alert.alert('No weight', 'Add your weight in Settings → Personal Info first.'); return }
+
+    const results: SegmentResult['segments'] = []
+    let totalKcal = 0
+    let totalDurationMin = 0
+
+    for (const seg of segments) {
+      const val = parseFloat(seg.value)
+      if (isNaN(val) || val <= 0) {
+        Alert.alert('Invalid segment', 'All segments need a positive distance or time value.')
+        return
+      }
+      const repeats = Math.max(1, parseInt(seg.repeats) || 1)
+      const zone = zones.find(z => z.id === seg.zoneId)
+      if (!zone) { Alert.alert('Missing zone', 'Select a zone for every segment.'); return }
+
+      const kcalPerHour = getKcalPerHour(zone)
+      let durationMin: number
+      let label: string
+
+      if (seg.inputType === 'time') {
+        durationMin = val
+        label = `${val} min @ ${zone.name}`
+      } else {
+        const avgSpeed = avgSpeedBySport[selectedSport]
+        if (!avgSpeed) {
+          Alert.alert('No pace data', `No historical pace found for ${selectedSport}. Use time-based segments instead.`)
+          return
+        }
+        const isSwim = /swim/i.test(selectedSport)
+        const distM = isSwim ? val : val * 1000
+        durationMin = distM / avgSpeed / 60
+        label = isSwim ? `${val} m @ ${zone.name}` : `${val} km @ ${zone.name}`
+      }
+
+      const segKcal = Math.round(kcalPerHour * (durationMin / 60)) * repeats
+      const segDurationMin = durationMin * repeats
+
+      results.push({
+        label: repeats > 1 ? `${repeats}× (${label})` : label,
+        kcal: segKcal,
+        durationMin: Math.round(segDurationMin),
+      })
+      totalKcal += segKcal
+      totalDurationMin += segDurationMin
     }
 
-    const distM = distKm * 1000
-    const durationSec = distM / avgSpeed
-    const durationMin = Math.round(durationSec / 60)
-    const kcalPerHour = getKcalPerHour(zone)
-    const estimatedKcal = Math.round(kcalPerHour * (durationSec / 3600))
-    const midHR = Math.round((zone.min_bpm + zone.max_bpm) / 2)
-
-    let distanceFormatted = `${distKm} km`
-    if (/swim/i.test(selectedSport)) distanceFormatted = `${Math.round(distM)} m`
-
-    setDescResult({ estimatedKcal, durationMin, zone, midHR, distanceFormatted })
+    setSegResult({ totalKcal: Math.round(totalKcal), totalDurationMin: Math.round(totalDurationMin), segments: results })
   }
 
-  async function planFromDescribeMode() {
-    if (!descResult || !userId) return
+  async function planFromBuildMode() {
+    if (!segResult || !userId) return
+    const description = segResult.segments
+      .map(s => `${s.label} (~${s.kcal} kcal, ${formatDuration(s.durationMin)})`)
+      .join('\n')
     setSaving(true)
-    const todayStr = new Date().toISOString().slice(0, 10)
-    await supabase.from('planned_workouts').delete()
-      .eq('user_id', userId).eq('sport_type', selectedSport).eq('planned_for', todayStr)
-    const distM = parseFloat(descDistance) * 1000
     const { error } = await supabase.from('planned_workouts').insert({
       user_id: userId,
       sport_type: selectedSport,
-      target_kcal: descResult.estimatedKcal,
-      zone_id: descResult.zone.id,
-      target_duration_min: descResult.durationMin,
-      target_hr: descResult.midHR,
-      distance_m: distM,
-      planned_for: todayStr,
+      target_kcal: segResult.totalKcal,
+      target_duration_min: segResult.totalDurationMin,
+      planned_for: localDate(),
+      workout_description: description,
     })
     setSaving(false)
     if (error) { Alert.alert('Error', error.message); return }
-    Alert.alert('Planned!', `${descResult.distanceFormatted} ${selectedSport} in ${descResult.zone.name} added to today.`)
+    Alert.alert('Planned!', `${selectedSport} workout (${segResult.totalKcal} kcal) added to today.`)
+    load()
   }
 
   // ─── ai mode ───────────────────────────────────────────────────────────────
@@ -283,14 +344,16 @@ export default function PlannerScreen() {
     setAiLoading(true)
     setAiResult(null)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
       const res = await supabase.functions.invoke('ai-coach', {
         body: { message: aiInput, sport: selectedSport || undefined },
       })
-      if (res.error) throw res.error
+      if (res.error) {
+        const body = await res.error.context?.json?.().catch(() => null)
+        throw new Error(body?.error ?? res.error.message)
+      }
       setAiResult(res.data as AiResult)
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not reach AI Coach.')
+      Alert.alert('AI Coach error', e?.message ?? 'Could not reach AI Coach.')
     } finally {
       setAiLoading(false)
     }
@@ -299,21 +362,19 @@ export default function PlannerScreen() {
   async function planFromAIMode() {
     if (!aiResult || !userId) return
     const kcal = aiResult.estimated_kcal
-    if (!kcal) { Alert.alert('No estimate', 'The AI response did not include a kcal estimate. Edit and try again.'); return }
+    if (!kcal) { Alert.alert('No estimate', 'The AI response did not include a kcal estimate.'); return }
     setSaving(true)
-    const todayStr = new Date().toISOString().slice(0, 10)
-    await supabase.from('planned_workouts').delete()
-      .eq('user_id', userId).eq('sport_type', selectedSport).eq('planned_for', todayStr)
     const { error } = await supabase.from('planned_workouts').insert({
       user_id: userId,
       sport_type: selectedSport || 'General',
       target_kcal: kcal,
-      planned_for: todayStr,
+      planned_for: localDate(),
       workout_description: aiResult.plan,
     })
     setSaving(false)
     if (error) { Alert.alert('Error', error.message); return }
-    Alert.alert('Planned!', 'AI workout added to today\'s plan.')
+    Alert.alert('Planned!', "AI workout added to today's plan.")
+    load()
   }
 
   const sportColor = getSportColor(selectedSport)
@@ -323,6 +384,34 @@ export default function PlannerScreen() {
       <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
         <Text style={st.screenTitle}>Workout Planner</Text>
 
+        {/* Today's plan */}
+        {todayPlans.length > 0 && (
+          <View style={st.todayCard}>
+            <Text style={st.sectionLabel}>Today's plan</Text>
+            {todayPlans.map((plan, i) => (
+              <View key={plan.id} style={[st.planRow, i < todayPlans.length - 1 && st.planRowBorder]}>
+                <View style={[st.planDot, { backgroundColor: getSportColor(plan.sport_type) }]} />
+                <View style={st.planInfo}>
+                  <Text style={st.planSport}>{plan.sport_type}</Text>
+                  <Text style={st.planMeta}>
+                    {plan.target_kcal} kcal
+                    {plan.target_duration_min ? ` · ${formatDuration(plan.target_duration_min)}` : ''}
+                  </Text>
+                  {plan.workout_description ? (
+                    <Text style={st.planDesc} numberOfLines={3}>{plan.workout_description}</Text>
+                  ) : null}
+                </View>
+                <Pressable onPress={() => deletePlan(plan.id)} hitSlop={12} disabled={deletingPlanId === plan.id}>
+                  {deletingPlanId === plan.id
+                    ? <ActivityIndicator size="small" color="#ccc" />
+                    : <Ionicons name="trash-outline" size={18} color="#ccc" />
+                  }
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Sport selector */}
         <Text style={st.label}>Sport</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={st.chipRow} contentContainerStyle={st.chipContent}>
@@ -330,7 +419,7 @@ export default function PlannerScreen() {
             <Pressable
               key={sport}
               style={[st.chip, selectedSport === sport && { backgroundColor: getSportColor(sport), borderColor: getSportColor(sport) }]}
-              onPress={() => { setSelectedSport(sport); setCalculated(false); setDescResult(null) }}
+              onPress={() => { setSelectedSport(sport); setCalculated(false); setSegResult(null) }}
             >
               <MaterialCommunityIcons name={getSportIcon(sport) as any} size={14} color={selectedSport === sport ? '#fff' : getSportColor(sport)} />
               <Text style={[st.chipText, selectedSport === sport && st.chipTextActive]}>{sport}</Text>
@@ -341,9 +430,9 @@ export default function PlannerScreen() {
         {/* Mode selector */}
         <View style={st.modeRow}>
           {([
-            { key: 'kcal',     label: 'Target kcal',      icon: 'flame-outline' as const },
-            { key: 'describe', label: 'Describe workout',  icon: 'map-outline' as const },
-            { key: 'ai',       label: 'AI Coach',          icon: 'sparkles-outline' as const },
+            { key: 'kcal',  label: 'Target kcal',  icon: 'flame-outline' as const },
+            { key: 'build', label: 'Build workout', icon: 'list-outline' as const },
+            { key: 'ai',    label: 'AI Coach',      icon: 'sparkles-outline' as const },
           ] as const).map(m => (
             <Pressable
               key={m.key}
@@ -432,62 +521,116 @@ export default function PlannerScreen() {
           </>
         )}
 
-        {/* ─── DESCRIBE MODE ─────────────────────────────────────────────────── */}
-        {mode === 'describe' && (
+        {/* ─── BUILD MODE ─────────────────────────────────────────────────────── */}
+        {mode === 'build' && (
           <>
-            <Text style={st.label}>Distance</Text>
-            <View style={st.kcalInputRow}>
-              <TextInput
-                style={st.kcalInput}
-                value={descDistance}
-                onChangeText={v => { setDescDistance(v); setDescResult(null) }}
-                keyboardType="decimal-pad"
-                placeholder="e.g. 8"
-              />
-              <Text style={st.kcalUnit}>{/swim/i.test(selectedSport) ? 'm' : 'km'}</Text>
-            </View>
+            <Text style={st.label}>Workout segments</Text>
 
-            <Text style={st.label}>Intensity zone</Text>
-            <View style={st.zonePickerGrid}>
-              {zones.map(z => (
-                <Pressable
-                  key={z.id}
-                  style={[st.zonePick, descZoneId === z.id && { backgroundColor: sportColor, borderColor: sportColor }]}
-                  onPress={() => { setDescZoneId(z.id); setDescResult(null) }}
-                >
-                  <Text style={[st.zonePickNum, descZoneId === z.id && { color: '#fff' }]}>Z{z.zone_number}</Text>
-                  <Text style={[st.zonePickName, descZoneId === z.id && { color: 'rgba(255,255,255,0.8)' }]}>{z.name}</Text>
-                </Pressable>
-              ))}
-            </View>
+            {segments.map((seg, idx) => {
+              const selZone = zones.find(z => z.id === seg.zoneId)
+              const isSwim = /swim/i.test(selectedSport)
+              return (
+                <View key={seg.id} style={st.segCard}>
+                  <View style={st.segHeader}>
+                    <Text style={st.segIndex}>Segment {idx + 1}</Text>
+                    {segments.length > 1 && (
+                      <Pressable onPress={() => removeSegment(seg.id)} hitSlop={10}>
+                        <Ionicons name="close-circle-outline" size={20} color="#ccc" />
+                      </Pressable>
+                    )}
+                  </View>
 
-            <Pressable style={[st.calcBtn, { backgroundColor: sportColor }]} onPress={calculateDescribe}>
-              <Ionicons name="stats-chart-outline" size={18} color="#fff" />
-              <Text style={st.calcBtnText}>Estimate burn</Text>
+                  {/* Distance / Time toggle */}
+                  <View style={st.segToggleRow}>
+                    <Pressable
+                      style={[st.segToggleBtn, seg.inputType === 'distance' && { backgroundColor: sportColor, borderColor: sportColor }]}
+                      onPress={() => updateSegment(seg.id, { inputType: 'distance', value: '' })}
+                    >
+                      <Text style={[st.segToggleText, seg.inputType === 'distance' && { color: '#fff' }]}>Distance</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[st.segToggleBtn, seg.inputType === 'time' && { backgroundColor: sportColor, borderColor: sportColor }]}
+                      onPress={() => updateSegment(seg.id, { inputType: 'time', value: '' })}
+                    >
+                      <Text style={[st.segToggleText, seg.inputType === 'time' && { color: '#fff' }]}>Time</Text>
+                    </Pressable>
+                  </View>
+
+                  {/* Value + Repeats */}
+                  <View style={st.segInputRow}>
+                    <View style={st.segInputGroup}>
+                      <TextInput
+                        style={st.segInput}
+                        value={seg.value}
+                        onChangeText={v => updateSegment(seg.id, { value: v })}
+                        placeholder={seg.inputType === 'distance' ? (isSwim ? 'e.g. 400' : 'e.g. 5') : 'e.g. 20'}
+                        keyboardType="decimal-pad"
+                      />
+                      <Text style={st.segInputUnit}>{seg.inputType === 'distance' ? (isSwim ? 'm' : 'km') : 'min'}</Text>
+                    </View>
+                    <View style={st.segRepeatGroup}>
+                      <TextInput
+                        style={st.segInput}
+                        value={seg.repeats}
+                        onChangeText={v => updateSegment(seg.id, { repeats: v })}
+                        placeholder="1"
+                        keyboardType="number-pad"
+                      />
+                      <Text style={st.segInputUnit}>repeats</Text>
+                    </View>
+                  </View>
+
+                  {/* Zone picker */}
+                  <View style={st.segZoneRow}>
+                    {zones.map(z => (
+                      <Pressable
+                        key={z.id}
+                        style={[st.segZoneBtn, seg.zoneId === z.id && { backgroundColor: sportColor, borderColor: sportColor }]}
+                        onPress={() => updateSegment(seg.id, { zoneId: z.id })}
+                      >
+                        <Text style={[st.segZoneBtnNum, seg.zoneId === z.id && { color: '#fff' }]}>Z{z.zone_number}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  {selZone && (
+                    <Text style={st.segZoneDetail}>{selZone.name} · {selZone.min_bpm}–{selZone.max_bpm} bpm</Text>
+                  )}
+                </View>
+              )
+            })}
+
+            <Pressable style={st.addSegBtn} onPress={addSegment}>
+              <Ionicons name="add-circle-outline" size={18} color={sportColor} />
+              <Text style={[st.addSegBtnText, { color: sportColor }]}>Add segment</Text>
             </Pressable>
 
-            {descResult && (
-              <View style={[st.descResult, { borderLeftColor: sportColor }]}>
-                <View style={st.descResultRow}>
-                  <View style={st.descStat}>
-                    <Text style={[st.descStatValue, { color: sportColor }]}>{descResult.estimatedKcal}</Text>
-                    <Text style={st.descStatLabel}>kcal</Text>
+            <Pressable style={[st.calcBtn, { backgroundColor: sportColor }]} onPress={calculateSegments}>
+              <Ionicons name="stats-chart-outline" size={18} color="#fff" />
+              <Text style={st.calcBtnText}>Calculate workout</Text>
+            </Pressable>
+
+            {segResult && (
+              <View style={[st.segResultCard, { borderLeftColor: sportColor }]}>
+                <View style={st.segResultTotals}>
+                  <View style={st.segResultStat}>
+                    <Text style={[st.segResultValue, { color: sportColor }]}>{segResult.totalKcal}</Text>
+                    <Text style={st.segResultLabel}>kcal</Text>
                   </View>
-                  <View style={st.descDivider} />
-                  <View style={st.descStat}>
-                    <Text style={[st.descStatValue, { color: sportColor }]}>{formatDuration(descResult.durationMin)}</Text>
-                    <Text style={st.descStatLabel}>duration</Text>
-                  </View>
-                  <View style={st.descDivider} />
-                  <View style={st.descStat}>
-                    <Text style={[st.descStatValue, { color: sportColor }]}>{descResult.distanceFormatted}</Text>
-                    <Text style={st.descStatLabel}>distance</Text>
+                  <View style={st.divider} />
+                  <View style={st.segResultStat}>
+                    <Text style={[st.segResultValue, { color: sportColor }]}>{formatDuration(segResult.totalDurationMin)}</Text>
+                    <Text style={st.segResultLabel}>total</Text>
                   </View>
                 </View>
-                <Text style={st.descZoneNote}>{descResult.zone.name} · ~{descResult.midHR} bpm avg</Text>
+                {segResult.segments.map((s, i) => (
+                  <View key={i} style={st.segBreakRow}>
+                    <Text style={st.segBreakLabel}>{s.label}</Text>
+                    <Text style={st.segBreakMeta}>{s.kcal} kcal · {formatDuration(s.durationMin)}</Text>
+                  </View>
+                ))}
                 <Pressable
-                  style={[st.planBtn, saving && st.planBtnDisabled]}
-                  onPress={planFromDescribeMode}
+                  style={[st.planBtn, { marginTop: 14 }, saving && st.planBtnDisabled]}
+                  onPress={planFromBuildMode}
                   disabled={saving}
                 >
                   {saving ? <ActivityIndicator size="small" color="#FC4C02" /> : <Text style={st.planBtnText}>Plan for today →</Text>}
@@ -544,7 +687,6 @@ export default function PlannerScreen() {
                   )}
                 </View>
                 <Text style={st.aiResultText}>{aiResult.plan}</Text>
-
                 <Pressable
                   style={[st.planBtn, { marginTop: 16 }, saving && st.planBtnDisabled]}
                   onPress={planFromAIMode}
@@ -572,7 +714,24 @@ const st = StyleSheet.create({
 
   screenTitle: { fontSize: 26, fontWeight: '800', marginBottom: 20 },
 
+  sectionLabel: {
+    fontSize: 11, fontWeight: '700', color: '#aaa',
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12,
+  },
   label: { fontSize: 11, fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 },
+
+  // Today's plan card
+  todayCard: {
+    backgroundColor: '#fafafa', borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: '#ebebeb', marginBottom: 24,
+  },
+  planRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 10, gap: 12 },
+  planRowBorder: { borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  planDot: { width: 8, height: 8, borderRadius: 4, marginTop: 4 },
+  planInfo: { flex: 1 },
+  planSport: { fontSize: 14, fontWeight: '700', color: '#111', marginBottom: 2 },
+  planMeta: { fontSize: 12, color: '#888', marginBottom: 2 },
+  planDesc: { fontSize: 12, color: '#aaa', lineHeight: 17 },
 
   chipRow: { marginBottom: 24 },
   chipContent: { gap: 8, paddingRight: 8 },
@@ -612,23 +771,72 @@ const st = StyleSheet.create({
   },
   calcBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 
-  zonePickerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
-  zonePick: {
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10,
-    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
-    minWidth: '30%', alignItems: 'center',
+  // Segment builder
+  segCard: {
+    backgroundColor: '#fafafa', borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: '#ebebeb', marginBottom: 10,
   },
-  zonePickNum: { fontSize: 15, fontWeight: '800', color: '#333', marginBottom: 2 },
-  zonePickName: { fontSize: 10, color: '#999', textAlign: 'center' },
+  segHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  segIndex: { fontSize: 11, fontWeight: '700', color: '#bbb', textTransform: 'uppercase', letterSpacing: 0.5 },
 
-  descResult: { borderLeftWidth: 4, borderRadius: 12, backgroundColor: '#fafafa', padding: 16, marginBottom: 12 },
-  descResultRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  descStat: { flex: 1, alignItems: 'center' },
-  descStatValue: { fontSize: 22, fontWeight: '800' },
-  descStatLabel: { fontSize: 11, color: '#aaa', marginTop: 2 },
-  descDivider: { width: 1, height: 36, backgroundColor: '#e0e0e0' },
-  descZoneNote: { fontSize: 12, color: '#aaa', marginBottom: 14 },
+  segToggleRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  segToggleBtn: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8,
+    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fff',
+  },
+  segToggleText: { fontSize: 13, fontWeight: '600', color: '#555' },
 
+  segInputRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  segInputGroup: { flex: 2 },
+  segRepeatGroup: { flex: 1 },
+  segInput: {
+    borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 8,
+    padding: 10, fontSize: 15, backgroundColor: '#fff', marginBottom: 2,
+  },
+  segInputUnit: { fontSize: 11, color: '#bbb', textAlign: 'center' },
+
+  segZoneRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  segZoneBtn: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
+    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fff',
+  },
+  segZoneBtnNum: { fontSize: 13, fontWeight: '800', color: '#555' },
+  segZoneDetail: { fontSize: 11, color: '#aaa', marginTop: 7 },
+
+  addSegBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    justifyContent: 'center', paddingVertical: 12, marginBottom: 16,
+  },
+  addSegBtnText: { fontSize: 14, fontWeight: '700' },
+
+  segResultCard: { borderLeftWidth: 4, borderRadius: 12, backgroundColor: '#fafafa', padding: 16, marginBottom: 12 },
+  segResultTotals: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  segResultStat: { flex: 1, alignItems: 'center' },
+  segResultValue: { fontSize: 26, fontWeight: '800' },
+  segResultLabel: { fontSize: 11, color: '#aaa', marginTop: 2 },
+  divider: { width: 1, height: 36, backgroundColor: '#e0e0e0' },
+  segBreakRow: { paddingVertical: 6, borderTopWidth: 1, borderTopColor: '#efefef' },
+  segBreakLabel: { fontSize: 13, fontWeight: '600', color: '#333', marginBottom: 1 },
+  segBreakMeta: { fontSize: 12, color: '#aaa' },
+
+  // Suggestions (kcal mode)
+  suggestionCard: {
+    borderLeftWidth: 4, borderRadius: 12, backgroundColor: '#fafafa',
+    padding: 16, marginBottom: 12,
+  },
+  suggestionTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
+  zoneName: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 2 },
+  zoneHR: { fontSize: 12, color: '#aaa' },
+  duration: { fontSize: 26, fontWeight: '800' },
+  suggestionMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 14 },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  metaText: { fontSize: 13, color: '#555' },
+
+  planBtn: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#FC4C02', borderRadius: 8, padding: 10, alignItems: 'center' },
+  planBtnDisabled: { opacity: 0.5 },
+  planBtnText: { color: '#FC4C02', fontWeight: '700', fontSize: 14 },
+
+  // AI mode
   aiInfoBox: { flexDirection: 'row', gap: 8, backgroundColor: '#F0F0FF', borderRadius: 12, padding: 12, marginBottom: 20 },
   aiInfoText: { flex: 1, fontSize: 13, color: '#5C63D8', lineHeight: 18 },
   aiInput: {
@@ -642,23 +850,6 @@ const st = StyleSheet.create({
   aiKcalBadge: { backgroundColor: '#7C83FD22', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   aiKcalBadgeText: { fontSize: 12, fontWeight: '700', color: '#7C83FD' },
   aiResultText: { fontSize: 14, color: '#333', lineHeight: 21 },
-
-  suggestionCard: {
-    borderLeftWidth: 4, borderRadius: 12, backgroundColor: '#fafafa',
-    padding: 16, marginBottom: 12,
-  },
-  suggestionTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  zoneName: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 2 },
-  zoneHR: { fontSize: 12, color: '#aaa' },
-  duration: { fontSize: 26, fontWeight: '800' },
-
-  suggestionMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 14 },
-  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  metaText: { fontSize: 13, color: '#555' },
-
-  planBtn: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#FC4C02', borderRadius: 8, padding: 10, alignItems: 'center' },
-  planBtnDisabled: { opacity: 0.5 },
-  planBtnText: { color: '#FC4C02', fontWeight: '700', fontSize: 14 },
 
   emptyBox: { padding: 24, alignItems: 'center' },
   emptyText: { fontSize: 14, color: '#aaa', textAlign: 'center' },

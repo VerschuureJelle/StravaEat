@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
+import { notifyWorkoutSynced } from '../../lib/notifications'
 import type { Activity } from '../../types'
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
@@ -314,6 +315,20 @@ export default function ActivitiesScreen() {
         throw new Error(json.error ?? String(res.status))
       }
       await fetchActivities(period, anchor, monthsBack, customStart, customEnd)
+
+      // Notify if any kcal were burned today
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const [actsRes, profileRes] = await Promise.all([
+        supabase.from('activities').select('total_kcal').eq('user_id', session.user.id)
+          .gte('date', todayStr).not('total_kcal', 'is', null),
+        supabase.from('users').select('daily_kcal_target').eq('id', session.user.id).single(),
+      ])
+      const burnedToday = (actsRes.data ?? []).reduce((s: number, a: any) => s + (a.total_kcal ?? 0), 0)
+      if (burnedToday > 0) {
+        const baseline = profileRes.data?.daily_kcal_target ?? null
+        const newTarget = baseline != null ? baseline + Math.round(burnedToday) : null
+        notifyWorkoutSynced(burnedToday, newTarget)
+      }
     } catch (err: any) {
       Alert.alert('Sync failed', err.message ?? 'Something went wrong')
     } finally { setSyncing(false) }
