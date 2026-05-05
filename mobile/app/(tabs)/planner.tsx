@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
-  View, Text, TextInput, Pressable, ScrollView,
+  View, Text, TextInput, Pressable, ScrollView, Modal,
   StyleSheet, Alert, ActivityIndicator,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -14,6 +14,12 @@ import type { HeartRateZone, BurnSchemaPoint, SportEnergySetting, PlannedWorkout
 function localDate(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function normalizeType(type: string): string {
+  if (type === 'VirtualRide') return 'Ride'
+  if (type === 'VirtualRun') return 'Run'
+  return type
 }
 
 function getSportColor(type: string): string {
@@ -123,6 +129,7 @@ export default function PlannerScreen() {
   const [aiLoading, setAiLoading] = useState(false)
 
   const [saving, setSaving] = useState(false)
+  const [sportDropdownOpen, setSportDropdownOpen] = useState(false)
 
   useEffect(() => { load() }, [])
 
@@ -133,13 +140,14 @@ export default function PlannerScreen() {
 
     const todayStr = localDate()
 
-    const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes] = await Promise.all([
+    const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes, userSportsRes] = await Promise.all([
       supabase.from('users').select('weight_kg').eq('id', user.id).single(),
       supabase.from('activities').select('type, distance_m, duration_sec').eq('user_id', user.id),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
       supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
       supabase.from('planned_workouts').select('*').eq('user_id', user.id).eq('planned_for', todayStr).order('created_at'),
+      supabase.from('user_sports').select('*').eq('user_id', user.id).order('sort_order'),
     ])
 
     setWeightKg(profileRes.data?.weight_kg ?? null)
@@ -148,17 +156,25 @@ export default function PlannerScreen() {
     setSportSettings(settingsRes.data ?? [])
     setTodayPlans(plansRes.data ?? [])
 
-    const sportSet = new Set<string>(
-      (activitiesRes.data ?? []).map((a: any) => a.type).filter(Boolean),
-    )
-    const sportList = [...sportSet].sort()
+    // Build sport list: prefer user_sports, fall back to normalized activity types (excluding Virtual*)
+    const userSportNames: string[] = (userSportsRes.data ?? []).map((s: any) => s.sport_name)
+    let sportList: string[]
+    if (userSportNames.length > 0) {
+      sportList = userSportNames
+    } else {
+      const normalized = (activitiesRes.data ?? [])
+        .map((a: any) => normalizeType(a.type))
+        .filter((t: string) => t.length > 0 && !t.startsWith('Virtual'))
+      sportList = [...new Set<string>(normalized)].sort()
+    }
     setSports(sportList)
-    if (sportList.length > 0) setSelectedSport(sportList[0])
+    setSelectedSport(prev => (sportList.includes(prev) ? prev : (sportList[0] ?? '')))
 
+    // Avg speed per planner sport (merge VirtualRide→Ride, VirtualRun→Run)
     const speedMap: Record<string, number> = {}
-    for (const sport of sportSet) {
+    for (const sport of sportList) {
       const acts = (activitiesRes.data ?? []).filter(
-        (a: any) => a.type === sport && a.distance_m > 0 && a.duration_sec > 0,
+        (a: any) => normalizeType(a.type) === sport && a.distance_m > 0 && a.duration_sec > 0,
       )
       if (acts.length > 0) {
         const totalDist = acts.reduce((s: number, a: any) => s + a.distance_m, 0)
@@ -170,10 +186,14 @@ export default function PlannerScreen() {
   }
 
   function getKcalPerHour(zone: HeartRateZone): number {
+    // Match by exact sport name or by virtual equivalent (e.g. "Ride" matches "VirtualRide" settings)
     const setting = sportSettings.find(s => s.sport_type === selectedSport)
+      ?? sportSettings.find(s => normalizeType(s.sport_type) === selectedSport)
     const method = setting?.method ?? 'standard'
     const effectiveSport = setting?.linked_sport_type ?? selectedSport
-    const schemaPts = burnSchema.filter(p => p.sport_type === effectiveSport)
+    const schemaPts = burnSchema.filter(p =>
+      p.sport_type === effectiveSport || normalizeType(p.sport_type) === effectiveSport,
+    )
     const useCustom = method === 'custom' && schemaPts.length >= 2
     const midHR = Math.round((zone.min_bpm + zone.max_bpm) / 2)
     return useCustom
@@ -414,18 +434,40 @@ export default function PlannerScreen() {
 
         {/* Sport selector */}
         <Text style={st.label}>Sport</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={st.chipRow} contentContainerStyle={st.chipContent}>
-          {sports.map(sport => (
-            <Pressable
-              key={sport}
-              style={[st.chip, selectedSport === sport && { backgroundColor: getSportColor(sport), borderColor: getSportColor(sport) }]}
-              onPress={() => { setSelectedSport(sport); setCalculated(false); setSegResult(null) }}
-            >
-              <MaterialCommunityIcons name={getSportIcon(sport) as any} size={14} color={selectedSport === sport ? '#fff' : getSportColor(sport)} />
-              <Text style={[st.chipText, selectedSport === sport && st.chipTextActive]}>{sport}</Text>
+        <Pressable style={[st.sportDropBtn, { borderColor: sportColor }]} onPress={() => setSportDropdownOpen(true)}>
+          <View style={st.sportDropLeft}>
+            <MaterialCommunityIcons name={getSportIcon(selectedSport) as any} size={20} color={sportColor} />
+            <Text style={st.sportDropText}>{selectedSport || 'Select sport…'}</Text>
+          </View>
+          <Ionicons name="chevron-down" size={18} color="#888" />
+        </Pressable>
+
+        {/* Sport dropdown modal */}
+        <Modal visible={sportDropdownOpen} transparent animationType="fade">
+          <Pressable style={st.modalOverlay} onPress={() => setSportDropdownOpen(false)}>
+            <Pressable style={st.sportSheet} onPress={e => e.stopPropagation()}>
+              <Text style={st.sportSheetTitle}>Select sport</Text>
+              <ScrollView>
+                {sports.map(sport => (
+                  <Pressable
+                    key={sport}
+                    style={st.sportSheetRow}
+                    onPress={() => {
+                      setSelectedSport(sport)
+                      setSportDropdownOpen(false)
+                      setCalculated(false)
+                      setSegResult(null)
+                    }}
+                  >
+                    <MaterialCommunityIcons name={getSportIcon(sport) as any} size={20} color={getSportColor(sport)} />
+                    <Text style={[st.sportSheetRowText, selectedSport === sport && { color: '#FC4C02', fontWeight: '700' }]}>{sport}</Text>
+                    {selectedSport === sport && <Ionicons name="checkmark" size={16} color="#FC4C02" />}
+                  </Pressable>
+                ))}
+              </ScrollView>
             </Pressable>
-          ))}
-        </ScrollView>
+          </Pressable>
+        </Modal>
 
         {/* Mode selector */}
         <View style={st.modeRow}>
@@ -733,15 +775,26 @@ const st = StyleSheet.create({
   planMeta: { fontSize: 12, color: '#888', marginBottom: 2 },
   planDesc: { fontSize: 12, color: '#aaa', lineHeight: 17 },
 
-  chipRow: { marginBottom: 24 },
-  chipContent: { gap: 8, paddingRight: 8 },
-  chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderRadius: 20, borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
+  sportDropBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderWidth: 2, borderRadius: 12, padding: 14, backgroundColor: '#fafafa', marginBottom: 24,
   },
-  chipText: { fontSize: 13, fontWeight: '600', color: '#555' },
-  chipTextActive: { color: '#fff' },
+  sportDropLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sportDropText: { fontSize: 16, fontWeight: '700', color: '#111' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sportSheet: {
+    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingTop: 8, paddingBottom: 40, maxHeight: '60%',
+  },
+  sportSheetTitle: {
+    fontSize: 12, fontWeight: '700', color: '#aaa', textTransform: 'uppercase',
+    letterSpacing: 0.8, paddingHorizontal: 20, paddingVertical: 12,
+  },
+  sportSheetRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingHorizontal: 20, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#f5f5f5',
+  },
+  sportSheetRowText: { fontSize: 16, color: '#222', flex: 1 },
 
   modeRow: { flexDirection: 'row', gap: 8, marginBottom: 28 },
   modeBtn: {

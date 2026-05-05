@@ -26,6 +26,12 @@ const PERIOD_OPTIONS: { label: string; value: Period }[] = [
 
 // ─── sport helpers ─────────────────────────────────────────────────────────
 
+function normalizeType(type: string): string {
+  if (type === 'VirtualRide') return 'Ride'
+  if (type === 'VirtualRun') return 'Run'
+  return type
+}
+
 function getSportColor(type: string): string {
   if (/swim/i.test(type)) return '#29B6F6'
   if (/run|jog/i.test(type)) return '#EF5350'
@@ -133,11 +139,12 @@ function SummaryCard({ activities }: { activities: Activity[] }) {
   if (activities.length === 0) return null
   const byType: Record<string, { n: number; sec: number; distM: number; elevM: number }> = {}
   for (const a of activities) {
-    if (!byType[a.type]) byType[a.type] = { n: 0, sec: 0, distM: 0, elevM: 0 }
-    byType[a.type].n++
-    byType[a.type].sec += a.duration_sec
-    byType[a.type].distM += a.distance_m ?? 0
-    byType[a.type].elevM += a.elevation_gain_m ?? 0
+    const key = normalizeType(a.type)
+    if (!byType[key]) byType[key] = { n: 0, sec: 0, distM: 0, elevM: 0 }
+    byType[key].n++
+    byType[key].sec += a.duration_sec
+    byType[key].distM += a.distance_m ?? 0
+    byType[key].elevM += a.elevation_gain_m ?? 0
   }
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={sumSt.row}>
@@ -491,7 +498,7 @@ export default function ActivitiesScreen() {
                 <View style={st.actMetaRow}>
                   <MaterialCommunityIcons name={icon as any} size={12} color={color} style={{ marginRight: 4 }} />
                   <Text style={st.actMeta}>
-                    {a.type}{a.distance_m ? ` · ${formatDist(a.type, a.distance_m)}` : ''} · {formatDuration(a.duration_sec)}
+                    {normalizeType(a.type)}{a.distance_m ? ` · ${formatDist(a.type, a.distance_m)}` : ''} · {formatDuration(a.duration_sec)}
                   </Text>
                 </View>
               </View>

@@ -130,3 +130,10 @@ export interface PlannedWorkout {
   distance_m: number | null
   workout_description: string | null
 }
+
+export interface UserSport {
+  id: string
+  user_id: string
+  sport_name: string
+  sort_order: number
+}

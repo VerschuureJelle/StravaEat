@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
   ActivityIndicator, Modal,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useFocusEffect } from 'expo-router'
 import * as Location from 'expo-location'
 import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
@@ -209,10 +210,11 @@ export default function HomeScreen() {
   const totalTarget = dailyTarget != null ? dailyTarget + Math.round(burnedToday) : null
   const projectedTotal = totalTarget != null ? totalTarget + plannedKcalToday : null
 
-  useEffect(() => {
-    loadProfileAndActivities()
-    loadWeather()
-  }, [])
+  // Weather only loads once — GPS is slow and battery-intensive
+  useEffect(() => { loadWeather() }, [])
+
+  // Reload calorie data + planned workouts whenever this tab comes into focus
+  useFocusEffect(useCallback(() => { loadProfileAndActivities() }, []))
 
   async function loadProfileAndActivities() {
     const { data: { user } } = await supabase.auth.getUser()

@@ -5,18 +5,42 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
+import { Ionicons } from '@expo/vector-icons'
 import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
-import type { UserProfile, HeartRateZone } from '../../types'
+import type { UserProfile, HeartRateZone, MealTemplate, UserSport } from '../../types'
 
 const STRAVA_CLIENT_ID = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID!
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
 const CALLBACK_URL = `${SUPABASE_URL}/functions/v1/strava-callback`
 
-type SettingsTab = 'profile' | 'zones'
+const COMMON_SPORTS = [
+  'Run', 'Ride', 'Swim', 'Walk', 'Strength Training',
+  'Yoga', 'Rowing', 'Hiking', 'Nordic Ski', 'Kayaking',
+]
+
+const MEAL_DEFAULTS: { name: string; time: string }[] = [
+  { name: 'Breakfast', time: '07:00' },
+  { name: 'Morning snack', time: '10:00' },
+  { name: 'Lunch', time: '12:30' },
+  { name: 'Afternoon snack', time: '15:30' },
+  { name: 'Dinner', time: '18:30' },
+  { name: 'Evening snack', time: '20:30' },
+  { name: 'Late snack', time: '21:30' },
+  { name: 'Snack', time: '12:00' },
+]
+
+type SettingsTab = 'profile' | 'zones' | 'meals'
 type SportMode = 'standard' | 'custom' | 'linked'
 interface SportConfig { mode: SportMode; linkedTo: string | null }
+interface DraftMeal { meal_index: number; name: string; scheduled_time: string }
+
+function normalizeType(type: string): string {
+  if (type === 'VirtualRide') return 'Ride'
+  if (type === 'VirtualRun') return 'Run'
+  return type
+}
 
 export default function SettingsScreen() {
   const router = useRouter()
@@ -32,10 +56,20 @@ export default function SettingsScreen() {
   const [zones, setZones] = useState<HeartRateZone[]>([])
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null)
 
-  // Sport energy
-  const [sports, setSports] = useState<string[]>([])
+  // Sport energy (based on actual activity types from Strava)
+  const [activitySports, setActivitySports] = useState<string[]>([])
   const [sportConfigs, setSportConfigs] = useState<Record<string, SportConfig>>({})
   const [savingConfig, setSavingConfig] = useState<string | null>(null)
+
+  // Planner sports
+  const [userSports, setUserSports] = useState<UserSport[]>([])
+  const [newSportInput, setNewSportInput] = useState('')
+
+  // Meal plan
+  const [draftMeals, setDraftMeals] = useState<DraftMeal[]>([
+    { meal_index: 0, name: 'Breakfast', scheduled_time: '07:00' },
+  ])
+  const [savingMeals, setSavingMeals] = useState(false)
 
   const isDirty = JSON.stringify(editedProfile) !== JSON.stringify(savedProfile)
 
@@ -50,11 +84,13 @@ export default function SettingsScreen() {
     if (!user) return
     setUserId(user.id)
 
-    const [profileRes, zonesRes, activitiesRes, settingsRes] = await Promise.all([
+    const [profileRes, zonesRes, activitiesRes, settingsRes, mealRes, userSportsRes] = await Promise.all([
       supabase.from('users').select('*').eq('id', user.id).single(),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('activities').select('type').eq('user_id', user.id),
       supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
+      supabase.from('meal_templates').select('*').eq('user_id', user.id).order('meal_index'),
+      supabase.from('user_sports').select('*').eq('user_id', user.id).order('sort_order'),
     ])
 
     if (profileRes.data) {
@@ -63,10 +99,11 @@ export default function SettingsScreen() {
     }
     setZones(zonesRes.data ?? [])
 
+    // Activity sports for energy method section (keep actual Strava types)
     const sportSet = new Set<string>(
       (activitiesRes.data ?? []).map((a: { type: string }) => a.type).filter(Boolean),
     )
-    setSports([...sportSet].sort())
+    setActivitySports([...sportSet].sort())
 
     const configs: Record<string, SportConfig> = {}
     for (const s of (settingsRes.data ?? [])) {
@@ -76,6 +113,30 @@ export default function SettingsScreen() {
       configs[s.sport_type] = { mode, linkedTo: s.linked_sport_type ?? null }
     }
     setSportConfigs(configs)
+
+    // Meal templates
+    const meals = (mealRes.data ?? []) as MealTemplate[]
+    if (meals.length > 0) {
+      setDraftMeals(meals.map(m => ({ meal_index: m.meal_index, name: m.name, scheduled_time: m.scheduled_time })))
+    }
+
+    // Planner sports — auto-populate from activities (normalized, no Virtual*) if empty
+    let sportsList = (userSportsRes.data ?? []) as UserSport[]
+    if (sportsList.length === 0 && (activitiesRes.data ?? []).length > 0) {
+      const actTypes = [...new Set<string>(
+        (activitiesRes.data ?? [])
+          .map((a: { type: string }) => normalizeType(a.type))
+          .filter((t: string) => t.length > 0 && !t.startsWith('Virtual')),
+      )].sort()
+      if (actTypes.length > 0) {
+        const toInsert = actTypes.map((name, i) => ({ user_id: user.id, sport_name: name, sort_order: i }))
+        const { data: inserted } = await supabase.from('user_sports')
+          .upsert(toInsert, { onConflict: 'user_id,sport_name' })
+          .select()
+        sportsList = (inserted ?? []) as UserSport[]
+      }
+    }
+    setUserSports(sportsList)
   }
 
   async function handleStravaDeepLink(event: { url: string }) {
@@ -137,6 +198,56 @@ export default function SettingsScreen() {
     setSportConfigs(prev => ({ ...prev, [sport]: { mode, linkedTo: linked_sport_type } }))
   }
 
+  async function addPlannerSport(name: string) {
+    const trimmed = name.trim()
+    if (!userId || !trimmed || userSports.some(s => s.sport_name === trimmed)) return
+    const { data, error } = await supabase.from('user_sports').insert({
+      user_id: userId,
+      sport_name: trimmed,
+      sort_order: userSports.length,
+    }).select().single()
+    if (error) { Alert.alert('Error', error.message); return }
+    setUserSports(prev => [...prev, data as UserSport])
+    setNewSportInput('')
+  }
+
+  async function removePlannerSport(id: string) {
+    await supabase.from('user_sports').delete().eq('id', id)
+    setUserSports(prev => prev.filter(s => s.id !== id))
+  }
+
+  async function saveMeals() {
+    if (!userId) return
+    setSavingMeals(true)
+    const toSave = draftMeals.map((m, i) => ({
+      user_id: userId!,
+      meal_index: i,
+      name: m.name || `Meal ${i + 1}`,
+      scheduled_time: m.scheduled_time || '12:00',
+    }))
+    await supabase.from('meal_templates').delete().eq('user_id', userId).gte('meal_index', draftMeals.length)
+    const { error } = await supabase.from('meal_templates').upsert(toSave, { onConflict: 'user_id,meal_index' })
+    setSavingMeals(false)
+    if (error) { Alert.alert('Error', error.message); return }
+    Alert.alert('Saved', 'Meal plan saved.')
+  }
+
+  function addMeal() {
+    if (draftMeals.length >= 8) return
+    const i = draftMeals.length
+    const def = MEAL_DEFAULTS[i] ?? { name: `Meal ${i + 1}`, time: '12:00' }
+    setDraftMeals(prev => [...prev, { meal_index: i, name: def.name, scheduled_time: def.time }])
+  }
+
+  function removeMeal() {
+    if (draftMeals.length <= 1) return
+    setDraftMeals(prev => prev.slice(0, -1))
+  }
+
+  function updateDraftMeal(index: number, field: 'name' | 'scheduled_time', value: string) {
+    setDraftMeals(prev => prev.map((m, i) => i === index ? { ...m, [field]: value } : m))
+  }
+
   const profileField = (label: string, key: keyof UserProfile, numeric?: boolean) => (
     <View key={key} style={styles.fieldGroup}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -155,14 +266,18 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.container}>
       {/* Segmented control */}
       <View style={styles.segRow}>
-        {(['profile', 'zones'] as const).map(tab => (
+        {([
+          { key: 'profile', label: 'Profile' },
+          { key: 'zones', label: 'HR Zones' },
+          { key: 'meals', label: 'Meal Plan' },
+        ] as const).map(tab => (
           <Pressable
-            key={tab}
-            style={[styles.segBtn, activeTab === tab && styles.segBtnActive]}
-            onPress={() => setActiveTab(tab)}
+            key={tab.key}
+            style={[styles.segBtn, activeTab === tab.key && styles.segBtnActive]}
+            onPress={() => setActiveTab(tab.key)}
           >
-            <Text style={[styles.segText, activeTab === tab && styles.segTextActive]}>
-              {tab === 'profile' ? 'Personal Info' : 'Heart Rate Zones'}
+            <Text style={[styles.segText, activeTab === tab.key && styles.segTextActive]}>
+              {tab.label}
             </Text>
           </Pressable>
         ))}
@@ -170,7 +285,7 @@ export default function SettingsScreen() {
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
-        {/* ── Personal Info ──────────────────────────────── */}
+        {/* ── Profile ──────────────────────────────────────── */}
         {activeTab === 'profile' && (
           <>
             <View style={styles.stravaRow}>
@@ -209,10 +324,9 @@ export default function SettingsScreen() {
           </>
         )}
 
-        {/* ── Heart Rate Zones ───────────────────────────── */}
+        {/* ── HR Zones ─────────────────────────────────────── */}
         {activeTab === 'zones' && (
           <>
-            {/* Zone editing */}
             <Text style={styles.sectionHeader}>Zones</Text>
             <Text style={styles.sectionNote}>Changes apply to future syncs only.</Text>
 
@@ -228,8 +342,8 @@ export default function SettingsScreen() {
               />
             ))}
 
-            {/* Energy per sport */}
-            {sports.length > 0 && (
+            {/* Energy method per sport */}
+            {activitySports.length > 0 && (
               <>
                 <Text style={[styles.sectionHeader, { marginTop: 32 }]}>Energy method per sport</Text>
                 <Text style={styles.sectionNote}>
@@ -237,16 +351,15 @@ export default function SettingsScreen() {
                   "Same as" shares another sport's schema.
                 </Text>
 
-                {sports.map(sport => {
+                {activitySports.map(sport => {
                   const config = sportConfigs[sport] ?? { mode: 'standard', linkedTo: null }
                   const isSaving = savingConfig === sport
-                  const otherSports = sports.filter(s => s !== sport)
+                  const otherSports = activitySports.filter(s => s !== sport)
 
                   return (
                     <View key={sport} style={styles.sportCard}>
                       <Text style={styles.sportName}>{sport}</Text>
 
-                      {/* Mode selector */}
                       <View style={styles.modeRow}>
                         {(['standard', 'custom', 'linked'] as SportMode[]).map(mode => (
                           <Pressable
@@ -262,7 +375,6 @@ export default function SettingsScreen() {
                         ))}
                       </View>
 
-                      {/* Custom: navigate to schema editor */}
                       {config.mode === 'custom' && (
                         <Pressable
                           style={styles.editSchemaBtn}
@@ -272,7 +384,6 @@ export default function SettingsScreen() {
                         </Pressable>
                       )}
 
-                      {/* Linked: pick which sport */}
                       {config.mode === 'linked' && otherSports.length > 0 && (
                         <>
                           <Text style={styles.linkLabel}>Link to:</Text>
@@ -305,6 +416,117 @@ export default function SettingsScreen() {
                 })}
               </>
             )}
+
+            {/* Planner sports */}
+            <Text style={[styles.sectionHeader, { marginTop: 32 }]}>Planner sports</Text>
+            <Text style={styles.sectionNote}>
+              Choose which sports appear in the workout planner dropdown.
+            </Text>
+
+            <View style={styles.tagRow}>
+              {userSports.map(us => (
+                <View key={us.id} style={styles.sportTag}>
+                  <Text style={styles.sportTagText}>{us.sport_name}</Text>
+                  <Pressable onPress={() => removePlannerSport(us.id)} hitSlop={8}>
+                    <Ionicons name="close" size={14} color="#888" />
+                  </Pressable>
+                </View>
+              ))}
+              {userSports.length === 0 && (
+                <Text style={[styles.sectionNote, { marginBottom: 0 }]}>No sports yet. Add from presets below.</Text>
+              )}
+            </View>
+
+            <Text style={styles.addLabel}>Add from presets:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
+                {COMMON_SPORTS.filter(s => !userSports.some(us => us.sport_name === s)).map(sport => (
+                  <Pressable key={sport} style={styles.presetChip} onPress={() => addPlannerSport(sport)}>
+                    <Ionicons name="add" size={13} color="#FC4C02" />
+                    <Text style={styles.presetChipText}>{sport}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+
+            <View style={styles.addSportRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                value={newSportInput}
+                onChangeText={setNewSportInput}
+                placeholder="Custom sport name…"
+                returnKeyType="done"
+                onSubmitEditing={() => addPlannerSport(newSportInput)}
+              />
+              <Pressable style={styles.addSportBtn} onPress={() => addPlannerSport(newSportInput)}>
+                <Text style={styles.addSportBtnText}>Add</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
+
+        {/* ── Meal Plan ────────────────────────────────────── */}
+        {activeTab === 'meals' && (
+          <>
+            <Text style={styles.sectionHeader}>Meal plan</Text>
+            <Text style={styles.sectionNote}>
+              Set your daily meal schedule. These names and times will be used to organize your food log.
+            </Text>
+
+            {/* Meal count control */}
+            <View style={styles.mealCountRow}>
+              <Text style={styles.mealCountLabel}>Meals per day</Text>
+              <View style={styles.mealCountControl}>
+                <Pressable
+                  style={[styles.mealCountBtn, draftMeals.length <= 1 && styles.mealCountBtnDisabled]}
+                  onPress={removeMeal}
+                  disabled={draftMeals.length <= 1}
+                >
+                  <Ionicons name="remove" size={20} color={draftMeals.length <= 1 ? '#ccc' : '#333'} />
+                </Pressable>
+                <Text style={styles.mealCountNum}>{draftMeals.length}</Text>
+                <Pressable
+                  style={[styles.mealCountBtn, draftMeals.length >= 8 && styles.mealCountBtnDisabled]}
+                  onPress={addMeal}
+                  disabled={draftMeals.length >= 8}
+                >
+                  <Ionicons name="add" size={20} color={draftMeals.length >= 8 ? '#ccc' : '#333'} />
+                </Pressable>
+              </View>
+            </View>
+
+            {draftMeals.map((meal, i) => (
+              <View key={i} style={styles.mealCard}>
+                <Text style={styles.mealCardTitle}>Meal {i + 1}</Text>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Name</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={meal.name}
+                    onChangeText={v => updateDraftMeal(i, 'name', v)}
+                    placeholder={MEAL_DEFAULTS[i]?.name ?? `Meal ${i + 1}`}
+                  />
+                </View>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Time (HH:MM)</Text>
+                  <TextInput
+                    style={[styles.input, { marginBottom: 0 }]}
+                    value={meal.scheduled_time}
+                    onChangeText={v => updateDraftMeal(i, 'scheduled_time', v)}
+                    placeholder={MEAL_DEFAULTS[i]?.time ?? '12:00'}
+                    keyboardType="numbers-and-punctuation"
+                  />
+                </View>
+              </View>
+            ))}
+
+            <Pressable
+              style={[styles.saveBtn, savingMeals && styles.saveBtnDisabled]}
+              onPress={saveMeals}
+              disabled={savingMeals}
+            >
+              <Text style={styles.saveBtnText}>{savingMeals ? 'Saving…' : 'Save meal plan'}</Text>
+            </Pressable>
           </>
         )}
       </ScrollView>
@@ -367,14 +589,13 @@ function ZoneCard({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
 
-  // Segmented control
   segRow: {
     flexDirection: 'row', margin: 16, marginBottom: 0,
     backgroundColor: '#f0f0f0', borderRadius: 10, padding: 3,
   },
   segBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
   segBtnActive: { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
-  segText: { fontSize: 13, fontWeight: '600', color: '#888' },
+  segText: { fontSize: 12, fontWeight: '600', color: '#888' },
   segTextActive: { color: '#111' },
 
   content: { padding: 16, paddingBottom: 60 },
@@ -420,7 +641,7 @@ const styles = StyleSheet.create({
     padding: 10, fontSize: 14, backgroundColor: '#fff', marginBottom: 10,
   },
 
-  // Sport cards
+  // Sport energy cards
   sportCard: {
     borderWidth: 1, borderColor: '#ececec', borderRadius: 12,
     padding: 14, marginBottom: 10,
@@ -434,9 +655,7 @@ const styles = StyleSheet.create({
   modeBtnActive: { backgroundColor: '#FC4C02', borderColor: '#FC4C02' },
   modeBtnText: { fontSize: 12, fontWeight: '600', color: '#888' },
   modeBtnTextActive: { color: '#fff' },
-  editSchemaBtn: {
-    backgroundColor: '#FFF0EB', borderRadius: 8, padding: 11, alignItems: 'center',
-  },
+  editSchemaBtn: { backgroundColor: '#FFF0EB', borderRadius: 8, padding: 11, alignItems: 'center' },
   editSchemaBtnText: { color: '#FC4C02', fontWeight: '700', fontSize: 13 },
   linkLabel: { fontSize: 11, fontWeight: '700', color: '#aaa', marginBottom: 8, textTransform: 'uppercase' },
   chipRow: { marginBottom: 8 },
@@ -449,4 +668,42 @@ const styles = StyleSheet.create({
   chipTextActive: { color: '#fff' },
   viewSchemaBtn: { paddingTop: 4 },
   viewSchemaBtnText: { color: '#FC4C02', fontSize: 13, fontWeight: '600' },
+
+  // Planner sports
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  sportTag: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#f5f5f5', borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#ebebeb',
+  },
+  sportTagText: { fontSize: 13, fontWeight: '600', color: '#444' },
+  addLabel: { fontSize: 11, fontWeight: '700', color: '#aaa', marginBottom: 8, textTransform: 'uppercase' },
+  presetChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#FFF0EB', borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#FC4C02',
+  },
+  presetChipText: { fontSize: 13, fontWeight: '600', color: '#FC4C02' },
+  addSportRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  addSportBtn: { backgroundColor: '#FC4C02', paddingHorizontal: 16, paddingVertical: 11, borderRadius: 8 },
+  addSportBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+
+  // Meal plan
+  mealCountRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: '#f8f8f8', borderRadius: 12, padding: 16, marginBottom: 20,
+  },
+  mealCountLabel: { fontSize: 15, fontWeight: '600', color: '#333' },
+  mealCountControl: { flexDirection: 'row', alignItems: 'center', gap: 18 },
+  mealCountBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#e8e8e8',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mealCountBtnDisabled: { opacity: 0.35 },
+  mealCountNum: { fontSize: 22, fontWeight: '800', color: '#111', minWidth: 24, textAlign: 'center' },
+  mealCard: { backgroundColor: '#f8f8f8', borderRadius: 12, padding: 14, marginBottom: 12 },
+  mealCardTitle: {
+    fontSize: 11, fontWeight: '700', color: '#aaa',
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10,
+  },
 })
