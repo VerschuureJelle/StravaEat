@@ -32,6 +32,13 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="restaurant-outline" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="coach"
+        options={{
+          title: 'Coach',
+          tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
+        }}
+      />
       <Tabs.Screen name="meals" options={{ href: null }} />
       <Tabs.Screen
         name="settings"

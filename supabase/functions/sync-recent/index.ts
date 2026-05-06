@@ -205,6 +205,47 @@ Deno.serve(async (req) => {
     })
   }
 
+  // Auto-pair synced activities with pending training program sessions
+  try {
+    const { data: programs } = await supabase
+      .from('training_programs')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('active', true)
+
+    if (programs && programs.length > 0) {
+      const programIds = programs.map((p: any) => p.id)
+
+      const { data: pendingSessions } = await supabase
+        .from('training_program_sessions')
+        .select('id, session_name')
+        .in('program_id', programIds)
+        .eq('completed', false)
+
+      if (pendingSessions && pendingSessions.length > 0) {
+        for (const act of stravaActivities) {
+          const actName = (act.name as string).toLowerCase().trim()
+          for (const session of pendingSessions as { id: string; session_name: string }[]) {
+            const sessName = session.session_name.toLowerCase().trim()
+            if (actName === sessName || actName.includes(sessName)) {
+              await supabase
+                .from('training_program_sessions')
+                .update({
+                  completed: true,
+                  completed_at: act.start_date,
+                  strava_activity_id: String(act.id),
+                })
+                .eq('id', session.id)
+              break
+            }
+          }
+        }
+      }
+    }
+  } catch (_) {
+    // Activity pairing is non-critical; ignore errors
+  }
+
   return new Response(JSON.stringify({ synced: results.length, results }), {
     headers: { 'Content-Type': 'application/json' },
   })

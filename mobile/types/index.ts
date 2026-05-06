@@ -137,3 +137,34 @@ export interface UserSport {
   sport_name: string
   sort_order: number
 }
+
+export type ProgramType = '5k' | '10k' | 'half_marathon' | 'marathon'
+
+export interface TrainingProgram {
+  id: string
+  user_id: string
+  program_type: ProgramType
+  weeks: number
+  start_date: string
+  starting_km: number
+  starting_pace_sec_km: number
+  calibration_notes: string | null
+  active: boolean
+  created_at: string
+}
+
+export interface TrainingProgramSession {
+  id: string
+  program_id: string
+  week_number: number
+  day_number: number
+  session_name: string
+  description: string
+  target_km: number | null
+  target_pace_sec_km: number | null
+  estimated_kcal: number | null
+  completed: boolean
+  completed_at: string | null
+  strava_activity_id: string | null
+  planned_for: string | null
+}

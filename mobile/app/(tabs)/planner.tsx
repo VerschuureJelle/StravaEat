@@ -7,7 +7,10 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
-import type { HeartRateZone, BurnSchemaPoint, SportEnergySetting, PlannedWorkout } from '../../types'
+import type {
+  HeartRateZone, BurnSchemaPoint, SportEnergySetting, PlannedWorkout,
+  TrainingProgram, TrainingProgramSession, ProgramType,
+} from '../../types'
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -43,6 +46,26 @@ function formatDuration(min: number): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
+function formatPace(secPerKm: number | null | undefined): string {
+  if (!secPerKm) return ''
+  const m = Math.floor(secPerKm / 60)
+  const s = secPerKm % 60
+  return `${m}:${String(s).padStart(2, '0')}/km`
+}
+
+function sessionDate(startDate: string, weekNum: number, dayNum: number): string {
+  const d = new Date(startDate)
+  d.setDate(d.getDate() + (weekNum - 1) * 7 + (dayNum - 1))
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function currentProgramWeek(startDate: string): number {
+  const start = new Date(startDate)
+  const now = new Date()
+  const diffDays = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+  return Math.max(1, Math.floor(diffDays / 7) + 1)
+}
+
 function interpolateKcalPerHour(hr: number, pts: BurnSchemaPoint[]): number {
   if (pts.length === 0) return 0
   const sorted = [...pts].sort((a, b) => a.hr_value - b.hr_value)
@@ -61,7 +84,7 @@ function interpolateKcalPerHour(hr: number, pts: BurnSchemaPoint[]): number {
 
 // ─── types ─────────────────────────────────────────────────────────────────
 
-type PlannerMode = 'kcal' | 'build' | 'ai'
+type PlannerMode = 'kcal' | 'build' | 'ai' | 'programs'
 
 interface ZoneSuggestion {
   zone: HeartRateZone
@@ -91,6 +114,27 @@ interface AiResult {
   estimated_kcal: number | null
 }
 
+interface GeneratedSession {
+  week: number
+  day: number
+  session_name: string
+  description: string
+  target_km: number | null
+  target_pace_sec_km: number | null
+  estimated_kcal: number | null
+}
+
+// ─── program config ─────────────────────────────────────────────────────────
+
+const PROGRAM_CONFIG: Record<ProgramType, { label: string; minWeeks: number; maxWeeks: number; emoji: string; color: string }> = {
+  '5k':            { label: '5K',           minWeeks: 4,  maxWeeks: 12, emoji: '🏃', color: '#EF5350' },
+  '10k':           { label: '10K',          minWeeks: 6,  maxWeeks: 14, emoji: '🏃', color: '#FF8A65' },
+  'half_marathon': { label: 'Half Marathon', minWeeks: 8,  maxWeeks: 16, emoji: '🏅', color: '#AB47BC' },
+  'marathon':      { label: 'Marathon',      minWeeks: 16, maxWeeks: 32, emoji: '🏆', color: '#5C6BC0' },
+}
+
+const PROGRAM_TYPES: ProgramType[] = ['5k', '10k', 'half_marathon', 'marathon']
+
 // ─── screen ────────────────────────────────────────────────────────────────
 
 export default function PlannerScreen() {
@@ -105,11 +149,9 @@ export default function PlannerScreen() {
   const [sportSettings, setSportSettings] = useState<SportEnergySetting[]>([])
   const [avgSpeedBySport, setAvgSpeedBySport] = useState<Record<string, number>>({})
 
-  // Today's saved plans
   const [todayPlans, setTodayPlans] = useState<PlannedWorkout[]>([])
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null)
 
-  // Mode
   const [mode, setMode] = useState<PlannerMode>('kcal')
 
   // kcal mode
@@ -117,7 +159,7 @@ export default function PlannerScreen() {
   const [suggestions, setSuggestions] = useState<ZoneSuggestion[]>([])
   const [calculated, setCalculated] = useState(false)
 
-  // build mode (multi-segment)
+  // build mode
   const [segments, setSegments] = useState<WorkoutSegment[]>([
     { id: '1', inputType: 'distance', value: '', zoneId: '', repeats: '1' },
   ])
@@ -127,6 +169,23 @@ export default function PlannerScreen() {
   const [aiInput, setAiInput] = useState('')
   const [aiResult, setAiResult] = useState<AiResult | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
+
+  // programs mode — wizard
+  const [programType, setProgramType] = useState<ProgramType>('5k')
+  const [programWeeks, setProgramWeeks] = useState(8)
+  const [startingKm, setStartingKm] = useState('')
+  const [startingPaceMin, setStartingPaceMin] = useState('')
+  const [startingPaceSec, setStartingPaceSec] = useState('')
+  const [calibrationNotes, setCalibrationNotes] = useState('')
+  const [generatedSessions, setGeneratedSessions] = useState<GeneratedSession[]>([])
+  const [programGenerating, setProgramGenerating] = useState(false)
+  const [programSaving, setProgramSaving] = useState(false)
+
+  // programs mode — active program
+  const [activeProgram, setActiveProgram] = useState<TrainingProgram | null>(null)
+  const [programSessions, setProgramSessions] = useState<TrainingProgramSession[]>([])
+  const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set())
+  const [togglingSession, setTogglingSession] = useState<string | null>(null)
 
   const [saving, setSaving] = useState(false)
   const [sportDropdownOpen, setSportDropdownOpen] = useState(false)
@@ -140,7 +199,7 @@ export default function PlannerScreen() {
 
     const todayStr = localDate()
 
-    const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes, userSportsRes] = await Promise.all([
+    const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes, userSportsRes, programRes] = await Promise.all([
       supabase.from('users').select('weight_kg').eq('id', user.id).single(),
       supabase.from('activities').select('type, distance_m, duration_sec').eq('user_id', user.id),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
@@ -148,6 +207,7 @@ export default function PlannerScreen() {
       supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
       supabase.from('planned_workouts').select('*').eq('user_id', user.id).eq('planned_for', todayStr).order('created_at'),
       supabase.from('user_sports').select('*').eq('user_id', user.id).order('sort_order'),
+      supabase.from('training_programs').select('*').eq('user_id', user.id).eq('active', true).limit(1).maybeSingle(),
     ])
 
     setWeightKg(profileRes.data?.weight_kg ?? null)
@@ -156,7 +216,6 @@ export default function PlannerScreen() {
     setSportSettings(settingsRes.data ?? [])
     setTodayPlans(plansRes.data ?? [])
 
-    // Build sport list: prefer user_sports, fall back to normalized activity types (excluding Virtual*)
     const userSportNames: string[] = (userSportsRes.data ?? []).map((s: any) => s.sport_name)
     let sportList: string[]
     if (userSportNames.length > 0) {
@@ -170,7 +229,6 @@ export default function PlannerScreen() {
     setSports(sportList)
     setSelectedSport(prev => (sportList.includes(prev) ? prev : (sportList[0] ?? '')))
 
-    // Avg speed per planner sport (merge VirtualRide→Ride, VirtualRun→Run)
     const speedMap: Record<string, number> = {}
     for (const sport of sportList) {
       const acts = (activitiesRes.data ?? []).filter(
@@ -183,10 +241,23 @@ export default function PlannerScreen() {
       }
     }
     setAvgSpeedBySport(speedMap)
+
+    const prog = programRes.data as TrainingProgram | null
+    setActiveProgram(prog)
+    if (prog) {
+      const { data: sessions } = await supabase
+        .from('training_program_sessions')
+        .select('*')
+        .eq('program_id', prog.id)
+        .order('week_number')
+        .order('day_number')
+      setProgramSessions((sessions ?? []) as TrainingProgramSession[])
+      const curWeek = currentProgramWeek(prog.start_date)
+      setExpandedWeeks(new Set([curWeek]))
+    }
   }
 
   function getKcalPerHour(zone: HeartRateZone): number {
-    // Match by exact sport name or by virtual equivalent (e.g. "Ride" matches "VirtualRide" settings)
     const setting = sportSettings.find(s => s.sport_type === selectedSport)
       ?? sportSettings.find(s => normalizeType(s.sport_type) === selectedSport)
     const method = setting?.method ?? 'standard'
@@ -268,7 +339,7 @@ export default function PlannerScreen() {
     load()
   }
 
-  // ─── build mode (multi-segment) ─────────────────────────────────────────────
+  // ─── build mode ─────────────────────────────────────────────────────────────
 
   function addSegment() {
     setSegments(prev => [...prev, { id: String(Date.now()), inputType: 'distance', value: '', zoneId: '', repeats: '1' }])
@@ -324,7 +395,6 @@ export default function PlannerScreen() {
 
       const segKcal = Math.round(kcalPerHour * (durationMin / 60)) * repeats
       const segDurationMin = durationMin * repeats
-
       results.push({
         label: repeats > 1 ? `${repeats}× (${label})` : label,
         kcal: segKcal,
@@ -397,7 +467,170 @@ export default function PlannerScreen() {
     load()
   }
 
+  // ─── programs mode ─────────────────────────────────────────────────────────
+
+  function adjustWeeks(delta: number) {
+    const cfg = PROGRAM_CONFIG[programType]
+    setProgramWeeks(prev => Math.min(cfg.maxWeeks, Math.max(cfg.minWeeks, prev + delta)))
+  }
+
+  function onProgramTypeChange(type: ProgramType) {
+    const cfg = PROGRAM_CONFIG[type]
+    setProgramType(type)
+    setProgramWeeks(prev => Math.min(cfg.maxWeeks, Math.max(cfg.minWeeks, prev)))
+    setGeneratedSessions([])
+  }
+
+  async function generatePlan() {
+    const km = parseFloat(startingKm)
+    if (isNaN(km) || km <= 0) { Alert.alert('Invalid', 'Enter your current longest run in km.'); return }
+    const paceMin = parseInt(startingPaceMin || '0')
+    const paceSec = parseInt(startingPaceSec || '0')
+    if (paceMin <= 0 && paceSec <= 0) { Alert.alert('Invalid', 'Enter your current running pace (min:sec per km).'); return }
+    const paceSecTotal = paceMin * 60 + paceSec
+
+    setProgramGenerating(true)
+    setGeneratedSessions([])
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const supaUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!
+      const res = await fetch(`${supaUrl}/functions/v1/generate-training-plan`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          program_type: programType,
+          weeks: programWeeks,
+          starting_km: km,
+          starting_pace_sec_km: paceSecTotal,
+          calibration_notes: calibrationNotes.trim() || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Generation failed')
+      setGeneratedSessions(json.sessions as GeneratedSession[])
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Could not generate plan.')
+    } finally {
+      setProgramGenerating(false)
+    }
+  }
+
+  async function saveProgram() {
+    if (!userId || generatedSessions.length === 0) return
+    if (activeProgram) {
+      await supabase.from('training_programs').update({ active: false }).eq('id', activeProgram.id)
+    }
+    setProgramSaving(true)
+    const startDate = localDate()
+    const { data: prog, error: progErr } = await supabase
+      .from('training_programs')
+      .insert({
+        user_id: userId,
+        program_type: programType,
+        weeks: programWeeks,
+        start_date: startDate,
+        starting_km: parseFloat(startingKm),
+        starting_pace_sec_km: parseInt(startingPaceMin || '0') * 60 + parseInt(startingPaceSec || '0'),
+        calibration_notes: calibrationNotes.trim() || null,
+        active: true,
+      })
+      .select()
+      .single()
+
+    if (progErr || !prog) {
+      setProgramSaving(false)
+      Alert.alert('Error', progErr?.message ?? 'Could not save program.')
+      return
+    }
+
+    const rows = generatedSessions.map(s => ({
+      program_id: prog.id,
+      week_number: s.week,
+      day_number: s.day,
+      session_name: s.session_name,
+      description: s.description,
+      target_km: s.target_km,
+      target_pace_sec_km: s.target_pace_sec_km,
+      estimated_kcal: s.estimated_kcal,
+      planned_for: sessionDate(startDate, s.week, s.day),
+    }))
+
+    const { error: sessErr } = await supabase.from('training_program_sessions').insert(rows)
+    setProgramSaving(false)
+    if (sessErr) { Alert.alert('Error', sessErr.message); return }
+
+    Alert.alert('Program saved!', `Your ${PROGRAM_CONFIG[programType].label} program starts today.`)
+    setGeneratedSessions([])
+    setStartingKm('')
+    setStartingPaceMin('')
+    setStartingPaceSec('')
+    setCalibrationNotes('')
+    load()
+  }
+
+  async function endProgram() {
+    if (!activeProgram) return
+    Alert.alert(
+      'End program',
+      `Stop the ${PROGRAM_CONFIG[activeProgram.program_type as ProgramType]?.label ?? activeProgram.program_type} program?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'End program', style: 'destructive',
+          onPress: async () => {
+            await supabase.from('training_programs').update({ active: false }).eq('id', activeProgram.id)
+            setActiveProgram(null)
+            setProgramSessions([])
+          },
+        },
+      ],
+    )
+  }
+
+  async function toggleSession(session: TrainingProgramSession) {
+    setTogglingSession(session.id)
+    const now = new Date().toISOString()
+    if (session.completed) {
+      await supabase.from('training_program_sessions')
+        .update({ completed: false, completed_at: null, strava_activity_id: null })
+        .eq('id', session.id)
+      setProgramSessions(prev => prev.map(s => s.id === session.id
+        ? { ...s, completed: false, completed_at: null, strava_activity_id: null }
+        : s))
+    } else {
+      await supabase.from('training_program_sessions')
+        .update({ completed: true, completed_at: now })
+        .eq('id', session.id)
+      setProgramSessions(prev => prev.map(s => s.id === session.id
+        ? { ...s, completed: true, completed_at: now }
+        : s))
+    }
+    setTogglingSession(null)
+  }
+
+  function toggleWeek(w: number) {
+    setExpandedWeeks(prev => {
+      const next = new Set(prev)
+      if (next.has(w)) next.delete(w)
+      else next.add(w)
+      return next
+    })
+  }
+
+  // ─── derived ───────────────────────────────────────────────────────────────
+
   const sportColor = getSportColor(selectedSport)
+  const cfg = PROGRAM_CONFIG[programType]
+
+  const weekNumbers = [...new Set(programSessions.map(s => s.week_number))].sort((a, b) => a - b)
+  const completedCount = programSessions.filter(s => s.completed).length
+  const progress = programSessions.length > 0 ? completedCount / programSessions.length : 0
+
+  const genWeekNumbers = [...new Set(generatedSessions.map(s => s.week))].sort((a, b) => a - b)
 
   return (
     <SafeAreaView style={st.container}>
@@ -432,15 +665,38 @@ export default function PlannerScreen() {
           </View>
         )}
 
-        {/* Sport selector */}
-        <Text style={st.label}>Sport</Text>
-        <Pressable style={[st.sportDropBtn, { borderColor: sportColor }]} onPress={() => setSportDropdownOpen(true)}>
-          <View style={st.sportDropLeft}>
-            <MaterialCommunityIcons name={getSportIcon(selectedSport) as any} size={20} color={sportColor} />
-            <Text style={st.sportDropText}>{selectedSport || 'Select sport…'}</Text>
-          </View>
-          <Ionicons name="chevron-down" size={18} color="#888" />
-        </Pressable>
+        {/* Mode selector — 2×2 grid */}
+        <View style={st.modeGrid}>
+          {([
+            { key: 'kcal',     label: 'Target kcal',  icon: 'flame-outline'      as const },
+            { key: 'build',    label: 'Build workout', icon: 'list-outline'       as const },
+            { key: 'ai',       label: 'AI Coach',      icon: 'sparkles-outline'   as const },
+            { key: 'programs', label: 'Programs',      icon: 'trophy-outline'     as const },
+          ] as const).map(m => (
+            <Pressable
+              key={m.key}
+              style={[st.modeBtn, mode === m.key && { backgroundColor: sportColor, borderColor: sportColor }]}
+              onPress={() => setMode(m.key)}
+            >
+              <Ionicons name={m.icon} size={14} color={mode === m.key ? '#fff' : '#888'} />
+              <Text style={[st.modeBtnText, mode === m.key && st.modeBtnTextActive]}>{m.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {/* Sport selector — shown for kcal/build/ai modes */}
+        {mode !== 'programs' && (
+          <>
+            <Text style={st.label}>Sport</Text>
+            <Pressable style={[st.sportDropBtn, { borderColor: sportColor }]} onPress={() => setSportDropdownOpen(true)}>
+              <View style={st.sportDropLeft}>
+                <MaterialCommunityIcons name={getSportIcon(selectedSport) as any} size={20} color={sportColor} />
+                <Text style={st.sportDropText}>{selectedSport || 'Select sport…'}</Text>
+              </View>
+              <Ionicons name="chevron-down" size={18} color="#888" />
+            </Pressable>
+          </>
+        )}
 
         {/* Sport dropdown modal */}
         <Modal visible={sportDropdownOpen} transparent animationType="fade">
@@ -469,25 +725,7 @@ export default function PlannerScreen() {
           </Pressable>
         </Modal>
 
-        {/* Mode selector */}
-        <View style={st.modeRow}>
-          {([
-            { key: 'kcal',  label: 'Target kcal',  icon: 'flame-outline' as const },
-            { key: 'build', label: 'Build workout', icon: 'list-outline' as const },
-            { key: 'ai',    label: 'AI Coach',      icon: 'sparkles-outline' as const },
-          ] as const).map(m => (
-            <Pressable
-              key={m.key}
-              style={[st.modeBtn, mode === m.key && { backgroundColor: sportColor, borderColor: sportColor }]}
-              onPress={() => setMode(m.key)}
-            >
-              <Ionicons name={m.icon} size={13} color={mode === m.key ? '#fff' : '#888'} />
-              <Text style={[st.modeBtnText, mode === m.key && st.modeBtnTextActive]}>{m.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {/* ─── KCAL MODE ─────────────────────────────────────────────────────── */}
+        {/* ─── KCAL MODE ────────────────────────────────────────────────────── */}
         {mode === 'kcal' && (
           <>
             <Text style={st.label}>Target (kcal)</Text>
@@ -563,7 +801,7 @@ export default function PlannerScreen() {
           </>
         )}
 
-        {/* ─── BUILD MODE ─────────────────────────────────────────────────────── */}
+        {/* ─── BUILD MODE ───────────────────────────────────────────────────── */}
         {mode === 'build' && (
           <>
             <Text style={st.label}>Workout segments</Text>
@@ -582,7 +820,6 @@ export default function PlannerScreen() {
                     )}
                   </View>
 
-                  {/* Distance / Time toggle */}
                   <View style={st.segToggleRow}>
                     <Pressable
                       style={[st.segToggleBtn, seg.inputType === 'distance' && { backgroundColor: sportColor, borderColor: sportColor }]}
@@ -598,7 +835,6 @@ export default function PlannerScreen() {
                     </Pressable>
                   </View>
 
-                  {/* Value + Repeats */}
                   <View style={st.segInputRow}>
                     <View style={st.segInputGroup}>
                       <TextInput
@@ -622,7 +858,6 @@ export default function PlannerScreen() {
                     </View>
                   </View>
 
-                  {/* Zone picker */}
                   <View style={st.segZoneRow}>
                     {zones.map(z => (
                       <Pressable
@@ -682,7 +917,7 @@ export default function PlannerScreen() {
           </>
         )}
 
-        {/* ─── AI COACH MODE ─────────────────────────────────────────────────── */}
+        {/* ─── AI COACH MODE ────────────────────────────────────────────────── */}
         {mode === 'ai' && (
           <>
             <View style={st.aiInfoBox}>
@@ -743,6 +978,332 @@ export default function PlannerScreen() {
             )}
           </>
         )}
+
+        {/* ─── PROGRAMS MODE ────────────────────────────────────────────────── */}
+        {mode === 'programs' && (
+          <>
+            {/* Active program view */}
+            {activeProgram && generatedSessions.length === 0 ? (
+              <>
+                {/* Header */}
+                <View style={st.progHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={st.progTitle}>
+                      {PROGRAM_CONFIG[activeProgram.program_type as ProgramType]?.label ?? activeProgram.program_type} Program
+                    </Text>
+                    <Text style={st.progSubtitle}>
+                      {activeProgram.weeks} weeks · started {activeProgram.start_date}
+                    </Text>
+                  </View>
+                  <Pressable onPress={endProgram} style={st.endProgBtn}>
+                    <Text style={st.endProgBtnText}>End</Text>
+                  </Pressable>
+                </View>
+
+                {/* Progress bar */}
+                <View style={st.progProgressRow}>
+                  <View style={st.progProgressTrack}>
+                    <View style={[st.progProgressFill, { width: `${Math.round(progress * 100)}%` as any, backgroundColor: PROGRAM_CONFIG[activeProgram.program_type as ProgramType]?.color ?? '#FC4C02' }]} />
+                  </View>
+                  <Text style={st.progProgressLabel}>{completedCount}/{programSessions.length} done</Text>
+                </View>
+
+                {/* Sessions by week */}
+                {weekNumbers.map(weekNum => {
+                  const weekSessions = programSessions.filter(s => s.week_number === weekNum)
+                  const weekDone = weekSessions.filter(s => s.completed).length
+                  const isExpanded = expandedWeeks.has(weekNum)
+                  const progColor = PROGRAM_CONFIG[activeProgram.program_type as ProgramType]?.color ?? '#FC4C02'
+
+                  return (
+                    <View key={weekNum} style={st.weekBlock}>
+                      <Pressable style={st.weekHeader} onPress={() => toggleWeek(weekNum)}>
+                        <View style={[st.weekBadge, { backgroundColor: progColor + '22' }]}>
+                          <Text style={[st.weekBadgeText, { color: progColor }]}>W{weekNum}</Text>
+                        </View>
+                        <Text style={st.weekLabel}>Week {weekNum}</Text>
+                        <Text style={st.weekProgress}>{weekDone}/{weekSessions.length}</Text>
+                        <Ionicons
+                          name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                          size={16} color="#bbb"
+                        />
+                      </Pressable>
+
+                      {isExpanded && weekSessions.map(session => (
+                        <View key={session.id} style={[st.sessionRow, session.completed && st.sessionRowDone]}>
+                          <Pressable
+                            style={[st.sessionCheck, session.completed && { backgroundColor: progColor, borderColor: progColor }]}
+                            onPress={() => toggleSession(session)}
+                            disabled={togglingSession === session.id}
+                          >
+                            {togglingSession === session.id
+                              ? <ActivityIndicator size="small" color="#fff" />
+                              : session.completed
+                                ? <Ionicons name="checkmark" size={14} color="#fff" />
+                                : null
+                            }
+                          </Pressable>
+                          <View style={st.sessionInfo}>
+                            <Text style={[st.sessionName, session.completed && st.sessionNameDone]}>
+                              {session.session_name}
+                            </Text>
+                            <Text style={st.sessionDesc} numberOfLines={2}>{session.description}</Text>
+                            <View style={st.sessionMeta}>
+                              {session.target_km && (
+                                <View style={st.metaItem}>
+                                  <Ionicons name="navigate-outline" size={11} color="#bbb" />
+                                  <Text style={st.sessionMetaText}>{session.target_km} km</Text>
+                                </View>
+                              )}
+                              {session.target_pace_sec_km && (
+                                <View style={st.metaItem}>
+                                  <Ionicons name="speedometer-outline" size={11} color="#bbb" />
+                                  <Text style={st.sessionMetaText}>{formatPace(session.target_pace_sec_km)}</Text>
+                                </View>
+                              )}
+                              {session.estimated_kcal && (
+                                <View style={st.metaItem}>
+                                  <Ionicons name="flame-outline" size={11} color="#bbb" />
+                                  <Text style={st.sessionMetaText}>~{session.estimated_kcal} kcal</Text>
+                                </View>
+                              )}
+                              {session.strava_activity_id && (
+                                <View style={st.metaItem}>
+                                  <Ionicons name="link-outline" size={11} color="#FC4C02" />
+                                  <Text style={[st.sessionMetaText, { color: '#FC4C02' }]}>Strava</Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  )
+                })}
+
+                <Pressable
+                  style={st.newProgramBtn}
+                  onPress={() => {
+                    Alert.alert(
+                      'Start new program',
+                      'This will end your current program. Continue?',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Start new', onPress: () => setActiveProgram(null) },
+                      ],
+                    )
+                  }}
+                >
+                  <Ionicons name="add-circle-outline" size={16} color="#888" />
+                  <Text style={st.newProgramBtnText}>Start a new program</Text>
+                </Pressable>
+              </>
+            ) : generatedSessions.length > 0 ? (
+              /* Generated plan preview */
+              <>
+                <View style={st.progHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={st.progTitle}>{cfg.label} Program — Preview</Text>
+                    <Text style={st.progSubtitle}>{programWeeks} weeks · {generatedSessions.length} sessions</Text>
+                  </View>
+                  <Pressable onPress={() => setGeneratedSessions([])} style={st.endProgBtn}>
+                    <Text style={st.endProgBtnText}>Back</Text>
+                  </Pressable>
+                </View>
+
+                <View style={st.aiInfoBox}>
+                  <Ionicons name="information-circle-outline" size={14} color="#5C63D8" />
+                  <Text style={st.aiInfoText}>
+                    Review your plan below. When you save it, session names like "{cfg.label === '5K' ? '5k' : cfg.label} Program w1d1" will auto-match Strava activities with the same name.
+                  </Text>
+                </View>
+
+                {genWeekNumbers.map(weekNum => {
+                  const weekSessions = generatedSessions.filter(s => s.week === weekNum)
+                  const isExpanded = expandedWeeks.has(weekNum)
+
+                  return (
+                    <View key={weekNum} style={st.weekBlock}>
+                      <Pressable style={st.weekHeader} onPress={() => toggleWeek(weekNum)}>
+                        <View style={[st.weekBadge, { backgroundColor: cfg.color + '22' }]}>
+                          <Text style={[st.weekBadgeText, { color: cfg.color }]}>W{weekNum}</Text>
+                        </View>
+                        <Text style={st.weekLabel}>Week {weekNum}</Text>
+                        <Text style={st.weekProgress}>{weekSessions.length} sessions</Text>
+                        <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#bbb" />
+                      </Pressable>
+
+                      {isExpanded && weekSessions.map((session, i) => (
+                        <View key={i} style={st.sessionRow}>
+                          <View style={[st.sessionCheck, { borderColor: '#e0e0e0' }]}>
+                            <Ionicons name="ellipse-outline" size={14} color="#ddd" />
+                          </View>
+                          <View style={st.sessionInfo}>
+                            <Text style={st.sessionName}>{session.session_name}</Text>
+                            <Text style={st.sessionDesc} numberOfLines={2}>{session.description}</Text>
+                            <View style={st.sessionMeta}>
+                              {session.target_km && (
+                                <View style={st.metaItem}>
+                                  <Ionicons name="navigate-outline" size={11} color="#bbb" />
+                                  <Text style={st.sessionMetaText}>{session.target_km} km</Text>
+                                </View>
+                              )}
+                              {session.target_pace_sec_km && (
+                                <View style={st.metaItem}>
+                                  <Ionicons name="speedometer-outline" size={11} color="#bbb" />
+                                  <Text style={st.sessionMetaText}>{formatPace(session.target_pace_sec_km)}</Text>
+                                </View>
+                              )}
+                              {session.estimated_kcal && (
+                                <View style={st.metaItem}>
+                                  <Ionicons name="flame-outline" size={11} color="#bbb" />
+                                  <Text style={st.sessionMetaText}>~{session.estimated_kcal} kcal</Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  )
+                })}
+
+                <Pressable
+                  style={[st.calcBtn, { backgroundColor: cfg.color, marginTop: 8 }, programSaving && st.planBtnDisabled]}
+                  onPress={saveProgram}
+                  disabled={programSaving}
+                >
+                  {programSaving
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <>
+                        <Ionicons name="save-outline" size={18} color="#fff" />
+                        <Text style={st.calcBtnText}>Save program</Text>
+                      </>
+                  }
+                </Pressable>
+              </>
+            ) : (
+              /* Program creation wizard */
+              <>
+                <View style={st.aiInfoBox}>
+                  <Ionicons name="trophy-outline" size={14} color="#5C63D8" />
+                  <Text style={st.aiInfoText}>
+                    Build a structured multi-week training plan tailored to your goal race and current fitness.
+                  </Text>
+                </View>
+
+                {/* Step 1: Program type */}
+                <Text style={st.label}>Goal race</Text>
+                <View style={st.programTypeGrid}>
+                  {PROGRAM_TYPES.map(type => {
+                    const c = PROGRAM_CONFIG[type]
+                    return (
+                      <Pressable
+                        key={type}
+                        style={[st.programTypeCard, programType === type && { borderColor: c.color, backgroundColor: c.color + '11' }]}
+                        onPress={() => onProgramTypeChange(type)}
+                      >
+                        <Text style={st.programTypeEmoji}>{c.emoji}</Text>
+                        <Text style={[st.programTypeLabel, programType === type && { color: c.color, fontWeight: '800' }]}>{c.label}</Text>
+                        <Text style={st.programTypeRange}>{c.minWeeks}–{c.maxWeeks} wks</Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
+
+                {/* Step 2: Weeks */}
+                <Text style={st.label}>Program length</Text>
+                <View style={st.weekStepperRow}>
+                  <Pressable
+                    style={[st.stepperBtn, programWeeks <= cfg.minWeeks && st.stepperBtnDisabled]}
+                    onPress={() => adjustWeeks(-1)}
+                    disabled={programWeeks <= cfg.minWeeks}
+                  >
+                    <Ionicons name="remove" size={20} color={programWeeks <= cfg.minWeeks ? '#ccc' : '#333'} />
+                  </Pressable>
+                  <View style={st.stepperCenter}>
+                    <Text style={[st.stepperValue, { color: cfg.color }]}>{programWeeks}</Text>
+                    <Text style={st.stepperUnit}>weeks</Text>
+                  </View>
+                  <Pressable
+                    style={[st.stepperBtn, programWeeks >= cfg.maxWeeks && st.stepperBtnDisabled]}
+                    onPress={() => adjustWeeks(1)}
+                    disabled={programWeeks >= cfg.maxWeeks}
+                  >
+                    <Ionicons name="add" size={20} color={programWeeks >= cfg.maxWeeks ? '#ccc' : '#333'} />
+                  </Pressable>
+                </View>
+                <Text style={st.stepperHint}>{cfg.minWeeks}–{cfg.maxWeeks} weeks for {cfg.label}</Text>
+
+                {/* Step 3: Starting point */}
+                <Text style={st.label}>Your current fitness</Text>
+                <View style={st.startingPointCard}>
+                  <Text style={st.startingPointHint}>I can currently run</Text>
+                  <View style={st.startingPointRow}>
+                    <TextInput
+                      style={[st.startingInput, { flex: 2 }]}
+                      value={startingKm}
+                      onChangeText={setStartingKm}
+                      keyboardType="decimal-pad"
+                      placeholder="e.g. 8"
+                    />
+                    <Text style={st.startingUnit}>km</Text>
+                    <Text style={st.startingPointHint}>at</Text>
+                    <View style={st.paceInputRow}>
+                      <TextInput
+                        style={[st.startingInput, st.paceInput]}
+                        value={startingPaceMin}
+                        onChangeText={setStartingPaceMin}
+                        keyboardType="number-pad"
+                        placeholder="5"
+                        maxLength={2}
+                      />
+                      <Text style={st.paceSep}>:</Text>
+                      <TextInput
+                        style={[st.startingInput, st.paceInput]}
+                        value={startingPaceSec}
+                        onChangeText={v => setStartingPaceSec(v.replace(/\D/g, '').slice(0, 2))}
+                        keyboardType="number-pad"
+                        placeholder="30"
+                        maxLength={2}
+                      />
+                    </View>
+                    <Text style={st.startingUnit}>/km</Text>
+                  </View>
+                </View>
+
+                {/* Step 4: Calibration notes */}
+                <Text style={st.label}>Coaching instructions (optional)</Text>
+                <TextInput
+                  style={st.calibrationInput}
+                  value={calibrationNotes}
+                  onChangeText={setCalibrationNotes}
+                  placeholder="e.g. I prefer morning runs, no more than 4 sessions per week, avoid back-to-back hard days, focus on aerobic base first..."
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+
+                <Pressable
+                  style={[st.calcBtn, { backgroundColor: cfg.color }, programGenerating && st.planBtnDisabled]}
+                  onPress={generatePlan}
+                  disabled={programGenerating}
+                >
+                  {programGenerating
+                    ? <>
+                        <ActivityIndicator size="small" color="#fff" />
+                        <Text style={st.calcBtnText}>Generating plan…</Text>
+                      </>
+                    : <>
+                        <Ionicons name="sparkles-outline" size={18} color="#fff" />
+                        <Text style={st.calcBtnText}>Generate {cfg.label} plan</Text>
+                      </>
+                  }
+                </Pressable>
+              </>
+            )}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   )
@@ -775,6 +1336,17 @@ const st = StyleSheet.create({
   planMeta: { fontSize: 12, color: '#888', marginBottom: 2 },
   planDesc: { fontSize: 12, color: '#aaa', lineHeight: 17 },
 
+  // Mode selector — 2×2 grid
+  modeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
+  modeBtn: {
+    flexBasis: '47%', flexGrow: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
+  },
+  modeBtnText: { fontSize: 12, fontWeight: '600', color: '#888' },
+  modeBtnTextActive: { color: '#fff' },
+
+  // Sport dropdown
   sportDropBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderWidth: 2, borderRadius: 12, padding: 14, backgroundColor: '#fafafa', marginBottom: 24,
@@ -795,14 +1367,6 @@ const st = StyleSheet.create({
     paddingHorizontal: 20, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#f5f5f5',
   },
   sportSheetRowText: { fontSize: 16, color: '#222', flex: 1 },
-
-  modeRow: { flexDirection: 'row', gap: 8, marginBottom: 28 },
-  modeBtn: {
-    flex: 1, flexDirection: 'column', alignItems: 'center', gap: 4,
-    paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
-  },
-  modeBtnText: { fontSize: 11, fontWeight: '600', color: '#888', textAlign: 'center' },
-  modeBtnTextActive: { color: '#fff' },
 
   kcalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   kcalPreset: {
@@ -831,14 +1395,12 @@ const st = StyleSheet.create({
   },
   segHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   segIndex: { fontSize: 11, fontWeight: '700', color: '#bbb', textTransform: 'uppercase', letterSpacing: 0.5 },
-
   segToggleRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   segToggleBtn: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8,
     borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fff',
   },
   segToggleText: { fontSize: 13, fontWeight: '600', color: '#555' },
-
   segInputRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   segInputGroup: { flex: 2 },
   segRepeatGroup: { flex: 1 },
@@ -847,7 +1409,6 @@ const st = StyleSheet.create({
     padding: 10, fontSize: 15, backgroundColor: '#fff', marginBottom: 2,
   },
   segInputUnit: { fontSize: 11, color: '#bbb', textAlign: 'center' },
-
   segZoneRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   segZoneBtn: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
@@ -882,7 +1443,7 @@ const st = StyleSheet.create({
   zoneHR: { fontSize: 12, color: '#aaa' },
   duration: { fontSize: 26, fontWeight: '800' },
   suggestionMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 14 },
-  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 13, color: '#555' },
 
   planBtn: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#FC4C02', borderRadius: 8, padding: 10, alignItems: 'center' },
@@ -906,4 +1467,113 @@ const st = StyleSheet.create({
 
   emptyBox: { padding: 24, alignItems: 'center' },
   emptyText: { fontSize: 14, color: '#aaa', textAlign: 'center' },
+
+  // Programs mode
+  progHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14, gap: 12 },
+  progTitle: { fontSize: 20, fontWeight: '800', color: '#111', marginBottom: 2 },
+  progSubtitle: { fontSize: 13, color: '#aaa' },
+  endProgBtn: {
+    backgroundColor: '#fafafa', borderWidth: 1, borderColor: '#e0e0e0',
+    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6,
+  },
+  endProgBtnText: { fontSize: 13, fontWeight: '700', color: '#888' },
+
+  progProgressRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
+  progProgressTrack: {
+    flex: 1, height: 8, backgroundColor: '#f0f0f0', borderRadius: 4, overflow: 'hidden',
+  },
+  progProgressFill: { height: '100%', borderRadius: 4, minWidth: 4 },
+  progProgressLabel: { fontSize: 13, fontWeight: '700', color: '#555', minWidth: 60, textAlign: 'right' },
+
+  weekBlock: {
+    backgroundColor: '#fafafa', borderRadius: 14,
+    borderWidth: 1, borderColor: '#ebebeb', marginBottom: 10, overflow: 'hidden',
+  },
+  weekHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 14,
+  },
+  weekBadge: {
+    width: 34, height: 34, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  weekBadgeText: { fontSize: 13, fontWeight: '800' },
+  weekLabel: { flex: 1, fontSize: 15, fontWeight: '700', color: '#111' },
+  weekProgress: { fontSize: 13, color: '#aaa', fontWeight: '600' },
+
+  sessionRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderTopWidth: 1, borderTopColor: '#f0f0f0',
+  },
+  sessionRowDone: { opacity: 0.6 },
+  sessionCheck: {
+    width: 26, height: 26, borderRadius: 13,
+    borderWidth: 2, borderColor: '#ddd',
+    alignItems: 'center', justifyContent: 'center',
+    marginTop: 1,
+  },
+  sessionInfo: { flex: 1 },
+  sessionName: { fontSize: 14, fontWeight: '700', color: '#111', marginBottom: 3 },
+  sessionNameDone: { textDecorationLine: 'line-through', color: '#aaa' },
+  sessionDesc: { fontSize: 13, color: '#666', lineHeight: 18, marginBottom: 6 },
+  sessionMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  sessionMetaText: { fontSize: 11, color: '#bbb' },
+
+  newProgramBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 14, marginTop: 8,
+  },
+  newProgramBtnText: { fontSize: 14, color: '#aaa', fontWeight: '600' },
+
+  // Wizard — program type grid
+  programTypeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
+  programTypeCard: {
+    flexBasis: '47%', flexGrow: 1,
+    backgroundColor: '#fafafa', borderRadius: 14,
+    borderWidth: 2, borderColor: '#e8e8e8',
+    padding: 14, alignItems: 'center', gap: 4,
+  },
+  programTypeEmoji: { fontSize: 26 },
+  programTypeLabel: { fontSize: 15, fontWeight: '700', color: '#222' },
+  programTypeRange: { fontSize: 11, color: '#aaa' },
+
+  // Wizard — week stepper
+  weekStepperRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 24, marginBottom: 6,
+  },
+  stepperBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: '#f5f5f5', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: '#e0e0e0',
+  },
+  stepperBtnDisabled: { opacity: 0.3 },
+  stepperCenter: { alignItems: 'center' },
+  stepperValue: { fontSize: 40, fontWeight: '900', lineHeight: 44 },
+  stepperUnit: { fontSize: 12, color: '#aaa', fontWeight: '600' },
+  stepperHint: { fontSize: 12, color: '#bbb', textAlign: 'center', marginBottom: 24 },
+
+  // Wizard — starting point
+  startingPointCard: {
+    backgroundColor: '#fafafa', borderRadius: 14, borderWidth: 1, borderColor: '#ebebeb',
+    padding: 14, marginBottom: 24, gap: 10,
+  },
+  startingPointHint: { fontSize: 13, color: '#888' },
+  startingPointRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  startingInput: {
+    borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 8,
+    padding: 10, fontSize: 16, backgroundColor: '#fff', textAlign: 'center',
+  },
+  startingUnit: { fontSize: 13, color: '#888', fontWeight: '600' },
+  paceInputRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  paceInput: { width: 44 },
+  paceSep: { fontSize: 18, fontWeight: '700', color: '#555' },
+
+  // Wizard — calibration
+  calibrationInput: {
+    borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 12,
+    padding: 14, fontSize: 14, backgroundColor: '#fafafa',
+    minHeight: 110, marginBottom: 20,
+  },
 })
