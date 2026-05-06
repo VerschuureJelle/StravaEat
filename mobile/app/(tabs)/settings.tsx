@@ -318,6 +318,15 @@ export default function SettingsScreen() {
               <Text style={styles.saveBtnText}>{savingProfile ? 'Saving…' : 'Save'}</Text>
             </Pressable>
 
+            <Pressable style={styles.coachRow} onPress={() => router.push('/coach')}>
+              <Ionicons name="people-outline" size={20} color="#FC4C02" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.coachRowTitle}>Coach</Text>
+                <Text style={styles.coachRowNote}>Connect with a coach or manage your athletes</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#ccc" />
+            </Pressable>
+
             <Pressable style={styles.signOutBtn} onPress={() => supabase.auth.signOut()}>
               <Text style={styles.signOutText}>Sign out</Text>
             </Pressable>
@@ -617,6 +626,13 @@ const styles = StyleSheet.create({
   saveBtn: { backgroundColor: '#FC4C02', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 24 },
   saveBtnDisabled: { opacity: 0.35 },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  coachRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginTop: 8,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  },
+  coachRowTitle: { fontSize: 15, fontWeight: '700', color: '#111' },
+  coachRowNote: { fontSize: 12, color: '#aaa', marginTop: 1 },
   signOutBtn: { padding: 20, alignItems: 'center' },
   signOutText: { color: '#bbb', fontSize: 14 },
 

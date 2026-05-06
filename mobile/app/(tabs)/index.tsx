@@ -271,8 +271,7 @@ export default function ActivitiesScreen() {
   const [period, setPeriod] = useState<Period>('total')
   const [anchor, setAnchor] = useState(new Date())
   const [monthsBack, setMonthsBack] = useState(5)
-  const [expandedCals, setExpandedCals] = useState<Set<string>>(new Set())
-  const [fixedCalVisible, setFixedCalVisible] = useState(false)
+  const [showCalendars, setShowCalendars] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [customStartText, setCustomStartText] = useState('')
   const [customEndText, setCustomEndText] = useState('')
@@ -341,20 +340,10 @@ export default function ActivitiesScreen() {
     } finally { setSyncing(false) }
   }, [period, anchor, monthsBack, customStart, customEnd, fetchActivities])
 
-  function toggleCal(mk: string) {
-    setExpandedCals(prev => {
-      const next = new Set(prev)
-      next.has(mk) ? next.delete(mk) : next.add(mk)
-      return next
-    })
-  }
-
   function selectPeriod(p: Period) {
     setPeriod(p)
     setAnchor(new Date())
     setMonthsBack(5)
-    setExpandedCals(new Set())
-    setFixedCalVisible(false)
     if (p !== 'custom') { setCustomStart(null); setCustomEnd(null) }
     setDropdownOpen(false)
   }
@@ -433,16 +422,6 @@ export default function ActivitiesScreen() {
         </View>
       )}
 
-      {/* Calendar toggle for month mode */}
-      {period === 'month' && (
-        <View>
-          <Pressable style={st.calToggleBtn} onPress={() => setFixedCalVisible(v => !v)}>
-            <Text style={st.calToggleText}>{fixedCalVisible ? 'Hide calendar ▲' : 'Show calendar ▼'}</Text>
-          </Pressable>
-          {fixedCalVisible && <MonthCalendar monthStart={startOf('month', anchor)} activities={activities} />}
-        </View>
-      )}
-
       <View style={st.divider} />
       <SummaryCard activities={activities} />
       {activities.length > 0 && <View style={st.divider} />}
@@ -469,16 +448,12 @@ export default function ActivitiesScreen() {
         refreshControl={<RefreshControl refreshing={syncing} onRefresh={syncStrava} tintColor="#FC4C02" />}
         renderSectionHeader={({ section: s }) => {
           if (s.isTotal) {
-            const expanded = expandedCals.has(s.key)
             return (
               <View style={st.monthHeader}>
                 <View style={st.monthHeaderRow}>
                   <Text style={st.monthHeaderText}>{s.title}</Text>
-                  <Pressable onPress={() => toggleCal(s.key)} style={st.calToggleBtn2}>
-                    <Text style={st.calToggleText2}>{expanded ? '▲' : '▼'} Calendar</Text>
-                  </Pressable>
                 </View>
-                {expanded && <MonthCalendar monthStart={s.monthStart!} activities={s.monthActivities!} />}
+                {showCalendars && <MonthCalendar monthStart={s.monthStart!} activities={s.monthActivities!} />}
               </View>
             )
           }
@@ -540,6 +515,11 @@ export default function ActivitiesScreen() {
                 {period === opt.value && <Ionicons name="checkmark" size={16} color="#FC4C02" />}
               </Pressable>
             ))}
+            <View style={st.dropdownDivider} />
+            <Pressable style={st.dropdownRow} onPress={() => setShowCalendars(v => !v)}>
+              <Text style={st.dropdownRowText}>Show calendars</Text>
+              <Ionicons name={showCalendars ? 'toggle' : 'toggle-outline'} size={26} color={showCalendars ? '#FC4C02' : '#ccc'} />
+            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -629,4 +609,5 @@ const st = StyleSheet.create({
   },
   dropdownRowText: { fontSize: 16, color: '#222' },
   dropdownRowActive: { color: '#FC4C02', fontWeight: '700' },
+  dropdownDivider: { height: 1, backgroundColor: '#e8e8e8', marginVertical: 4 },
 })
