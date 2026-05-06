@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
+import { useAppMode } from '../../contexts/AppModeContext'
 
 interface Athlete {
   athlete_id: string
@@ -14,6 +15,7 @@ interface Athlete {
 
 export default function CoachTab() {
   const router = useRouter()
+  const { mode, setMode, isCoach } = useAppMode()
   const [athletes, setAthletes] = useState<Athlete[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -48,6 +50,22 @@ export default function CoachTab() {
 
   return (
     <SafeAreaView style={st.container}>
+      {/* Mode banner */}
+      <Pressable
+        style={[st.modeBanner, isCoach ? st.modeBannerCoach : st.modeBannerAthlete]}
+        onPress={() => setMode(isCoach ? 'athlete' : 'coach')}
+      >
+        <Ionicons
+          name={isCoach ? 'people' : 'person-outline'}
+          size={15}
+          color={isCoach ? '#fff' : '#5C6BC0'}
+        />
+        <Text style={[st.modeBannerText, isCoach && { color: '#fff' }]}>
+          {isCoach ? 'Coach Mode — tap to switch to Athlete' : 'Athlete Mode — tap to switch to Coach'}
+        </Text>
+        <Ionicons name="swap-horizontal-outline" size={15} color={isCoach ? '#fff' : '#5C6BC0'} />
+      </Pressable>
+
       <ScrollView contentContainerStyle={st.content} showsVerticalScrollIndicator={false}>
         <View style={st.headerRow}>
           <Text style={st.title}>Coach</Text>
@@ -56,6 +74,15 @@ export default function CoachTab() {
             <Text style={st.manageBtnText}>Manage</Text>
           </Pressable>
         </View>
+
+        {!isCoach && (
+          <View style={st.athleteModeCard}>
+            <Ionicons name="information-circle-outline" size={18} color="#5C6BC0" />
+            <Text style={st.athleteModeText}>
+              Switch to <Text style={{ fontWeight: '800' }}>Coach Mode</Text> (tap banner above) to manage your athletes' plans and progress.
+            </Text>
+          </View>
+        )}
 
         {loading ? (
           <ActivityIndicator color="#FC4C02" style={{ marginTop: 48 }} />
@@ -104,6 +131,20 @@ export default function CoachTab() {
 const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9f9f9' },
   content: { padding: 20, paddingBottom: 48 },
+
+  modeBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center',
+    paddingVertical: 9, paddingHorizontal: 16,
+  },
+  modeBannerCoach: { backgroundColor: '#5C6BC0' },
+  modeBannerAthlete: { backgroundColor: '#EEF0FF' },
+  modeBannerText: { fontSize: 13, fontWeight: '600', color: '#5C6BC0', flex: 1, textAlign: 'center' },
+
+  athleteModeCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: '#EEF0FF', borderRadius: 12, padding: 12, marginBottom: 20,
+  },
+  athleteModeText: { flex: 1, fontSize: 13, color: '#3949AB', lineHeight: 18 },
 
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 28 },
   title: { fontSize: 26, fontWeight: '800', color: '#111', flex: 1 },

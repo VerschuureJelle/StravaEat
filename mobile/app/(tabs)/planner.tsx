@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import type {
   HeartRateZone, BurnSchemaPoint, SportEnergySetting, PlannedWorkout,
-  TrainingProgram, TrainingProgramSession, ProgramType,
+  TrainingProgram, TrainingProgramSession, ProgramType, UserProfile,
 } from '../../types'
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -131,15 +131,46 @@ const PROGRAM_CONFIG: Record<ProgramType, { label: string; minWeeks: number; max
   '10k':           { label: '10K',          minWeeks: 6,  maxWeeks: 14, emoji: '🏃', color: '#FF8A65' },
   'half_marathon': { label: 'Half Marathon', minWeeks: 8,  maxWeeks: 16, emoji: '🏅', color: '#AB47BC' },
   'marathon':      { label: 'Marathon',      minWeeks: 16, maxWeeks: 32, emoji: '🏆', color: '#5C6BC0' },
+  'swim':          { label: 'Swimming',      minWeeks: 6,  maxWeeks: 20, emoji: '🏊', color: '#29B6F6' },
+  'cycling':       { label: 'Cycling',       minWeeks: 8,  maxWeeks: 24, emoji: '🚴', color: '#66BB6A' },
+  'strength':      { label: 'Strength',      minWeeks: 6,  maxWeeks: 16, emoji: '💪', color: '#7E57C2' },
 }
 
-const PROGRAM_TYPES: ProgramType[] = ['5k', '10k', 'half_marathon', 'marathon']
+const PROGRAM_TYPES: ProgramType[] = ['5k', '10k', 'half_marathon', 'marathon', 'swim', 'cycling', 'strength']
+
+const STRENGTH_FOCUSES = [
+  { key: 'strength',    label: 'Strength',    note: 'Heavy, 3–6 reps' },
+  { key: 'hypertrophy', label: 'Hypertrophy', note: 'Moderate, 8–12 reps' },
+  { key: 'stability',   label: 'Stability',   note: 'Functional & balance' },
+  { key: 'endurance',   label: 'Endurance',   note: 'Light, 15–20 reps' },
+] as const
+
+const BODY_PARTS = ['Full Body', 'Chest', 'Back', 'Shoulders', 'Arms', 'Core', 'Legs'] as const
+
+const SWIM_GOALS = [
+  { key: '1500m',    label: '1500m', note: 'Sprint / Triathlon' },
+  { key: '5k',       label: '5K',    note: 'Open water' },
+  { key: '10k',      label: '10K',   note: 'Marathon swim' },
+  { key: 'general',  label: 'General fitness', note: 'No specific race' },
+] as const
+
+const CYCLING_EVENTS = [
+  { key: 'general',    label: 'General fitness', note: 'Base building' },
+  { key: 'gran_fondo', label: 'Gran Fondo',       note: '100–200 km' },
+  { key: 'century',    label: 'Century',          note: '160 km / 100 mi' },
+  { key: 'triathlon',  label: 'Triathlon bike',   note: 'T2 preparation' },
+] as const
+
+type StrengthFocus = 'strength' | 'hypertrophy' | 'stability' | 'endurance'
+type SwimGoal = '1500m' | '5k' | '10k' | 'general'
+type CyclingEvent = 'general' | 'gran_fondo' | 'century' | 'triathlon'
 
 // ─── screen ────────────────────────────────────────────────────────────────
 
 export default function PlannerScreen() {
   const [userId, setUserId] = useState<string | null>(null)
   const [weightKg, setWeightKg] = useState<number | null>(null)
+  const [ftpWatts, setFtpWatts] = useState<number | null>(null)
 
   const [sports, setSports] = useState<string[]>([])
   const [selectedSport, setSelectedSport] = useState<string>('')
@@ -181,6 +212,17 @@ export default function PlannerScreen() {
   const [programGenerating, setProgramGenerating] = useState(false)
   const [programSaving, setProgramSaving] = useState(false)
 
+  // strength sub-config
+  const [strengthFocus, setStrengthFocus] = useState<StrengthFocus>('hypertrophy')
+  const [strengthBodyParts, setStrengthBodyParts] = useState<string[]>(['Full Body'])
+
+  // swim sub-config
+  const [swimGoal, setSwimGoal] = useState<SwimGoal>('1500m')
+  const [swimPool, setSwimPool] = useState(true)
+
+  // cycling sub-config
+  const [cyclingEvent, setCyclingEvent] = useState<CyclingEvent>('general')
+
   // programs mode — active program
   const [activeProgram, setActiveProgram] = useState<TrainingProgram | null>(null)
   const [programSessions, setProgramSessions] = useState<TrainingProgramSession[]>([])
@@ -200,7 +242,7 @@ export default function PlannerScreen() {
     const todayStr = localDate()
 
     const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes, userSportsRes, programRes] = await Promise.all([
-      supabase.from('users').select('weight_kg').eq('id', user.id).single(),
+      supabase.from('users').select('weight_kg, ftp_watts').eq('id', user.id).single(),
       supabase.from('activities').select('type, distance_m, duration_sec').eq('user_id', user.id),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
@@ -211,6 +253,7 @@ export default function PlannerScreen() {
     ])
 
     setWeightKg(profileRes.data?.weight_kg ?? null)
+    setFtpWatts(profileRes.data?.ftp_watts ?? null)
     setZones(zonesRes.data ?? [])
     setBurnSchema(burnRes.data ?? [])
     setSportSettings(settingsRes.data ?? [])
@@ -481,13 +524,43 @@ export default function PlannerScreen() {
     setGeneratedSessions([])
   }
 
+  function buildSubtypeConfig(): Record<string, any> {
+    if (programType === 'strength') {
+      return { focus: strengthFocus, body_parts: strengthBodyParts }
+    }
+    if (programType === 'swim') {
+      return { goal: swimGoal, pool: swimPool }
+    }
+    if (programType === 'cycling') {
+      return { event: cyclingEvent, ftp_watts: ftpWatts ?? undefined }
+    }
+    return {}
+  }
+
   async function generatePlan() {
-    const km = parseFloat(startingKm)
-    if (isNaN(km) || km <= 0) { Alert.alert('Invalid', 'Enter your current longest run in km.'); return }
-    const paceMin = parseInt(startingPaceMin || '0')
-    const paceSec = parseInt(startingPaceSec || '0')
-    if (paceMin <= 0 && paceSec <= 0) { Alert.alert('Invalid', 'Enter your current running pace (min:sec per km).'); return }
-    const paceSecTotal = paceMin * 60 + paceSec
+    const isRunning = ['5k', '10k', 'half_marathon', 'marathon'].includes(programType)
+    const isSwim = programType === 'swim'
+    const isCycling = programType === 'cycling'
+    const isStrength = programType === 'strength'
+
+    let startingKmVal: number | null = null
+    let paceSecTotal: number | null = null
+
+    if (isRunning || isSwim || isCycling) {
+      const km = parseFloat(startingKm)
+      if (!isStrength && (isNaN(km) || km <= 0)) {
+        Alert.alert('Invalid', `Enter your current ${isSwim ? 'swim distance (m→km)' : isRunning ? 'longest run' : 'ride distance'} in km.`)
+        return
+      }
+      startingKmVal = km
+      const paceMin = parseInt(startingPaceMin || '0')
+      const paceSec = parseInt(startingPaceSec || '0')
+      if (!isStrength && paceMin <= 0 && paceSec <= 0) {
+        Alert.alert('Invalid', `Enter your current ${isSwim ? 'swim' : isRunning ? 'running' : 'cycling'} pace.`)
+        return
+      }
+      paceSecTotal = paceMin * 60 + paceSec
+    }
 
     setProgramGenerating(true)
     setGeneratedSessions([])
@@ -504,9 +577,10 @@ export default function PlannerScreen() {
         body: JSON.stringify({
           program_type: programType,
           weeks: programWeeks,
-          starting_km: km,
-          starting_pace_sec_km: paceSecTotal,
+          starting_km: startingKmVal ?? 0,
+          starting_pace_sec_km: paceSecTotal ?? 0,
           calibration_notes: calibrationNotes.trim() || null,
+          subtype_config: buildSubtypeConfig(),
         }),
       })
       const json = await res.json()
@@ -533,9 +607,10 @@ export default function PlannerScreen() {
         program_type: programType,
         weeks: programWeeks,
         start_date: startDate,
-        starting_km: parseFloat(startingKm),
+        starting_km: parseFloat(startingKm) || 0,
         starting_pace_sec_km: parseInt(startingPaceMin || '0') * 60 + parseInt(startingPaceSec || '0'),
         calibration_notes: calibrationNotes.trim() || null,
+        subtype_config: Object.keys(buildSubtypeConfig()).length > 0 ? buildSubtypeConfig() : null,
         active: true,
       })
       .select()
@@ -1235,8 +1310,117 @@ export default function PlannerScreen() {
                 </View>
                 <Text style={st.stepperHint}>{cfg.minWeeks}–{cfg.maxWeeks} weeks for {cfg.label}</Text>
 
-                {/* Step 3: Starting point */}
+                {/* Strength sub-config */}
+                {programType === 'strength' && (
+                  <>
+                    <Text style={st.label}>Training focus</Text>
+                    <View style={st.subConfigRow}>
+                      {STRENGTH_FOCUSES.map(f => (
+                        <Pressable
+                          key={f.key}
+                          style={[st.subConfigCard, strengthFocus === f.key && { borderColor: cfg.color, backgroundColor: cfg.color + '11' }]}
+                          onPress={() => setStrengthFocus(f.key as StrengthFocus)}
+                        >
+                          <Text style={[st.subConfigLabel, strengthFocus === f.key && { color: cfg.color, fontWeight: '800' }]}>{f.label}</Text>
+                          <Text style={st.subConfigNote}>{f.note}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+
+                    <Text style={st.label}>Body parts to emphasise</Text>
+                    <View style={st.bodyPartRow}>
+                      {BODY_PARTS.map(bp => {
+                        const selected = strengthBodyParts.includes(bp)
+                        return (
+                          <Pressable
+                            key={bp}
+                            style={[st.bodyPartChip, selected && { backgroundColor: cfg.color, borderColor: cfg.color }]}
+                            onPress={() => {
+                              if (bp === 'Full Body') {
+                                setStrengthBodyParts(['Full Body'])
+                              } else {
+                                setStrengthBodyParts(prev => {
+                                  const next = prev.filter(p => p !== 'Full Body')
+                                  return selected ? next.filter(p => p !== bp) || ['Full Body'] : [...next, bp]
+                                })
+                              }
+                            }}
+                          >
+                            <Text style={[st.bodyPartChipText, selected && { color: '#fff' }]}>{bp}</Text>
+                          </Pressable>
+                        )
+                      })}
+                    </View>
+                  </>
+                )}
+
+                {/* Swim sub-config */}
+                {programType === 'swim' && (
+                  <>
+                    <Text style={st.label}>Goal distance</Text>
+                    <View style={st.subConfigRow}>
+                      {SWIM_GOALS.map(g => (
+                        <Pressable
+                          key={g.key}
+                          style={[st.subConfigCard, swimGoal === g.key && { borderColor: cfg.color, backgroundColor: cfg.color + '11' }]}
+                          onPress={() => setSwimGoal(g.key as SwimGoal)}
+                        >
+                          <Text style={[st.subConfigLabel, swimGoal === g.key && { color: cfg.color, fontWeight: '800' }]}>{g.label}</Text>
+                          <Text style={st.subConfigNote}>{g.note}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+
+                    <View style={st.swimToggleRow}>
+                      <Text style={st.swimToggleLabel}>Pool training</Text>
+                      <View style={st.swimToggleBtns}>
+                        <Pressable
+                          style={[st.swimToggleBtn, swimPool && { backgroundColor: cfg.color, borderColor: cfg.color }]}
+                          onPress={() => setSwimPool(true)}
+                        >
+                          <Text style={[st.swimToggleBtnText, swimPool && { color: '#fff' }]}>Pool</Text>
+                        </Pressable>
+                        <Pressable
+                          style={[st.swimToggleBtn, !swimPool && { backgroundColor: cfg.color, borderColor: cfg.color }]}
+                          onPress={() => setSwimPool(false)}
+                        >
+                          <Text style={[st.swimToggleBtnText, !swimPool && { color: '#fff' }]}>Open Water</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  </>
+                )}
+
+                {/* Cycling sub-config */}
+                {programType === 'cycling' && (
+                  <>
+                    <Text style={st.label}>Target event</Text>
+                    <View style={st.subConfigRow}>
+                      {CYCLING_EVENTS.map(e => (
+                        <Pressable
+                          key={e.key}
+                          style={[st.subConfigCard, cyclingEvent === e.key && { borderColor: cfg.color, backgroundColor: cfg.color + '11' }]}
+                          onPress={() => setCyclingEvent(e.key as CyclingEvent)}
+                        >
+                          <Text style={[st.subConfigLabel, cyclingEvent === e.key && { color: cfg.color, fontWeight: '800' }]}>{e.label}</Text>
+                          <Text style={st.subConfigNote}>{e.note}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    {ftpWatts && (
+                      <View style={st.ftpBadge}>
+                        <Ionicons name="flash-outline" size={14} color={cfg.color} />
+                        <Text style={[st.ftpBadgeText, { color: cfg.color }]}>FTP: {ftpWatts}W — power zones will be used</Text>
+                      </View>
+                    )}
+                  </>
+                )}
+
+                {/* Step 3: Starting point — not shown for pure strength */}
+                {programType !== 'strength' && (
                 <Text style={st.label}>Your current fitness</Text>
+                )}
+                {programType !== 'strength' && (
                 <View style={st.startingPointCard}>
                   <Text style={st.startingPointHint}>I can currently run</Text>
                   <View style={st.startingPointRow}>
@@ -1271,6 +1455,7 @@ export default function PlannerScreen() {
                     <Text style={st.startingUnit}>/km</Text>
                   </View>
                 </View>
+                )}
 
                 {/* Step 4: Calibration notes */}
                 <Text style={st.label}>Coaching instructions (optional)</Text>
@@ -1576,4 +1761,38 @@ const st = StyleSheet.create({
     padding: 14, fontSize: 14, backgroundColor: '#fafafa',
     minHeight: 110, marginBottom: 20,
   },
+
+  // Sub-config (strength / swim / cycling)
+  subConfigRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  subConfigCard: {
+    flexBasis: '47%', flexGrow: 1,
+    backgroundColor: '#fafafa', borderRadius: 12,
+    borderWidth: 2, borderColor: '#e8e8e8',
+    padding: 12, gap: 2,
+  },
+  subConfigLabel: { fontSize: 14, fontWeight: '700', color: '#222' },
+  subConfigNote: { fontSize: 11, color: '#aaa' },
+
+  bodyPartRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  bodyPartChip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
+  },
+  bodyPartChipText: { fontSize: 13, fontWeight: '600', color: '#555' },
+
+  swimToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  swimToggleLabel: { fontSize: 14, fontWeight: '600', color: '#333' },
+  swimToggleBtns: { flexDirection: 'row', gap: 8 },
+  swimToggleBtn: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
+    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
+  },
+  swimToggleBtnText: { fontSize: 13, fontWeight: '600', color: '#555' },
+
+  ftpBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#f5fff5', borderRadius: 10, padding: 10, marginBottom: 20,
+    borderWidth: 1, borderColor: '#c8e6c9',
+  },
+  ftpBadgeText: { fontSize: 13, fontWeight: '600' },
 })

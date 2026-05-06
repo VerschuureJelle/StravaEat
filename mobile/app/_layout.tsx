@@ -4,6 +4,7 @@ import { Stack, useRouter, useSegments } from 'expo-router'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { supabase } from '../lib/supabase'
 import { registerForNotifications, scheduleDailyMealNotificationsForUser } from '../lib/notifications'
+import { AppModeProvider } from '../contexts/AppModeContext'
 
 export default function RootLayout() {
   const router = useRouter()
@@ -43,7 +44,9 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }} />
+      <AppModeProvider>
+        <Stack screenOptions={{ headerShown: false }} />
+      </AppModeProvider>
     </GestureHandlerRootView>
   )
 }

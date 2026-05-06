@@ -17,6 +17,7 @@ export interface UserProfile {
   strava_refresh_token: string | null
   strava_token_expires_at: string | null
   daily_kcal_target: number | null
+  ftp_watts: number | null
   push_token: string | null
 }
 
@@ -27,6 +28,8 @@ export interface FoodLog {
   name: string
   kcal: number
   protein_g: number | null
+  fat_g: number | null
+  carb_g: number | null
   meal_name: string | null
   logged_at: string
 }
@@ -138,7 +141,7 @@ export interface UserSport {
   sort_order: number
 }
 
-export type ProgramType = '5k' | '10k' | 'half_marathon' | 'marathon'
+export type ProgramType = '5k' | '10k' | 'half_marathon' | 'marathon' | 'swim' | 'cycling' | 'strength'
 
 export interface TrainingProgram {
   id: string
@@ -149,6 +152,7 @@ export interface TrainingProgram {
   starting_km: number
   starting_pace_sec_km: number
   calibration_notes: string | null
+  subtype_config: Record<string, any> | null
   active: boolean
   created_at: string
 }

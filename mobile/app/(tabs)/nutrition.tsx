@@ -61,6 +61,8 @@ export default function NutritionScreen() {
   const [foodName, setFoodName] = useState('')
   const [foodKcal, setFoodKcal] = useState('')
   const [foodProtein, setFoodProtein] = useState('')
+  const [foodFat, setFoodFat] = useState('')
+  const [foodCarb, setFoodCarb] = useState('')
   const [adding, setAdding] = useState(false)
 
   // ── Meal plan state ──────────────────────────────────────────────────────────
@@ -140,13 +142,17 @@ export default function NutritionScreen() {
     if (!userId) return
     setAdding(true)
     const protein = foodProtein ? parseFloat(foodProtein) : null
+    const fat = foodFat ? parseFloat(foodFat) : null
+    const carb = foodCarb ? parseFloat(foodCarb) : null
     const { error } = await supabase.from('food_logs').insert({
       user_id: userId, date: todayStr, name: foodName.trim(), kcal,
       protein_g: isNaN(protein as number) ? null : protein,
+      fat_g: isNaN(fat as number) ? null : fat,
+      carb_g: isNaN(carb as number) ? null : carb,
     })
     setAdding(false)
     if (error) { Alert.alert('Error', error.message); return }
-    setFoodName(''); setFoodKcal(''); setFoodProtein('')
+    setFoodName(''); setFoodKcal(''); setFoodProtein(''); setFoodFat(''); setFoodCarb('')
     loadNutrition(userId)
   }
 
@@ -279,7 +285,7 @@ export default function NutritionScreen() {
                     style={[st.input, st.macroInput]}
                     value={foodKcal}
                     onChangeText={setFoodKcal}
-                    placeholder="kcal"
+                    placeholder="kcal *"
                     keyboardType="numeric"
                   />
                 </View>
@@ -288,7 +294,7 @@ export default function NutritionScreen() {
                     style={[st.input, st.macroInput]}
                     value={foodProtein}
                     onChangeText={setFoodProtein}
-                    placeholder="protein g (opt)"
+                    placeholder="protein g"
                     keyboardType="decimal-pad"
                   />
                 </View>
@@ -302,6 +308,27 @@ export default function NutritionScreen() {
                     : <Ionicons name="add" size={22} color="#fff" />
                   }
                 </Pressable>
+              </View>
+              <View style={st.addRow}>
+                <View style={st.macroInputWrap}>
+                  <TextInput
+                    style={[st.input, st.macroInput]}
+                    value={foodFat}
+                    onChangeText={setFoodFat}
+                    placeholder="fat g"
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+                <View style={st.macroInputWrap}>
+                  <TextInput
+                    style={[st.input, st.macroInput]}
+                    value={foodCarb}
+                    onChangeText={setFoodCarb}
+                    placeholder="carb g"
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+                <View style={{ width: 46 }} />
               </View>
             </View>
 
@@ -318,7 +345,9 @@ export default function NutritionScreen() {
                     <Text style={st.logName} numberOfLines={1}>{log.name}</Text>
                     <Text style={st.logMeta}>
                       {formatTime(log.logged_at)}
-                      {log.protein_g != null ? ` · ${log.protein_g}g protein` : ''}
+                      {log.protein_g != null ? ` · P ${log.protein_g}g` : ''}
+                      {log.fat_g != null ? ` · F ${log.fat_g}g` : ''}
+                      {log.carb_g != null ? ` · C ${log.carb_g}g` : ''}
                     </Text>
                   </View>
                   <Text style={st.logKcal}>{log.kcal} kcal</Text>
@@ -327,12 +356,27 @@ export default function NutritionScreen() {
                   </Pressable>
                 </View>
               ))}
-              {logs.length > 0 && (
-                <View style={st.totalRow}>
-                  <Text style={st.totalLabel}>Total</Text>
-                  <Text style={st.totalValue}>{consumed.toLocaleString()} kcal</Text>
-                </View>
-              )}
+              {logs.length > 0 && (() => {
+                const totalP = logs.reduce((s, l) => s + (l.protein_g ?? 0), 0)
+                const totalF = logs.reduce((s, l) => s + (l.fat_g ?? 0), 0)
+                const totalC = logs.reduce((s, l) => s + (l.carb_g ?? 0), 0)
+                const hasMacros = totalP > 0 || totalF > 0 || totalC > 0
+                return (
+                  <>
+                    {hasMacros && (
+                      <View style={st.macroTotalsRow}>
+                        {totalP > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: '#EF5350' }]}>P {Math.round(totalP)}g</Text></View>}
+                        {totalF > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: '#FF8A65' }]}>F {Math.round(totalF)}g</Text></View>}
+                        {totalC > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: '#66BB6A' }]}>C {Math.round(totalC)}g</Text></View>}
+                      </View>
+                    )}
+                    <View style={st.totalRow}>
+                      <Text style={st.totalLabel}>Total</Text>
+                      <Text style={st.totalValue}>{consumed.toLocaleString()} kcal</Text>
+                    </View>
+                  </>
+                )
+              })()}
             </View>
           </>
         )}
@@ -478,6 +522,9 @@ const st = StyleSheet.create({
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 2, borderTopColor: '#111', marginTop: 4, paddingTop: 12 },
   totalLabel: { fontSize: 14, fontWeight: '700', color: '#111' },
   totalValue: { fontSize: 18, fontWeight: '800', color: '#111' },
+  macroTotalsRow: { flexDirection: 'row', gap: 8, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#f5f5f5' },
+  macroChip: { backgroundColor: '#f8f8f8', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  macroChipText: { fontSize: 12, fontWeight: '700' },
 
   // Meal plan sub-tab
   mealProgressLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },

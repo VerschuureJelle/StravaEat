@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView,
-  StyleSheet, Alert,
+  StyleSheet, Alert, Switch,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons'
 import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
+import { useAppMode } from '../../contexts/AppModeContext'
 import type { UserProfile, HeartRateZone, MealTemplate, UserSport } from '../../types'
 
 const STRAVA_CLIENT_ID = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID!
@@ -44,6 +45,7 @@ function normalizeType(type: string): string {
 
 export default function SettingsScreen() {
   const router = useRouter()
+  const { mode, setMode } = useAppMode()
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile')
   const [userId, setUserId] = useState<string | null>(null)
 
@@ -309,6 +311,7 @@ export default function SettingsScreen() {
             {profileField('Max Heart Rate (bpm)', 'max_hr', true)}
             {profileField('Resting Heart Rate (bpm)', 'resting_hr', true)}
             {profileField('Daily calorie target (kcal)', 'daily_kcal_target', true)}
+            {profileField('FTP (watts, cycling)', 'ftp_watts', true)}
 
             <Pressable
               style={[styles.saveBtn, (!isDirty || savingProfile) && styles.saveBtnDisabled]}
@@ -321,11 +324,38 @@ export default function SettingsScreen() {
             <Pressable style={styles.coachRow} onPress={() => router.push('/coach')}>
               <Ionicons name="people-outline" size={20} color="#FC4C02" />
               <View style={{ flex: 1 }}>
-                <Text style={styles.coachRowTitle}>Coach</Text>
+                <Text style={styles.coachRowTitle}>Coach connections</Text>
                 <Text style={styles.coachRowNote}>Connect with a coach or manage your athletes</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color="#ccc" />
             </Pressable>
+
+            {/* App mode switcher */}
+            <View style={styles.modeCard}>
+              <View style={styles.modeCardLeft}>
+                <Ionicons
+                  name={mode === 'coach' ? 'people' : 'person'}
+                  size={22}
+                  color={mode === 'coach' ? '#5C6BC0' : '#FC4C02'}
+                />
+                <View>
+                  <Text style={styles.modeCardTitle}>
+                    {mode === 'coach' ? 'Coach Mode' : 'Athlete Mode'}
+                  </Text>
+                  <Text style={styles.modeCardNote}>
+                    {mode === 'coach'
+                      ? 'Viewing as coach — managing athletes'
+                      : 'Viewing as athlete — tracking your own data'}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={mode === 'coach'}
+                onValueChange={v => setMode(v ? 'coach' : 'athlete')}
+                trackColor={{ true: '#5C6BC0', false: '#e0e0e0' }}
+                thumbColor="#fff"
+              />
+            </View>
 
             <Pressable style={styles.signOutBtn} onPress={() => supabase.auth.signOut()}>
               <Text style={styles.signOutText}>Sign out</Text>
@@ -633,6 +663,13 @@ const styles = StyleSheet.create({
   },
   coachRowTitle: { fontSize: 15, fontWeight: '700', color: '#111' },
   coachRowNote: { fontSize: 12, color: '#aaa', marginTop: 1 },
+  modeCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#f8f8f8', borderRadius: 14, padding: 14, marginTop: 8,
+  },
+  modeCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  modeCardTitle: { fontSize: 15, fontWeight: '700', color: '#111' },
+  modeCardNote: { fontSize: 12, color: '#aaa', marginTop: 1, maxWidth: 220 },
   signOutBtn: { padding: 20, alignItems: 'center' },
   signOutText: { color: '#bbb', fontSize: 14 },
 

@@ -3,7 +3,8 @@
     "allow": [
       "Bash(export PATH=\"$PATH:/usr/local/bin:/opt/homebrew/bin\")",
       "Bash(npm --version)",
-      "Bash(npx --version)"
+      "Bash(npx --version)",
+      "Bash(supabase migration *)"
     ]
   }
 }
