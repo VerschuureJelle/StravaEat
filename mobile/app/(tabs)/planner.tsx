@@ -106,7 +106,7 @@ interface WorkoutSegment {
 interface SegmentResult {
   totalKcal: number
   totalDurationMin: number
-  segments: Array<{ label: string; kcal: number; durationMin: number }>
+  segments: Array<{ label: string; kcal: number; durationMin: number; zoneNumber: number; repeats: number }>
 }
 
 interface AiResult {
@@ -165,6 +165,23 @@ type StrengthFocus = 'strength' | 'hypertrophy' | 'stability' | 'endurance'
 type SwimGoal = '1500m' | '5k' | '10k' | 'general'
 type CyclingEvent = 'general' | 'gran_fondo' | 'century' | 'triathlon'
 
+const AI_GOALS = [
+  { key: 'recovery',   label: 'Recovery',    note: 'Easy, low HR (Z1–Z2)' },
+  { key: 'endurance',  label: 'Endurance',   note: 'Aerobic base (Z2)' },
+  { key: 'tempo',      label: 'Tempo',       note: 'Comfortably hard (Z3)' },
+  { key: 'threshold',  label: 'Threshold',   note: 'Lactate threshold (Z4)' },
+  { key: 'vo2max',     label: 'VO₂ Max',     note: 'High intensity (Z5)' },
+  { key: 'intervals',  label: 'Intervals',   note: 'Structured repeats' },
+  { key: 'long',       label: 'Long',        note: 'Extended steady effort' },
+  { key: 'race_pace',  label: 'Race Pace',   note: 'At target race effort' },
+] as const
+
+const AI_DURATION_PRESETS = ['20', '30', '45', '60', '75', '90', '120']
+
+function zoneBarColor(n: number): string {
+  return ['#64B5F6', '#66BB6A', '#FFCA28', '#FF7043', '#EF5350'][n - 1] ?? '#90A4AE'
+}
+
 // ─── screen ────────────────────────────────────────────────────────────────
 
 export default function PlannerScreen() {
@@ -197,7 +214,9 @@ export default function PlannerScreen() {
   const [segResult, setSegResult] = useState<SegmentResult | null>(null)
 
   // ai mode
-  const [aiInput, setAiInput] = useState('')
+  const [aiGoal, setAiGoal] = useState('endurance')
+  const [aiDuration, setAiDuration] = useState('60')
+  const [aiNotes, setAiNotes] = useState('')
   const [aiResult, setAiResult] = useState<AiResult | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
 
@@ -442,6 +461,8 @@ export default function PlannerScreen() {
         label: repeats > 1 ? `${repeats}× (${label})` : label,
         kcal: segKcal,
         durationMin: Math.round(segDurationMin),
+        zoneNumber: zone.zone_number,
+        repeats,
       })
       totalKcal += segKcal
       totalDurationMin += segDurationMin
@@ -473,12 +494,16 @@ export default function PlannerScreen() {
   // ─── ai mode ───────────────────────────────────────────────────────────────
 
   async function askAI() {
-    if (!aiInput.trim()) return
     setAiLoading(true)
     setAiResult(null)
     try {
+      const goalLabel = AI_GOALS.find(g => g.key === aiGoal)?.label ?? aiGoal
+      const message = [
+        `Create a ${goalLabel} ${selectedSport} workout, duration: ${aiDuration} minutes.`,
+        aiNotes.trim() ? `Additional instructions: ${aiNotes.trim()}` : null,
+      ].filter(Boolean).join('\n\n')
       const res = await supabase.functions.invoke('ai-coach', {
-        body: { message: aiInput, sport: selectedSport || undefined },
+        body: { message, sport: selectedSport || undefined },
       })
       if (res.error) {
         const body = await res.error.context?.json?.().catch(() => null)
@@ -963,6 +988,7 @@ export default function PlannerScreen() {
 
             {segResult && (
               <View style={[st.segResultCard, { borderLeftColor: sportColor }]}>
+                {/* Totals */}
                 <View style={st.segResultTotals}>
                   <View style={st.segResultStat}>
                     <Text style={[st.segResultValue, { color: sportColor }]}>{segResult.totalKcal}</Text>
@@ -974,12 +1000,50 @@ export default function PlannerScreen() {
                     <Text style={st.segResultLabel}>total</Text>
                   </View>
                 </View>
+
+                {/* Workout diagram */}
+                <Text style={st.diagramLabel}>Workout structure</Text>
+                <View style={st.diagramBar}>
+                  {segResult.segments.map((s, i) => {
+                    const pct = segResult.totalDurationMin > 0
+                      ? (s.durationMin / segResult.totalDurationMin) * 100
+                      : 0
+                    const color = zoneBarColor(s.zoneNumber)
+                    return (
+                      <View key={i} style={[st.diagramSegment, { flex: pct, backgroundColor: color }]}>
+                        {pct > 12 && (
+                          <Text style={st.diagramSegmentText} numberOfLines={1}>
+                            Z{s.zoneNumber}
+                          </Text>
+                        )}
+                      </View>
+                    )
+                  })}
+                </View>
+
+                {/* Zone legend */}
+                <View style={st.diagramLegend}>
+                  {[...new Set(segResult.segments.map(s => s.zoneNumber))].sort().map(zn => (
+                    <View key={zn} style={st.diagramLegendItem}>
+                      <View style={[st.diagramLegendDot, { backgroundColor: zoneBarColor(zn) }]} />
+                      <Text style={st.diagramLegendText}>Z{zn}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Per-segment breakdown */}
                 {segResult.segments.map((s, i) => (
-                  <View key={i} style={st.segBreakRow}>
-                    <Text style={st.segBreakLabel}>{s.label}</Text>
-                    <Text style={st.segBreakMeta}>{s.kcal} kcal · {formatDuration(s.durationMin)}</Text>
+                  <View key={i} style={[st.segBreakRow, { borderLeftWidth: 3, borderLeftColor: zoneBarColor(s.zoneNumber), paddingLeft: 8 }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={st.segBreakLabel}>{s.label}</Text>
+                      <Text style={st.segBreakMeta}>{formatDuration(s.durationMin)} · {s.kcal} kcal</Text>
+                    </View>
+                    <View style={[st.segZoneTag, { backgroundColor: zoneBarColor(s.zoneNumber) + '22' }]}>
+                      <Text style={[st.segZoneTagText, { color: zoneBarColor(s.zoneNumber) }]}>Z{s.zoneNumber}</Text>
+                    </View>
                   </View>
                 ))}
+
                 <Pressable
                   style={[st.planBtn, { marginTop: 14 }, saving && st.planBtnDisabled]}
                   onPress={planFromBuildMode}
@@ -998,16 +1062,46 @@ export default function PlannerScreen() {
             <View style={st.aiInfoBox}>
               <Ionicons name="sparkles-outline" size={14} color="#7C83FD" />
               <Text style={st.aiInfoText}>
-                Describe what you want to achieve and the AI Coach will design a workout around your HR zones and historical pace.
+                Set your goal and duration — the AI Coach will design a workout around your HR zones and historical pace.
               </Text>
             </View>
 
-            <Text style={st.label}>Your request</Text>
+            {/* Duration */}
+            <Text style={st.label}>Duration</Text>
+            <View style={st.aiDurationRow}>
+              {AI_DURATION_PRESETS.map(d => (
+                <Pressable
+                  key={d}
+                  style={[st.aiDurationBtn, aiDuration === d && { backgroundColor: '#7C83FD', borderColor: '#7C83FD' }]}
+                  onPress={() => setAiDuration(d)}
+                >
+                  <Text style={[st.aiDurationBtnText, aiDuration === d && { color: '#fff' }]}>{d}'</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Goal */}
+            <Text style={st.label}>Workout goal</Text>
+            <View style={st.aiGoalGrid}>
+              {AI_GOALS.map(g => (
+                <Pressable
+                  key={g.key}
+                  style={[st.aiGoalCard, aiGoal === g.key && { borderColor: '#7C83FD', backgroundColor: '#F0F0FF' }]}
+                  onPress={() => setAiGoal(g.key)}
+                >
+                  <Text style={[st.aiGoalLabel, aiGoal === g.key && { color: '#7C83FD', fontWeight: '800' }]}>{g.label}</Text>
+                  <Text style={st.aiGoalNote}>{g.note}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Extra notes */}
+            <Text style={st.label}>Additional instructions (optional)</Text>
             <TextInput
               style={st.aiInput}
-              value={aiInput}
-              onChangeText={setAiInput}
-              placeholder={'e.g. "I want to burn 500 kcal running" or "Plan a threshold running session, 45 min"'}
+              value={aiNotes}
+              onChangeText={setAiNotes}
+              placeholder={'e.g. include a long warm-up, avoid sprints, focus on cadence…'}
               multiline
               numberOfLines={3}
               textAlignVertical="top"
@@ -1021,8 +1115,8 @@ export default function PlannerScreen() {
               {aiLoading
                 ? <ActivityIndicator size="small" color="#fff" />
                 : <>
-                    <Ionicons name="send-outline" size={18} color="#fff" />
-                    <Text style={st.calcBtnText}>Ask AI Coach</Text>
+                    <Ionicons name="sparkles-outline" size={18} color="#fff" />
+                    <Text style={st.calcBtnText}>Generate workout</Text>
                   </>
               }
             </Pressable>
@@ -1795,4 +1889,44 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: '#c8e6c9',
   },
   ftpBadgeText: { fontSize: 13, fontWeight: '600' },
+
+  // Workout diagram
+  diagramLabel: {
+    fontSize: 10, fontWeight: '700', color: '#bbb',
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, marginTop: 4,
+  },
+  diagramBar: {
+    flexDirection: 'row', height: 40, borderRadius: 8, overflow: 'hidden',
+    marginBottom: 8,
+  },
+  diagramSegment: {
+    justifyContent: 'center', alignItems: 'center', minWidth: 2,
+  },
+  diagramSegmentText: {
+    fontSize: 11, fontWeight: '800', color: '#fff',
+    textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2,
+  },
+  diagramLegend: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  diagramLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  diagramLegendDot: { width: 8, height: 8, borderRadius: 4 },
+  diagramLegendText: { fontSize: 11, color: '#888', fontWeight: '600' },
+  segZoneTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  segZoneTagText: { fontSize: 11, fontWeight: '800' },
+
+  // AI mode — structured inputs
+  aiDurationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  aiDurationBtn: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
+  },
+  aiDurationBtnText: { fontSize: 14, fontWeight: '700', color: '#555' },
+  aiGoalGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  aiGoalCard: {
+    flexBasis: '47%', flexGrow: 1,
+    backgroundColor: '#fafafa', borderRadius: 12,
+    borderWidth: 2, borderColor: '#e8e8e8',
+    padding: 12, gap: 2,
+  },
+  aiGoalLabel: { fontSize: 14, fontWeight: '700', color: '#222' },
+  aiGoalNote: { fontSize: 11, color: '#aaa' },
 })

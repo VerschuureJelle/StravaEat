@@ -1,12 +1,7 @@
 name: Strava Verbranding Script
 
 on:
-  push:
-    branches:
-      - main                   # Actie bij push naar de main branch
-  schedule:
-    - cron: '0 8 * * *'       # Elke uur
-  workflow_dispatch:           # Handmatig starten
+  workflow_dispatch:           # Alleen handmatig starten
 
 jobs:
   run-script:
