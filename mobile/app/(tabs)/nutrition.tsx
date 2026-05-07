@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { scheduleMealNotifications, cancelMealNotification } from '../../lib/notifications'
+import { C } from '../../lib/theme'
 import type { FoodLog, MealTemplate } from '../../types'
 
 type SubTab = 'nutrition' | 'meals'
@@ -277,6 +278,7 @@ export default function NutritionScreen() {
                 value={foodName}
                 onChangeText={setFoodName}
                 placeholder="Food name (e.g. Oatmeal with banana)"
+                placeholderTextColor={C.text3}
                 returnKeyType="next"
               />
               <View style={st.addRow}>
@@ -286,6 +288,7 @@ export default function NutritionScreen() {
                     value={foodKcal}
                     onChangeText={setFoodKcal}
                     placeholder="kcal *"
+                    placeholderTextColor={C.text3}
                     keyboardType="numeric"
                   />
                 </View>
@@ -295,6 +298,7 @@ export default function NutritionScreen() {
                     value={foodProtein}
                     onChangeText={setFoodProtein}
                     placeholder="protein g"
+                    placeholderTextColor={C.text3}
                     keyboardType="decimal-pad"
                   />
                 </View>
@@ -316,6 +320,7 @@ export default function NutritionScreen() {
                     value={foodFat}
                     onChangeText={setFoodFat}
                     placeholder="fat g"
+                    placeholderTextColor={C.text3}
                     keyboardType="decimal-pad"
                   />
                 </View>
@@ -325,6 +330,7 @@ export default function NutritionScreen() {
                     value={foodCarb}
                     onChangeText={setFoodCarb}
                     placeholder="carb g"
+                    placeholderTextColor={C.text3}
                     keyboardType="decimal-pad"
                   />
                 </View>
@@ -335,7 +341,7 @@ export default function NutritionScreen() {
             {/* Food log list */}
             <View style={st.card}>
               <Text style={st.cardLabel}>Today's log</Text>
-              {nutritionLoading && <ActivityIndicator color="#FC4C02" style={{ marginVertical: 12 }} />}
+              {nutritionLoading && <ActivityIndicator color={C.accent} style={{ marginVertical: 12 }} />}
               {!nutritionLoading && logs.length === 0 && (
                 <Text style={st.emptyNote}>No food logged yet. Add your first entry above.</Text>
               )}
@@ -352,7 +358,7 @@ export default function NutritionScreen() {
                   </View>
                   <Text style={st.logKcal}>{log.kcal} kcal</Text>
                   <Pressable onPress={() => deleteEntry(log.id)} hitSlop={10} style={st.deleteBtn}>
-                    <Ionicons name="trash-outline" size={16} color="#ccc" />
+                    <Ionicons name="trash-outline" size={16} color={C.text3} />
                   </Pressable>
                 </View>
               ))}
@@ -385,7 +391,7 @@ export default function NutritionScreen() {
         {subTab === 'meals' && (
           <>
             {meals.length > 0 && (
-              <View style={[st.card, allMealsDone && { backgroundColor: '#F1FFF3' }]}>
+              <View style={[st.card, allMealsDone && { backgroundColor: 'rgba(76,175,80,0.1)', borderColor: 'rgba(76,175,80,0.2)' }]}>
                 {allMealsDone ? (
                   <View style={st.doneRow}>
                     <Ionicons name="checkmark-circle" size={22} color="#4CAF50" />
@@ -405,11 +411,11 @@ export default function NutritionScreen() {
               </View>
             )}
 
-            {mealsLoading && <ActivityIndicator color="#FC4C02" style={{ marginVertical: 12 }} />}
+            {mealsLoading && <ActivityIndicator color={C.accent} style={{ marginVertical: 12 }} />}
 
             {!mealsLoading && meals.length === 0 && (
               <View style={st.mealEmptyBox}>
-                <Ionicons name="restaurant-outline" size={52} color="#e0e0e0" />
+                <Ionicons name="restaurant-outline" size={52} color={C.text3} />
                 <Text style={st.mealEmptyTitle}>No meal plan set up</Text>
                 <Text style={st.emptyNote}>
                   Go to Settings → Meal Plan to configure your daily meals and times.
@@ -438,7 +444,7 @@ export default function NutritionScreen() {
                   <View style={st.mealInfo}>
                     <Text style={[st.mealName, meal.checked && st.mealNameChecked]}>{meal.name}</Text>
                     <View style={st.mealMetaRow}>
-                      <Ionicons name="time-outline" size={13} color={overdue ? '#EF5350' : '#bbb'} />
+                      <Ionicons name="time-outline" size={13} color={overdue ? '#EF5350' : C.text2} />
                       <Text style={[st.mealTime, overdue && st.mealTimeOverdue]}>{meal.scheduled_time}</Text>
                       {overdue && (
                         <View style={st.overdueTag}>
@@ -459,49 +465,51 @@ export default function NutritionScreen() {
 }
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9f9f9' },
+  container: { flex: 1, backgroundColor: C.bg },
 
   segRow: {
     flexDirection: 'row', marginHorizontal: 16, marginTop: 16, marginBottom: 0,
-    backgroundColor: '#f0f0f0', borderRadius: 10, padding: 3,
+    backgroundColor: C.surface2, borderRadius: 10, padding: 3,
   },
   segBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
-  segBtnActive: { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
-  segText: { fontSize: 13, fontWeight: '600', color: '#888' },
-  segTextActive: { color: '#111' },
+  segBtnActive: { backgroundColor: C.surface3, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
+  segText: { fontSize: 13, fontWeight: '600', color: C.text3 },
+  segTextActive: { color: C.text1 },
 
   content: { padding: 16, paddingBottom: 48, gap: 14 },
-  screenTitle: { fontSize: 26, fontWeight: '800', color: '#111', marginBottom: 4 },
+  screenTitle: { fontSize: 26, fontWeight: '800', color: C.text1, marginBottom: 4 },
 
   card: {
-    backgroundColor: '#fff', borderRadius: 18, padding: 18,
+    backgroundColor: C.surface, borderRadius: 18, padding: 18,
+    borderWidth: 1, borderColor: C.border,
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
   cardLabel: {
-    fontSize: 11, fontWeight: '700', color: '#aaa',
+    fontSize: 11, fontWeight: '700', color: C.text3,
     textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 14,
   },
 
   progressRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 12 },
-  consumedNum: { fontSize: 40, fontWeight: '800', color: '#111' },
-  targetNum: { fontSize: 18, color: '#aaa', fontWeight: '600' },
-  barTrack: { height: 8, backgroundColor: '#f0f0f0', borderRadius: 4, overflow: 'hidden', marginBottom: 10 },
+  consumedNum: { fontSize: 40, fontWeight: '800', color: C.text1 },
+  targetNum: { fontSize: 18, color: C.text2, fontWeight: '600' },
+  barTrack: { height: 8, backgroundColor: C.surface3, borderRadius: 4, overflow: 'hidden', marginBottom: 10 },
   barFill: { height: 8, borderRadius: 4 },
   progressMeta: { marginBottom: 10 },
-  remainingText: { fontSize: 13, color: '#888', fontWeight: '500' },
+  remainingText: { fontSize: 13, color: C.text2, fontWeight: '500' },
   overText: { color: '#EF5350', fontWeight: '700' },
-  noTargetNote: { fontSize: 13, color: '#bbb', fontStyle: 'italic' },
+  noTargetNote: { fontSize: 13, color: C.text3, fontStyle: 'italic' },
   breakdownRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  breakdownChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f8f8f8', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
-  breakdownText: { fontSize: 12, color: '#888' },
+  breakdownChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.surface2, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: C.border },
+  breakdownText: { fontSize: 12, color: C.text2 },
   activityRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   activityPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   activityPillText: { fontSize: 12, fontWeight: '600' },
 
   input: {
-    borderWidth: 1.5, borderColor: '#ebebeb', borderRadius: 10,
-    padding: 12, fontSize: 15, backgroundColor: '#fafafa', marginBottom: 10,
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 10,
+    padding: 12, fontSize: 15, backgroundColor: C.surface2, marginBottom: 10,
+    color: C.text1,
   },
   addRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
   macroInputWrap: { flex: 1 },
@@ -511,31 +519,32 @@ const st = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  emptyNote: { fontSize: 14, color: '#bbb', textAlign: 'center', paddingVertical: 16, fontStyle: 'italic' },
+  emptyNote: { fontSize: 14, color: C.text3, textAlign: 'center', paddingVertical: 16, fontStyle: 'italic' },
   logRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10 },
-  logRowBorder: { borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
+  logRowBorder: { borderBottomWidth: 1, borderBottomColor: C.divider },
   logLeft: { flex: 1 },
-  logName: { fontSize: 15, color: '#111', fontWeight: '500', marginBottom: 2 },
-  logMeta: { fontSize: 12, color: '#aaa' },
-  logKcal: { fontSize: 15, fontWeight: '700', color: '#333' },
+  logName: { fontSize: 15, color: C.text1, fontWeight: '500', marginBottom: 2 },
+  logMeta: { fontSize: 12, color: C.text2 },
+  logKcal: { fontSize: 15, fontWeight: '700', color: C.text1 },
   deleteBtn: { padding: 4 },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 2, borderTopColor: '#111', marginTop: 4, paddingTop: 12 },
-  totalLabel: { fontSize: 14, fontWeight: '700', color: '#111' },
-  totalValue: { fontSize: 18, fontWeight: '800', color: '#111' },
-  macroTotalsRow: { flexDirection: 'row', gap: 8, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#f5f5f5' },
-  macroChip: { backgroundColor: '#f8f8f8', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 2, borderTopColor: C.border, marginTop: 4, paddingTop: 12 },
+  totalLabel: { fontSize: 14, fontWeight: '700', color: C.text1 },
+  totalValue: { fontSize: 18, fontWeight: '800', color: C.text1 },
+  macroTotalsRow: { flexDirection: 'row', gap: 8, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.divider },
+  macroChip: { backgroundColor: C.surface2, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   macroChipText: { fontSize: 12, fontWeight: '700' },
 
   // Meal plan sub-tab
   mealProgressLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  mealProgressLabel: { fontSize: 14, fontWeight: '600', color: '#333' },
+  mealProgressLabel: { fontSize: 14, fontWeight: '600', color: C.text2 },
   mealProgressPct: { fontSize: 14, fontWeight: '800', color: '#FC4C02' },
   doneRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   doneText: { fontSize: 15, fontWeight: '700', color: '#388E3C' },
 
   mealCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: '#fff', borderRadius: 16, padding: 16,
+    backgroundColor: C.surface, borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: C.border,
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 }, elevation: 2,
     borderLeftWidth: 3, borderLeftColor: 'transparent',
@@ -544,19 +553,19 @@ const st = StyleSheet.create({
   mealCardOverdue: { borderLeftColor: '#EF5350' },
   checkbox: {
     width: 28, height: 28, borderRadius: 14,
-    borderWidth: 2, borderColor: '#ddd',
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff',
+    borderWidth: 2, borderColor: C.border,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: C.surface2,
   },
   checkboxChecked: { backgroundColor: '#FC4C02', borderColor: '#FC4C02' },
   mealInfo: { flex: 1 },
-  mealName: { fontSize: 16, fontWeight: '600', color: '#111', marginBottom: 4 },
-  mealNameChecked: { textDecorationLine: 'line-through', color: '#aaa' },
+  mealName: { fontSize: 16, fontWeight: '600', color: C.text1, marginBottom: 4 },
+  mealNameChecked: { textDecorationLine: 'line-through', color: C.text2 },
   mealMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  mealTime: { fontSize: 13, color: '#aaa' },
+  mealTime: { fontSize: 13, color: C.text3 },
   mealTimeOverdue: { color: '#EF5350', fontWeight: '600' },
-  overdueTag: { backgroundColor: '#FFEBEE', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 2 },
+  overdueTag: { backgroundColor: 'rgba(239,83,80,0.15)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 2 },
   overdueTagText: { fontSize: 11, fontWeight: '700', color: '#EF5350' },
   checkedLabel: { fontSize: 11, fontWeight: '600', color: '#4CAF50', marginLeft: 2 },
   mealEmptyBox: { alignItems: 'center', paddingVertical: 48, gap: 12 },
-  mealEmptyTitle: { fontSize: 16, fontWeight: '700', color: '#888' },
+  mealEmptyTitle: { fontSize: 16, fontWeight: '700', color: C.text2 },
 })

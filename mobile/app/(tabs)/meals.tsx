@@ -7,6 +7,7 @@ import { useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { scheduleMealNotifications, cancelMealNotification } from '../../lib/notifications'
+import { C } from '../../lib/theme'
 import type { MealTemplate } from '../../types'
 
 function localDate(): string {
@@ -63,7 +64,6 @@ export default function MealsScreen() {
     setMeals(items)
     setLoading(false)
 
-    // Refresh notification schedule based on current check state
     await scheduleMealNotifications(items.map(m => ({
       meal_index: m.meal_index,
       name: m.name,
@@ -78,13 +78,11 @@ export default function MealsScreen() {
     setChecking(meal.meal_index)
 
     if (meal.checked) {
-      // Uncheck — remove the check record
       await supabase.from('meal_checks')
         .delete()
         .eq('user_id', userId)
         .eq('meal_index', meal.meal_index)
         .eq('date', todayStr)
-      // Reschedule notification if meal is still in the future (+ 1h window)
       const [hh, mm] = meal.scheduled_time.split(':').map(Number)
       const [y, mo, d] = todayStr.split('-').map(Number)
       const overdueTime = new Date(y, mo - 1, d, hh + 1, mm, 0, 0)
@@ -92,7 +90,6 @@ export default function MealsScreen() {
         await scheduleMealNotifications([{ ...meal, date: todayStr, checked: false }])
       }
     } else {
-      // Check — record it and cancel the overdue notification
       await supabase.from('meal_checks').upsert(
         { user_id: userId, meal_index: meal.meal_index, date: todayStr },
         { onConflict: 'user_id,meal_index,date' },
@@ -117,7 +114,6 @@ export default function MealsScreen() {
           {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
         </Text>
 
-        {/* Progress card */}
         {meals.length > 0 && (
           <View style={[st.progressCard, allDone && st.progressCardDone]}>
             {allDone ? (
@@ -139,11 +135,11 @@ export default function MealsScreen() {
           </View>
         )}
 
-        {loading && <ActivityIndicator color="#FC4C02" style={{ marginTop: 24 }} />}
+        {loading && <ActivityIndicator color={C.accent} style={{ marginTop: 24 }} />}
 
         {!loading && meals.length === 0 && (
           <View style={st.emptyBox}>
-            <Ionicons name="restaurant-outline" size={52} color="#e0e0e0" />
+            <Ionicons name="restaurant-outline" size={52} color={C.text4} />
             <Text style={st.emptyTitle}>No meal plan set up</Text>
             <Text style={st.emptyNote}>
               Go to Settings → Meal Plan to configure your daily meals and times.
@@ -164,7 +160,7 @@ export default function MealsScreen() {
             >
               <View style={[st.checkbox, meal.checked && st.checkboxChecked]}>
                 {isChecking
-                  ? <ActivityIndicator size="small" color={meal.checked ? '#fff' : '#FC4C02'} />
+                  ? <ActivityIndicator size="small" color={meal.checked ? '#fff' : C.accent} />
                   : meal.checked
                     ? <Ionicons name="checkmark" size={16} color="#fff" />
                     : null
@@ -177,7 +173,7 @@ export default function MealsScreen() {
                   <Ionicons
                     name="time-outline"
                     size={13}
-                    color={overdue ? '#EF5350' : '#bbb'}
+                    color={overdue ? '#EF5350' : C.text3}
                   />
                   <Text style={[st.mealTime, overdue && st.mealTimeOverdue]}>
                     {meal.scheduled_time}
@@ -201,60 +197,58 @@ export default function MealsScreen() {
 }
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9f9f9' },
+  container: { flex: 1, backgroundColor: C.bg },
   content: { padding: 16, paddingBottom: 48, gap: 10 },
 
-  screenTitle: { fontSize: 26, fontWeight: '800', color: '#111', marginBottom: 2 },
-  dateText: { fontSize: 14, color: '#aaa', marginBottom: 8 },
+  screenTitle: { fontSize: 26, fontWeight: '800', color: C.text1, marginBottom: 2 },
+  dateText: { fontSize: 14, color: C.text3, marginBottom: 8 },
 
   progressCard: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 16,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    backgroundColor: C.surface, borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: C.border,
   },
-  progressCardDone: { backgroundColor: '#F1FFF3' },
+  progressCardDone: { backgroundColor: 'rgba(76,175,80,0.1)', borderColor: 'rgba(76,175,80,0.25)' },
   doneRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  doneText: { fontSize: 15, fontWeight: '700', color: '#388E3C' },
+  doneText: { fontSize: 15, fontWeight: '700', color: '#4CAF50' },
   progressLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  progressLabel: { fontSize: 14, fontWeight: '600', color: '#333' },
-  progressPct: { fontSize: 14, fontWeight: '800', color: '#FC4C02' },
-  barTrack: { height: 6, backgroundColor: '#f0f0f0', borderRadius: 3, overflow: 'hidden' },
-  barFill: { height: 6, backgroundColor: '#FC4C02', borderRadius: 3 },
+  progressLabel: { fontSize: 14, fontWeight: '600', color: C.text2 },
+  progressPct: { fontSize: 14, fontWeight: '800', color: C.accent },
+  barTrack: { height: 6, backgroundColor: C.surface3, borderRadius: 3, overflow: 'hidden' },
+  barFill: { height: 6, backgroundColor: C.accent, borderRadius: 3 },
 
   mealCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: '#fff', borderRadius: 16, padding: 16,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    backgroundColor: C.surface, borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: C.border,
     borderLeftWidth: 3, borderLeftColor: 'transparent',
   },
-  mealCardChecked: { opacity: 0.55 },
+  mealCardChecked: { opacity: 0.5 },
   mealCardOverdue: { borderLeftColor: '#EF5350' },
 
   checkbox: {
     width: 28, height: 28, borderRadius: 14,
-    borderWidth: 2, borderColor: '#ddd',
+    borderWidth: 2, borderColor: C.border,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: C.surface2,
   },
-  checkboxChecked: { backgroundColor: '#FC4C02', borderColor: '#FC4C02' },
+  checkboxChecked: { backgroundColor: C.accent, borderColor: C.accent },
 
   mealInfo: { flex: 1 },
-  mealName: { fontSize: 16, fontWeight: '600', color: '#111', marginBottom: 4 },
-  mealNameChecked: { textDecorationLine: 'line-through', color: '#aaa' },
+  mealName: { fontSize: 16, fontWeight: '600', color: C.text1, marginBottom: 4 },
+  mealNameChecked: { textDecorationLine: 'line-through', color: C.text3 },
 
   mealMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  mealTime: { fontSize: 13, color: '#aaa' },
+  mealTime: { fontSize: 13, color: C.text3 },
   mealTimeOverdue: { color: '#EF5350', fontWeight: '600' },
 
   overdueTag: {
-    backgroundColor: '#FFEBEE', borderRadius: 6,
+    backgroundColor: 'rgba(239,83,80,0.15)', borderRadius: 6,
     paddingHorizontal: 7, paddingVertical: 2, marginLeft: 2,
   },
   overdueTagText: { fontSize: 11, fontWeight: '700', color: '#EF5350' },
   checkedLabel: { fontSize: 11, fontWeight: '600', color: '#4CAF50', marginLeft: 2 },
 
   emptyBox: { alignItems: 'center', paddingVertical: 56, gap: 12 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#888' },
-  emptyNote: { fontSize: 14, color: '#bbb', textAlign: 'center', lineHeight: 20, maxWidth: 260 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: C.text2 },
+  emptyNote: { fontSize: 14, color: C.text3, textAlign: 'center', lineHeight: 20, maxWidth: 260 },
 })

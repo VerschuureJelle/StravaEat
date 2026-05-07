@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { notifyWorkoutSynced } from '../../lib/notifications'
+import { C } from '../../lib/theme'
 import type { Activity } from '../../types'
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
@@ -168,10 +169,10 @@ function SummaryCard({ activities }: { activities: Activity[] }) {
 }
 const sumSt = StyleSheet.create({
   row: { paddingHorizontal: 16, paddingVertical: 10, gap: 10 },
-  card: { backgroundColor: '#f8f8f8', borderRadius: 10, padding: 12, minWidth: 100, borderTopWidth: 3 },
+  card: { backgroundColor: C.surface, borderRadius: 10, padding: 12, minWidth: 100, borderTopWidth: 3, borderWidth: 1, borderColor: C.border },
   typeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   type: { fontSize: 12, fontWeight: '700' },
-  line: { fontSize: 12, color: '#666', marginTop: 1 },
+  line: { fontSize: 12, color: C.text2, marginTop: 1 },
 })
 
 // ─── month calendar ────────────────────────────────────────────────────────
@@ -206,10 +207,10 @@ function MonthCalendar({ monthStart, activities }: { monthStart: Date; activitie
 const calSt = StyleSheet.create({
   cal: { paddingHorizontal: 16, paddingBottom: 8 },
   labels: { flexDirection: 'row', marginBottom: 2 },
-  label: { flex: 1, textAlign: 'center', fontSize: 10, color: '#bbb', fontWeight: '600' },
+  label: { flex: 1, textAlign: 'center', fontSize: 10, color: C.text3, fontWeight: '600' },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: '14.285714%', alignItems: 'center', paddingVertical: 3 },
-  num: { fontSize: 12, color: '#444' },
+  num: { fontSize: 12, color: C.text2 },
   dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#FC4C02', marginTop: 2 },
 })
 
@@ -375,7 +376,7 @@ export default function ActivitiesScreen() {
       {/* Period selector */}
       <Pressable style={st.selectorBtn} onPress={() => setDropdownOpen(true)}>
         <Text style={st.selectorText} numberOfLines={1}>{getPeriodButtonLabel()}</Text>
-        <Ionicons name="chevron-down" size={14} color="#555" style={{ marginLeft: 6 }} />
+        <Ionicons name="chevron-down" size={14} color={C.text2} style={{ marginLeft: 6 }} />
       </Pressable>
 
       {/* Custom date inputs */}
@@ -386,6 +387,7 @@ export default function ActivitiesScreen() {
             <TextInput
               style={st.customInput}
               placeholder="DD-MM-YYYY"
+              placeholderTextColor={C.text3}
               value={customStartText}
               onChangeText={setCustomStartText}
               onBlur={applyCustomDates}
@@ -398,6 +400,7 @@ export default function ActivitiesScreen() {
             <TextInput
               style={st.customInput}
               placeholder="DD-MM-YYYY"
+              placeholderTextColor={C.text3}
               value={customEndText}
               onChangeText={setCustomEndText}
               onBlur={applyCustomDates}
@@ -432,7 +435,7 @@ export default function ActivitiesScreen() {
     return (
       <SafeAreaView style={st.container}>
         {listHeader}
-        <ActivityIndicator style={{ flex: 1 }} size="large" color="#FC4C02" />
+        <ActivityIndicator style={{ flex: 1 }} size="large" color={C.accent} />
       </SafeAreaView>
     )
   }
@@ -445,7 +448,7 @@ export default function ActivitiesScreen() {
         stickySectionHeadersEnabled={false}
         ListHeaderComponent={listHeader}
         contentContainerStyle={{ paddingBottom: 24 }}
-        refreshControl={<RefreshControl refreshing={syncing} onRefresh={syncStrava} tintColor="#FC4C02" />}
+        refreshControl={<RefreshControl refreshing={syncing} onRefresh={syncStrava} tintColor={C.accent} />}
         renderSectionHeader={({ section: s }) => {
           if (s.isTotal) {
             return (
@@ -512,13 +515,13 @@ export default function ActivitiesScreen() {
                 <Text style={[st.dropdownRowText, period === opt.value && st.dropdownRowActive]}>
                   {opt.label}
                 </Text>
-                {period === opt.value && <Ionicons name="checkmark" size={16} color="#FC4C02" />}
+                {period === opt.value && <Ionicons name="checkmark" size={16} color={C.accent} />}
               </Pressable>
             ))}
             <View style={st.dropdownDivider} />
             <Pressable style={st.dropdownRow} onPress={() => setShowCalendars(v => !v)}>
               <Text style={st.dropdownRowText}>Show calendars</Text>
-              <Ionicons name={showCalendars ? 'toggle' : 'toggle-outline'} size={26} color={showCalendars ? '#FC4C02' : '#ccc'} />
+              <Ionicons name={showCalendars ? 'toggle' : 'toggle-outline'} size={26} color={showCalendars ? C.accent : C.text3} />
             </Pressable>
           </Pressable>
         </Pressable>
@@ -528,86 +531,87 @@ export default function ActivitiesScreen() {
 }
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: C.bg },
 
   selectorBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginHorizontal: 16, marginTop: 12, marginBottom: 6,
     paddingHorizontal: 14, paddingVertical: 10,
-    backgroundColor: '#f5f5f5', borderRadius: 10,
+    backgroundColor: C.surface2, borderRadius: 10,
   },
-  selectorText: { fontSize: 15, fontWeight: '700', color: '#111', flex: 1 },
+  selectorText: { fontSize: 15, fontWeight: '700', color: C.text1, flex: 1 },
 
   customRange: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
     paddingHorizontal: 16, paddingBottom: 10,
   },
   customField: { flex: 1 },
-  customLabel: { fontSize: 10, fontWeight: '700', color: '#aaa', marginBottom: 4, textTransform: 'uppercase' },
+  customLabel: { fontSize: 10, fontWeight: '700', color: C.text3, marginBottom: 4, textTransform: 'uppercase' },
   customInput: {
-    borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
-    padding: 9, fontSize: 13, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: C.border, borderRadius: 8,
+    padding: 9, fontSize: 13, backgroundColor: C.surface2, color: C.text1,
   },
-  customSep: { fontSize: 18, color: '#aaa', marginBottom: 10 },
+  customSep: { fontSize: 18, color: C.text3, marginBottom: 10 },
   applyBtn: { backgroundColor: '#FC4C02', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 1 },
   applyBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
   navRow: { flexDirection: 'row', paddingHorizontal: 8, paddingBottom: 6, gap: 4 },
   navBtn: { padding: 6 },
-  navArrow: { fontSize: 26, color: '#555', lineHeight: 30 },
+  navArrow: { fontSize: 26, color: C.text2, lineHeight: 30 },
 
   calToggleBtn: { paddingHorizontal: 16, paddingVertical: 8 },
   calToggleText: { fontSize: 13, color: '#FC4C02', fontWeight: '600' },
-  divider: { height: 1, backgroundColor: '#f0f0f0' },
+  divider: { height: 1, backgroundColor: C.divider },
 
-  monthHeader: { backgroundColor: '#fff', paddingTop: 16 },
+  monthHeader: { backgroundColor: C.bg, paddingTop: 16 },
   monthHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, marginBottom: 6 },
-  monthHeaderText: { fontSize: 16, fontWeight: '800', color: '#111' },
+  monthHeaderText: { fontSize: 16, fontWeight: '800', color: C.text1 },
   calToggleBtn2: { paddingVertical: 4, paddingHorizontal: 8 },
   calToggleText2: { fontSize: 12, color: '#FC4C02', fontWeight: '600' },
 
   dayHeader: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 5 },
-  dayHeaderText: { fontSize: 12, fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.8 },
+  dayHeaderText: { fontSize: 12, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.8 },
 
   card: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 14, marginHorizontal: 16, marginBottom: 8,
-    borderRadius: 12, backgroundColor: '#f8f8f8',
+    borderRadius: 12, backgroundColor: C.surface,
     borderLeftWidth: 4,
   },
   cardLeft: { flex: 1, marginRight: 12 },
-  actName: { fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  actName: { fontSize: 15, fontWeight: '700', marginBottom: 4, color: C.text1 },
   actMetaRow: { flexDirection: 'row', alignItems: 'center' },
-  actMeta: { fontSize: 13, color: '#888' },
+  actMeta: { fontSize: 13, color: C.text2 },
   cardRight: { alignItems: 'flex-end' },
-  kcal: { fontSize: 20, fontWeight: '800', color: '#FC4C02' },
-  kcalLbl: { fontSize: 11, color: '#FC4C02', fontWeight: '600' },
-  noData: { fontSize: 20, color: '#ccc', fontWeight: '300' },
+  kcal: { fontSize: 20, fontWeight: '800', color: C.accent },
+  kcalLbl: { fontSize: 11, color: C.accent, fontWeight: '600' },
+  noData: { fontSize: 20, color: C.text4, fontWeight: '300' },
 
-  loadMoreBtn: { margin: 20, padding: 14, borderRadius: 10, backgroundColor: '#f0f0f0', alignItems: 'center' },
-  loadMoreText: { fontSize: 14, color: '#666', fontWeight: '600' },
+  loadMoreBtn: { margin: 20, padding: 14, borderRadius: 10, backgroundColor: C.surface2, alignItems: 'center' },
+  loadMoreText: { fontSize: 14, color: C.text2, fontWeight: '600' },
 
   emptyBox: { paddingHorizontal: 24, paddingVertical: 32, alignItems: 'center' },
-  emptyTitle: { fontSize: 16, fontWeight: '700', marginBottom: 6, color: '#333' },
-  emptySub: { fontSize: 13, color: '#aaa', textAlign: 'center', lineHeight: 19 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', marginBottom: 6, color: C.text1 },
+  emptySub: { fontSize: 13, color: C.text2, textAlign: 'center', lineHeight: 19 },
 
   // Dropdown modal
   modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end',
+    flex: 1, backgroundColor: C.overlay, justifyContent: 'flex-end',
   },
   dropdownSheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    borderTopWidth: 1, borderTopColor: C.border,
     paddingTop: 8, paddingBottom: 40,
   },
   dropdownTitle: {
-    fontSize: 12, fontWeight: '700', color: '#aaa', textTransform: 'uppercase',
+    fontSize: 12, fontWeight: '700', color: C.text3, textTransform: 'uppercase',
     letterSpacing: 0.8, paddingHorizontal: 20, paddingVertical: 12,
   },
   dropdownRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 15, borderTopWidth: 1, borderTopColor: '#f5f5f5',
+    paddingHorizontal: 20, paddingVertical: 15, borderTopWidth: 1, borderTopColor: C.divider,
   },
-  dropdownRowText: { fontSize: 16, color: '#222' },
-  dropdownRowActive: { color: '#FC4C02', fontWeight: '700' },
-  dropdownDivider: { height: 1, backgroundColor: '#e8e8e8', marginVertical: 4 },
+  dropdownRowText: { fontSize: 16, color: C.text1 },
+  dropdownRowActive: { color: C.accent, fontWeight: '700' },
+  dropdownDivider: { height: 1, backgroundColor: C.surface2, marginVertical: 4 },
 })

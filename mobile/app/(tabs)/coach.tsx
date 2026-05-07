@@ -7,6 +7,7 @@ import { useFocusEffect, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { useAppMode } from '../../contexts/AppModeContext'
+import { C } from '../../lib/theme'
 
 interface Athlete {
   athlete_id: string
@@ -58,38 +59,38 @@ export default function CoachTab() {
         <Ionicons
           name={isCoach ? 'people' : 'person-outline'}
           size={15}
-          color={isCoach ? '#fff' : '#5C6BC0'}
+          color={isCoach ? '#fff' : C.accent2}
         />
         <Text style={[st.modeBannerText, isCoach && { color: '#fff' }]}>
           {isCoach ? 'Coach Mode — tap to switch to Athlete' : 'Athlete Mode — tap to switch to Coach'}
         </Text>
-        <Ionicons name="swap-horizontal-outline" size={15} color={isCoach ? '#fff' : '#5C6BC0'} />
+        <Ionicons name="swap-horizontal-outline" size={15} color={isCoach ? '#fff' : C.accent2} />
       </Pressable>
 
       <ScrollView contentContainerStyle={st.content} showsVerticalScrollIndicator={false}>
         <View style={st.headerRow}>
           <Text style={st.title}>Coach</Text>
           <Pressable onPress={() => router.push('/coach' as any)} style={st.manageBtn}>
-            <Ionicons name="settings-outline" size={15} color="#FC4C02" />
+            <Ionicons name="settings-outline" size={15} color={C.accent} />
             <Text style={st.manageBtnText}>Manage</Text>
           </Pressable>
         </View>
 
         {!isCoach && (
           <View style={st.athleteModeCard}>
-            <Ionicons name="information-circle-outline" size={18} color="#5C6BC0" />
+            <Ionicons name="information-circle-outline" size={18} color={C.accent2} />
             <Text style={st.athleteModeText}>
-              Switch to <Text style={{ fontWeight: '800' }}>Coach Mode</Text> (tap banner above) to manage your athletes' plans and progress.
+              Switch to <Text style={{ fontWeight: '800', color: C.text1 }}>Coach Mode</Text> (tap banner above) to manage your athletes' plans and progress.
             </Text>
           </View>
         )}
 
         {loading ? (
-          <ActivityIndicator color="#FC4C02" style={{ marginTop: 48 }} />
+          <ActivityIndicator color={C.accent} style={{ marginTop: 48 }} />
         ) : athletes.length === 0 ? (
           <View style={st.emptyState}>
             <View style={st.emptyIcon}>
-              <Ionicons name="people-outline" size={44} color="#FC4C02" />
+              <Ionicons name="people-outline" size={44} color={C.accent} />
             </View>
             <Text style={st.emptyTitle}>You are not coaching anyone currently</Text>
             <Text style={st.emptyNote}>
@@ -112,13 +113,13 @@ export default function CoachTab() {
                 onPress={() => router.push(`/coach/athlete/${a.athlete_id}` as any)}
               >
                 <View style={st.avatar}>
-                  <Ionicons name="person" size={22} color="#FC4C02" />
+                  <Ionicons name="person" size={22} color={C.accent} />
                 </View>
                 <View style={st.athleteInfo}>
                   <Text style={st.athleteName}>{a.athlete_name ?? 'Athlete'}</Text>
                   <Text style={st.athleteSub}>Activities · Nutrition · Stats</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#ddd" />
+                <Ionicons name="chevron-forward" size={20} color={C.text4} />
               </Pressable>
             ))}
           </>
@@ -129,61 +130,61 @@ export default function CoachTab() {
 }
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9f9f9' },
+  container: { flex: 1, backgroundColor: C.bg },
   content: { padding: 20, paddingBottom: 48 },
 
   modeBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center',
     paddingVertical: 9, paddingHorizontal: 16,
   },
-  modeBannerCoach: { backgroundColor: '#5C6BC0' },
-  modeBannerAthlete: { backgroundColor: '#EEF0FF' },
-  modeBannerText: { fontSize: 13, fontWeight: '600', color: '#5C6BC0', flex: 1, textAlign: 'center' },
+  modeBannerCoach: { backgroundColor: '#3F4691' },
+  modeBannerAthlete: { backgroundColor: C.surface2 },
+  modeBannerText: { fontSize: 13, fontWeight: '600', color: C.accent2, flex: 1, textAlign: 'center' },
 
   athleteModeCard: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: '#EEF0FF', borderRadius: 12, padding: 12, marginBottom: 20,
+    backgroundColor: 'rgba(124,131,253,0.1)', borderRadius: 12, padding: 12, marginBottom: 20,
+    borderWidth: 1, borderColor: 'rgba(124,131,253,0.2)',
   },
-  athleteModeText: { flex: 1, fontSize: 13, color: '#3949AB', lineHeight: 18 },
+  athleteModeText: { flex: 1, fontSize: 13, color: C.text2, lineHeight: 18 },
 
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 28 },
-  title: { fontSize: 26, fontWeight: '800', color: '#111', flex: 1 },
+  title: { fontSize: 26, fontWeight: '800', color: C.text1, flex: 1 },
   manageBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: '#FFF3EE', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10,
+    backgroundColor: C.accentBg, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10,
   },
-  manageBtnText: { fontSize: 13, fontWeight: '700', color: '#FC4C02' },
+  manageBtnText: { fontSize: 13, fontWeight: '700', color: C.accent },
 
   sectionLabel: {
-    fontSize: 11, fontWeight: '700', color: '#aaa',
+    fontSize: 11, fontWeight: '700', color: C.text3,
     textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12,
   },
 
   athleteCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 10,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    backgroundColor: C.surface, borderRadius: 16, padding: 16, marginBottom: 10,
+    borderWidth: 1, borderColor: C.border,
   },
   avatar: {
     width: 46, height: 46, borderRadius: 23,
-    backgroundColor: '#FFF3EE', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.accentBg, alignItems: 'center', justifyContent: 'center',
   },
   athleteInfo: { flex: 1 },
-  athleteName: { fontSize: 16, fontWeight: '700', color: '#111' },
-  athleteSub: { fontSize: 13, color: '#aaa', marginTop: 2 },
+  athleteName: { fontSize: 16, fontWeight: '700', color: C.text1 },
+  athleteSub: { fontSize: 13, color: C.text3, marginTop: 2 },
 
   emptyState: { alignItems: 'center', paddingTop: 56, paddingHorizontal: 28, gap: 14 },
   emptyIcon: {
     width: 88, height: 88, borderRadius: 44,
-    backgroundColor: '#FFF3EE', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.accentBg, alignItems: 'center', justifyContent: 'center',
     marginBottom: 4,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#222', textAlign: 'center' },
-  emptyNote: { fontSize: 14, color: '#aaa', textAlign: 'center', lineHeight: 21 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: C.text1, textAlign: 'center' },
+  emptyNote: { fontSize: 14, color: C.text2, textAlign: 'center', lineHeight: 21 },
   setupBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FC4C02', borderRadius: 12,
+    backgroundColor: C.accent, borderRadius: 12,
     paddingHorizontal: 24, paddingVertical: 13, marginTop: 4,
   },
   setupBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },

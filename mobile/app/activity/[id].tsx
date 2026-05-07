@@ -3,10 +3,12 @@ import { View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator } from
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import MapView, { Polyline } from 'react-native-maps'
+import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
+import { C } from '../../lib/theme'
 import type { ActivityWithZones, Lap } from '../../types'
 
-const ZONE_COLORS = ['#b3e5fc', '#81d4fa', '#4fc3f7', '#FF9800', '#f44336']
+const ZONE_COLORS = ['#29B6F6', '#66BB6A', '#FFCA28', '#FF9800', '#EF5350']
 
 function formatDuration(sec: number) {
   const h = Math.floor(sec / 3600)
@@ -91,7 +93,7 @@ export default function ActivityDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <ActivityIndicator style={{ flex: 1 }} size="large" color="#FC4C02" />
+        <ActivityIndicator style={{ flex: 1 }} size="large" color={C.accent} />
       </SafeAreaView>
     )
   }
@@ -100,7 +102,8 @@ export default function ActivityDetailScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <Pressable style={styles.back} onPress={() => router.back()}>
-          <Text style={styles.backText}>← Back</Text>
+          <Ionicons name="arrow-back" size={20} color={C.accent} />
+          <Text style={styles.backText}>Back</Text>
         </Pressable>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Activity not found.</Text>
@@ -120,7 +123,8 @@ export default function ActivityDetailScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Pressable style={styles.back} onPress={() => router.back()}>
-        <Text style={styles.backText}>← Back</Text>
+        <Ionicons name="arrow-back" size={20} color={C.accent} />
+        <Text style={styles.backText}>Back</Text>
       </Pressable>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -131,7 +135,6 @@ export default function ActivityDetailScreen() {
           })} · {formatDuration(totalTimeSec)}
         </Text>
 
-        {/* Map */}
         {mapCoords && mapCoords.length > 1 && (
           <View style={styles.mapContainer}>
             <MapView
@@ -142,7 +145,7 @@ export default function ActivityDetailScreen() {
               rotateEnabled={false}
               pitchEnabled={false}
             >
-              <Polyline coordinates={mapCoords} strokeColor="#FC4C02" strokeWidth={3} />
+              <Polyline coordinates={mapCoords} strokeColor={C.accent} strokeWidth={3} />
             </MapView>
           </View>
         )}
@@ -179,13 +182,13 @@ export default function ActivityDetailScreen() {
             {activity.total_fat_g != null && (
               <View style={styles.statBox}>
                 <Text style={styles.statValue}>{Math.round(activity.total_fat_g)}g</Text>
-                <Text style={styles.statLabel}>Vet verbrand</Text>
+                <Text style={styles.statLabel}>Fat burned</Text>
               </View>
             )}
             {activity.total_carb_g != null && (
               <View style={styles.statBox}>
                 <Text style={styles.statValue}>{Math.round(activity.total_carb_g)}g</Text>
-                <Text style={styles.statLabel}>KH verbrand</Text>
+                <Text style={styles.statLabel}>Carbs burned</Text>
               </View>
             )}
           </View>
@@ -281,60 +284,62 @@ export default function ActivityDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  back: { paddingHorizontal: 16, paddingVertical: 12 },
-  backText: { fontSize: 16, color: '#FC4C02', fontWeight: '600' },
+  container: { flex: 1, backgroundColor: C.bg },
+  back: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 12 },
+  backText: { fontSize: 15, color: C.accent, fontWeight: '600' },
   content: { padding: 16, paddingTop: 0, paddingBottom: 48 },
-  name: { fontSize: 22, fontWeight: '800', marginBottom: 4 },
-  meta: { fontSize: 13, color: '#888', marginBottom: 20 },
+  name: { fontSize: 22, fontWeight: '800', color: C.text1, marginBottom: 4 },
+  meta: { fontSize: 13, color: C.text2, marginBottom: 20 },
   mapContainer: { height: 200, borderRadius: 14, overflow: 'hidden', marginBottom: 20 },
   map: { flex: 1 },
   statsRow: { flexDirection: 'row', gap: 10, marginBottom: 28 },
   statBox: {
-    flex: 1, backgroundColor: '#f8f8f8', borderRadius: 10, padding: 14, alignItems: 'center',
+    flex: 1, backgroundColor: C.surface, borderRadius: 10, padding: 14, alignItems: 'center',
+    borderWidth: 1, borderColor: C.border,
   },
-  statBoxOrange: { backgroundColor: '#FFF0EB' },
-  statValue: { fontSize: 26, fontWeight: '800', color: '#222' },
-  statValueOrange: { color: '#FC4C02' },
-  statLabel: { fontSize: 11, color: '#888', marginTop: 3, fontWeight: '600' },
-  statLabelOrange: { color: '#FC4C02' },
-  sectionTitle: { fontSize: 15, fontWeight: '700', marginBottom: 12, marginTop: 4 },
+  statBoxOrange: { backgroundColor: C.accentBg, borderColor: 'rgba(255,92,0,0.25)' },
+  statValue: { fontSize: 26, fontWeight: '800', color: C.text1 },
+  statValueOrange: { color: C.accent },
+  statLabel: { fontSize: 11, color: C.text2, marginTop: 3, fontWeight: '600' },
+  statLabelOrange: { color: C.accent },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: C.text1, marginBottom: 12, marginTop: 4 },
   stackedBar: {
     flexDirection: 'row', height: 10, borderRadius: 5, overflow: 'hidden',
-    marginBottom: 16, backgroundColor: '#f0f0f0',
+    marginBottom: 16, backgroundColor: C.surface2,
   },
   stackedSegment: { height: 10 },
   zoneRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: '#f5f5f5',
+    borderBottomWidth: 1, borderBottomColor: C.divider,
   },
   zoneDot: { width: 11, height: 11, borderRadius: 6, marginRight: 12 },
   zoneInfo: { flex: 1 },
-  zoneName: { fontSize: 14, fontWeight: '600' },
-  zoneBpm: { fontSize: 12, color: '#aaa', marginTop: 1 },
+  zoneName: { fontSize: 14, fontWeight: '600', color: C.text1 },
+  zoneBpm: { fontSize: 12, color: C.text3, marginTop: 1 },
   zoneStats: { alignItems: 'flex-end', marginRight: 10 },
-  zoneTime: { fontSize: 13, fontWeight: '600' },
-  zoneKcal: { fontSize: 12, color: '#888' },
-  zonePct: { fontSize: 13, fontWeight: '700', width: 34, textAlign: 'right', color: '#555' },
+  zoneTime: { fontSize: 13, fontWeight: '600', color: C.text1 },
+  zoneKcal: { fontSize: 12, color: C.text2 },
+  zonePct: { fontSize: 13, fontWeight: '700', width: 34, textAlign: 'right', color: C.text2 },
   noHrCard: {
-    backgroundColor: '#FFF8E1', borderRadius: 12, padding: 18, marginBottom: 24,
+    backgroundColor: C.surface, borderRadius: 12, padding: 18, marginBottom: 24,
+    borderWidth: 1, borderColor: C.border,
   },
-  noHrTitle: { fontSize: 14, fontWeight: '700', marginBottom: 4, color: '#795548' },
-  noHrText: { fontSize: 13, color: '#795548', lineHeight: 19 },
+  noHrTitle: { fontSize: 14, fontWeight: '700', marginBottom: 4, color: C.text2 },
+  noHrText: { fontSize: 13, color: C.text3, lineHeight: 19 },
   lapRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: '#f5f5f5',
+    borderBottomWidth: 1, borderBottomColor: C.divider,
   },
   lapIndex: {
-    width: 28, height: 28, borderRadius: 14, backgroundColor: '#f0f0f0',
+    width: 28, height: 28, borderRadius: 14, backgroundColor: C.surface2,
     alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
-  lapIndexText: { fontSize: 12, fontWeight: '700', color: '#555' },
+  lapIndexText: { fontSize: 12, fontWeight: '700', color: C.text2 },
   lapMain: { flex: 1 },
-  lapDistance: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
+  lapDistance: { fontSize: 14, fontWeight: '700', color: C.text1, marginBottom: 2 },
   lapSecondary: { flexDirection: 'row', gap: 10 },
-  lapStat: { fontSize: 12, color: '#888' },
-  lapDuration: { fontSize: 13, fontWeight: '600', color: '#555' },
+  lapStat: { fontSize: 12, color: C.text2 },
+  lapDuration: { fontSize: 13, fontWeight: '600', color: C.text2 },
   errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  errorText: { color: '#999' },
+  errorText: { color: C.text3 },
 })

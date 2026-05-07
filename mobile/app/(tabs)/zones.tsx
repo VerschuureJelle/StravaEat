@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
+import { C } from '../../lib/theme'
 import type { HeartRateZone } from '../../types'
 
 export default function ZonesScreen() {
@@ -75,16 +76,19 @@ function ZoneCard({
         style={styles.input}
         value={zone.name}
         onChangeText={v => onChange({ ...zone, name: v })}
+        placeholderTextColor={C.text3}
       />
       <View style={styles.inputRow}>
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Min BPM</Text>
           <TextInput style={styles.input} value={String(zone.min_bpm)} keyboardType="numeric"
+            placeholderTextColor={C.text3}
             onChangeText={v => onChange({ ...zone, min_bpm: parseInt(v) || 0 })} />
         </View>
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Max BPM</Text>
           <TextInput style={styles.input} value={String(zone.max_bpm)} keyboardType="numeric"
+            placeholderTextColor={C.text3}
             onChangeText={v => onChange({ ...zone, max_bpm: parseInt(v) || 0 })} />
         </View>
       </View>
@@ -101,30 +105,32 @@ function ZoneCard({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: C.bg },
   content: { padding: 16, paddingBottom: 48 },
-  header: { fontSize: 22, fontWeight: '700', marginBottom: 4 },
-  note: { fontSize: 13, color: '#999', marginBottom: 16 },
+  header: { fontSize: 22, fontWeight: '700', color: C.text1, marginBottom: 4 },
+  note: { fontSize: 13, color: C.text3, marginBottom: 16 },
   zoneCard: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 14, marginBottom: 8, borderRadius: 10, backgroundColor: '#f5f5f5',
+    padding: 14, marginBottom: 8, borderRadius: 10, backgroundColor: C.surface,
+    borderWidth: 1, borderColor: C.border,
   },
   zoneCardEditing: { flexDirection: 'column', alignItems: 'stretch' },
-  zoneName: { fontSize: 15, fontWeight: '600' },
-  zoneMeta: { fontSize: 13, color: '#666', marginTop: 2 },
-  editHint: { fontSize: 13, color: '#FC4C02', fontWeight: '600' },
+  zoneName: { fontSize: 15, fontWeight: '600', color: C.text1 },
+  zoneMeta: { fontSize: 13, color: C.text2, marginTop: 2 },
+  editHint: { fontSize: 13, color: C.accent, fontWeight: '600' },
   inputRow: { flexDirection: 'row', gap: 10, marginBottom: 0 },
   inputGroup: { flex: 1, marginBottom: 10 },
-  inputLabel: { fontSize: 11, fontWeight: '600', color: '#888', marginBottom: 4, textTransform: 'uppercase' },
+  inputLabel: { fontSize: 11, fontWeight: '600', color: C.text3, marginBottom: 4, textTransform: 'uppercase' },
   input: {
-    borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
-    padding: 10, fontSize: 14, backgroundColor: '#fff', marginBottom: 10,
+    borderWidth: 1, borderColor: C.border, borderRadius: 8,
+    padding: 10, fontSize: 14, backgroundColor: C.surface2,
+    color: C.text1, marginBottom: 10,
   },
   saveBtn: {
-    flex: 1, backgroundColor: '#FC4C02', padding: 12,
+    flex: 1, backgroundColor: C.accent, padding: 12,
     borderRadius: 8, alignItems: 'center', marginTop: 4,
   },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   cancelBtn: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 4 },
-  cancelBtnText: { color: '#666', fontSize: 14 },
+  cancelBtnText: { color: C.text2, fontSize: 14 },
 })

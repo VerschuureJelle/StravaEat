@@ -10,6 +10,7 @@ import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
 import { useAppMode } from '../../contexts/AppModeContext'
+import { C } from '../../lib/theme'
 import type { UserProfile, HeartRateZone, MealTemplate, UserSport } from '../../types'
 
 const STRAVA_CLIENT_ID = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID!
@@ -101,10 +102,16 @@ export default function SettingsScreen() {
     }
     setZones(zonesRes.data ?? [])
 
-    // Activity sports for energy method section (keep actual Strava types)
+    // Merge Strava activity types + planner user sports for energy section
     const sportSet = new Set<string>(
       (activitiesRes.data ?? []).map((a: { type: string }) => a.type).filter(Boolean),
     )
+    // Also add user's planner sports (normalized, no Virtual*)
+    for (const us of (userSportsRes.data ?? []) as UserSport[]) {
+      if (us.sport_name && !us.sport_name.startsWith('Virtual')) {
+        sportSet.add(us.sport_name)
+      }
+    }
     setActivitySports([...sportSet].sort())
 
     const configs: Record<string, SportConfig> = {}
@@ -257,6 +264,7 @@ export default function SettingsScreen() {
         style={styles.input}
         value={editedProfile[key] != null ? String(editedProfile[key]) : ''}
         keyboardType={numeric ? 'numeric' : 'default'}
+        placeholderTextColor={C.text3}
         onChangeText={v =>
           setEditedProfile(p => ({ ...p, [key]: numeric ? (v ? parseFloat(v) : null) : v }))
         }
@@ -327,7 +335,7 @@ export default function SettingsScreen() {
                 <Text style={styles.coachRowTitle}>Coach connections</Text>
                 <Text style={styles.coachRowNote}>Connect with a coach or manage your athletes</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#ccc" />
+              <Ionicons name="chevron-forward" size={16} color={C.text3} />
             </Pressable>
 
             {/* App mode switcher */}
@@ -352,7 +360,7 @@ export default function SettingsScreen() {
               <Switch
                 value={mode === 'coach'}
                 onValueChange={v => setMode(v ? 'coach' : 'athlete')}
-                trackColor={{ true: '#5C6BC0', false: '#e0e0e0' }}
+                trackColor={{ true: '#5C6BC0', false: C.surface3 }}
                 thumbColor="#fff"
               />
             </View>
@@ -386,8 +394,7 @@ export default function SettingsScreen() {
               <>
                 <Text style={[styles.sectionHeader, { marginTop: 32 }]}>Energy method per sport</Text>
                 <Text style={styles.sectionNote}>
-                  Standard uses MET × weight. Custom uses your HR → kcal/hr burn schema.
-                  "Same as" shares another sport's schema.
+                  Standard uses MET × weight. Custom uses your own HR → kcal/hr schema per sport (enter any HR values you like). "Same as" shares another sport's schema.
                 </Text>
 
                 {activitySports.map(sport => {
@@ -467,7 +474,7 @@ export default function SettingsScreen() {
                 <View key={us.id} style={styles.sportTag}>
                   <Text style={styles.sportTagText}>{us.sport_name}</Text>
                   <Pressable onPress={() => removePlannerSport(us.id)} hitSlop={8}>
-                    <Ionicons name="close" size={14} color="#888" />
+                    <Ionicons name="close" size={14} color={C.text2} />
                   </Pressable>
                 </View>
               ))}
@@ -494,6 +501,7 @@ export default function SettingsScreen() {
                 value={newSportInput}
                 onChangeText={setNewSportInput}
                 placeholder="Custom sport name…"
+                placeholderTextColor={C.text3}
                 returnKeyType="done"
                 onSubmitEditing={() => addPlannerSport(newSportInput)}
               />
@@ -521,7 +529,7 @@ export default function SettingsScreen() {
                   onPress={removeMeal}
                   disabled={draftMeals.length <= 1}
                 >
-                  <Ionicons name="remove" size={20} color={draftMeals.length <= 1 ? '#ccc' : '#333'} />
+                  <Ionicons name="remove" size={20} color={draftMeals.length <= 1 ? C.text3 : C.text1} />
                 </Pressable>
                 <Text style={styles.mealCountNum}>{draftMeals.length}</Text>
                 <Pressable
@@ -529,7 +537,7 @@ export default function SettingsScreen() {
                   onPress={addMeal}
                   disabled={draftMeals.length >= 8}
                 >
-                  <Ionicons name="add" size={20} color={draftMeals.length >= 8 ? '#ccc' : '#333'} />
+                  <Ionicons name="add" size={20} color={draftMeals.length >= 8 ? C.text3 : C.text1} />
                 </Pressable>
               </View>
             </View>
@@ -544,6 +552,7 @@ export default function SettingsScreen() {
                     value={meal.name}
                     onChangeText={v => updateDraftMeal(i, 'name', v)}
                     placeholder={MEAL_DEFAULTS[i]?.name ?? `Meal ${i + 1}`}
+                    placeholderTextColor={C.text3}
                   />
                 </View>
                 <View style={styles.fieldGroup}>
@@ -553,6 +562,7 @@ export default function SettingsScreen() {
                     value={meal.scheduled_time}
                     onChangeText={v => updateDraftMeal(i, 'scheduled_time', v)}
                     placeholder={MEAL_DEFAULTS[i]?.time ?? '12:00'}
+                    placeholderTextColor={C.text3}
                     keyboardType="numbers-and-punctuation"
                   />
                 </View>
@@ -599,17 +609,20 @@ function ZoneCard({
       <TextInput
         style={styles.input}
         value={zone.name}
+        placeholderTextColor={C.text3}
         onChangeText={v => onChange({ ...zone, name: v })}
       />
       <View style={styles.inputRow}>
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Min BPM</Text>
           <TextInput style={styles.input} value={String(zone.min_bpm)} keyboardType="numeric"
+            placeholderTextColor={C.text3}
             onChangeText={v => onChange({ ...zone, min_bpm: parseInt(v) || 0 })} />
         </View>
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Max BPM</Text>
           <TextInput style={styles.input} value={String(zone.max_bpm)} keyboardType="numeric"
+            placeholderTextColor={C.text3}
             onChangeText={v => onChange({ ...zone, max_bpm: parseInt(v) || 0 })} />
         </View>
       </View>
@@ -626,137 +639,138 @@ function ZoneCard({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: C.bg },
 
   segRow: {
     flexDirection: 'row', margin: 16, marginBottom: 0,
-    backgroundColor: '#f0f0f0', borderRadius: 10, padding: 3,
+    backgroundColor: C.surface2, borderRadius: 10, padding: 3,
   },
   segBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
-  segBtnActive: { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
-  segText: { fontSize: 12, fontWeight: '600', color: '#888' },
-  segTextActive: { color: '#111' },
+  segBtnActive: { backgroundColor: C.surface3 },
+  segText: { fontSize: 12, fontWeight: '600', color: C.text3 },
+  segTextActive: { color: C.text1 },
 
   content: { padding: 16, paddingBottom: 60 },
 
-  sectionHeader: { fontSize: 18, fontWeight: '800', marginBottom: 4 },
-  sectionNote: { fontSize: 12, color: '#999', marginBottom: 14, lineHeight: 17 },
+  sectionHeader: { fontSize: 18, fontWeight: '800', marginBottom: 4, color: C.text1 },
+  sectionNote: { fontSize: 12, color: C.text3, marginBottom: 14, lineHeight: 17 },
 
   // Profile
   stravaRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#f8f8f8', borderRadius: 12, padding: 16, marginBottom: 4,
+    backgroundColor: C.surface, borderRadius: 12, padding: 16, marginBottom: 4,
   },
-  stravaLabel: { fontSize: 14, fontWeight: '700' },
-  stravaStatus: { fontSize: 13, color: '#888', marginTop: 2 },
-  stravaBtn: { backgroundColor: '#FC4C02', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
+  stravaLabel: { fontSize: 14, fontWeight: '700', color: C.text1 },
+  stravaStatus: { fontSize: 13, color: C.text2, marginTop: 2 },
+  stravaBtn: { backgroundColor: C.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   stravaBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   fieldGroup: { marginTop: 14 },
-  fieldLabel: { fontSize: 11, fontWeight: '700', color: '#888', marginBottom: 5, textTransform: 'uppercase' },
-  saveBtn: { backgroundColor: '#FC4C02', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 24 },
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: C.text2, marginBottom: 5, textTransform: 'uppercase' },
+  saveBtn: { backgroundColor: C.accent, padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 24 },
   saveBtnDisabled: { opacity: 0.35 },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   coachRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginTop: 8,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    backgroundColor: C.surface, borderRadius: 14, padding: 14, marginTop: 8,
+    borderWidth: 1, borderColor: C.border,
   },
-  coachRowTitle: { fontSize: 15, fontWeight: '700', color: '#111' },
-  coachRowNote: { fontSize: 12, color: '#aaa', marginTop: 1 },
+  coachRowTitle: { fontSize: 15, fontWeight: '700', color: C.text1 },
+  coachRowNote: { fontSize: 12, color: C.text3, marginTop: 1 },
   modeCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#f8f8f8', borderRadius: 14, padding: 14, marginTop: 8,
+    backgroundColor: C.surface2, borderRadius: 14, padding: 14, marginTop: 8,
   },
   modeCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  modeCardTitle: { fontSize: 15, fontWeight: '700', color: '#111' },
-  modeCardNote: { fontSize: 12, color: '#aaa', marginTop: 1, maxWidth: 220 },
+  modeCardTitle: { fontSize: 15, fontWeight: '700', color: C.text1 },
+  modeCardNote: { fontSize: 12, color: C.text3, marginTop: 1, maxWidth: 220 },
   signOutBtn: { padding: 20, alignItems: 'center' },
-  signOutText: { color: '#bbb', fontSize: 14 },
+  signOutText: { color: C.text3, fontSize: 14 },
 
   // Zone cards
   zoneCard: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 14, marginBottom: 8, borderRadius: 10, backgroundColor: '#f5f5f5',
+    padding: 14, marginBottom: 8, borderRadius: 10, backgroundColor: C.surface,
   },
   zoneCardEditing: { flexDirection: 'column', alignItems: 'stretch' },
-  zoneName: { fontSize: 15, fontWeight: '600' },
-  zoneMeta: { fontSize: 13, color: '#666', marginTop: 2 },
-  editHint: { fontSize: 13, color: '#FC4C02', fontWeight: '600' },
-  zoneSaveBtn: { flex: 1, backgroundColor: '#FC4C02', padding: 11, borderRadius: 8, alignItems: 'center', marginTop: 4 },
+  zoneName: { fontSize: 15, fontWeight: '600', color: C.text1 },
+  zoneMeta: { fontSize: 13, color: C.text2, marginTop: 2 },
+  editHint: { fontSize: 13, color: C.accent, fontWeight: '600' },
+  zoneSaveBtn: { flex: 1, backgroundColor: C.accent, padding: 11, borderRadius: 8, alignItems: 'center', marginTop: 4 },
   zoneSaveBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   zoneCancelBtn: { flex: 1, padding: 11, borderRadius: 8, alignItems: 'center', marginTop: 4 },
-  zoneCancelBtnText: { color: '#666', fontSize: 14 },
+  zoneCancelBtnText: { color: C.text2, fontSize: 14 },
   inputRow: { flexDirection: 'row', gap: 10 },
   inputGroup: { flex: 1, marginBottom: 10 },
-  inputLabel: { fontSize: 10, fontWeight: '700', color: '#aaa', marginBottom: 4, textTransform: 'uppercase' },
+  inputLabel: { fontSize: 10, fontWeight: '700', color: C.text3, marginBottom: 4, textTransform: 'uppercase' },
   input: {
-    borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 8,
-    padding: 10, fontSize: 14, backgroundColor: '#fff', marginBottom: 10,
+    borderWidth: 1, borderColor: C.border, borderRadius: 8,
+    padding: 10, fontSize: 14, backgroundColor: C.surface2, marginBottom: 10,
+    color: C.text1,
   },
 
   // Sport energy cards
   sportCard: {
-    borderWidth: 1, borderColor: '#ececec', borderRadius: 12,
-    padding: 14, marginBottom: 10,
+    borderWidth: 1, borderColor: C.border, borderRadius: 12,
+    padding: 14, marginBottom: 10, backgroundColor: C.surface,
   },
-  sportName: { fontSize: 15, fontWeight: '700', marginBottom: 10 },
+  sportName: { fontSize: 15, fontWeight: '700', marginBottom: 10, color: C.text1 },
   modeRow: { flexDirection: 'row', gap: 6, marginBottom: 10 },
   modeBtn: {
     flex: 1, paddingVertical: 7, borderRadius: 8,
-    borderWidth: 1, borderColor: '#ddd', alignItems: 'center',
+    borderWidth: 1, borderColor: C.border, alignItems: 'center',
   },
-  modeBtnActive: { backgroundColor: '#FC4C02', borderColor: '#FC4C02' },
-  modeBtnText: { fontSize: 12, fontWeight: '600', color: '#888' },
+  modeBtnActive: { backgroundColor: C.accent, borderColor: C.accent },
+  modeBtnText: { fontSize: 12, fontWeight: '600', color: C.text2 },
   modeBtnTextActive: { color: '#fff' },
-  editSchemaBtn: { backgroundColor: '#FFF0EB', borderRadius: 8, padding: 11, alignItems: 'center' },
-  editSchemaBtnText: { color: '#FC4C02', fontWeight: '700', fontSize: 13 },
-  linkLabel: { fontSize: 11, fontWeight: '700', color: '#aaa', marginBottom: 8, textTransform: 'uppercase' },
+  editSchemaBtn: { backgroundColor: C.accentBg, borderRadius: 8, padding: 11, alignItems: 'center' },
+  editSchemaBtnText: { color: C.accent, fontWeight: '700', fontSize: 13 },
+  linkLabel: { fontSize: 11, fontWeight: '700', color: C.text3, marginBottom: 8, textTransform: 'uppercase' },
   chipRow: { marginBottom: 8 },
   chip: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
-    borderWidth: 1, borderColor: '#ddd', marginRight: 8, backgroundColor: '#fafafa',
+    borderWidth: 1, borderColor: C.border, marginRight: 8, backgroundColor: C.surface2,
   },
-  chipActive: { backgroundColor: '#FC4C02', borderColor: '#FC4C02' },
-  chipText: { fontSize: 13, fontWeight: '600', color: '#666' },
+  chipActive: { backgroundColor: C.accent, borderColor: C.accent },
+  chipText: { fontSize: 13, fontWeight: '600', color: C.text2 },
   chipTextActive: { color: '#fff' },
   viewSchemaBtn: { paddingTop: 4 },
-  viewSchemaBtnText: { color: '#FC4C02', fontSize: 13, fontWeight: '600' },
+  viewSchemaBtnText: { color: C.accent, fontSize: 13, fontWeight: '600' },
 
   // Planner sports
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   sportTag: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#f5f5f5', borderRadius: 20,
-    paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#ebebeb',
+    backgroundColor: C.surface2, borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: C.border,
   },
-  sportTagText: { fontSize: 13, fontWeight: '600', color: '#444' },
-  addLabel: { fontSize: 11, fontWeight: '700', color: '#aaa', marginBottom: 8, textTransform: 'uppercase' },
+  sportTagText: { fontSize: 13, fontWeight: '600', color: C.text1 },
+  addLabel: { fontSize: 11, fontWeight: '700', color: C.text3, marginBottom: 8, textTransform: 'uppercase' },
   presetChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#FFF0EB', borderRadius: 20,
-    paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#FC4C02',
+    backgroundColor: C.accentBg, borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: C.accent,
   },
-  presetChipText: { fontSize: 13, fontWeight: '600', color: '#FC4C02' },
+  presetChipText: { fontSize: 13, fontWeight: '600', color: C.accent },
   addSportRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  addSportBtn: { backgroundColor: '#FC4C02', paddingHorizontal: 16, paddingVertical: 11, borderRadius: 8 },
+  addSportBtn: { backgroundColor: C.accent, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 8 },
   addSportBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
   // Meal plan
   mealCountRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#f8f8f8', borderRadius: 12, padding: 16, marginBottom: 20,
+    backgroundColor: C.surface, borderRadius: 12, padding: 16, marginBottom: 20,
   },
-  mealCountLabel: { fontSize: 15, fontWeight: '600', color: '#333' },
+  mealCountLabel: { fontSize: 15, fontWeight: '600', color: C.text1 },
   mealCountControl: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   mealCountBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#e8e8e8',
+    width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface2,
     alignItems: 'center', justifyContent: 'center',
   },
   mealCountBtnDisabled: { opacity: 0.35 },
-  mealCountNum: { fontSize: 22, fontWeight: '800', color: '#111', minWidth: 24, textAlign: 'center' },
-  mealCard: { backgroundColor: '#f8f8f8', borderRadius: 12, padding: 14, marginBottom: 12 },
+  mealCountNum: { fontSize: 22, fontWeight: '800', color: C.text1, minWidth: 24, textAlign: 'center' },
+  mealCard: { backgroundColor: C.surface, borderRadius: 12, padding: 14, marginBottom: 12 },
   mealCardTitle: {
-    fontSize: 11, fontWeight: '700', color: '#aaa',
+    fontSize: 11, fontWeight: '700', color: C.text3,
     textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10,
   },
 })

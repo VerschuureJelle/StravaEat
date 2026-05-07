@@ -5,12 +5,14 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import Svg, { Polyline, Line, Text as SvgText } from 'react-native-svg'
+import Svg, { Polyline, Line, Text as SvgText, Circle } from 'react-native-svg'
+import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
+import { C } from '../../lib/theme'
 import type { BurnSchemaPoint } from '../../types'
 
-type BlankForm = { hr: string; kcal: string; fat: string; carb: string }
-const BLANK: BlankForm = { hr: '', kcal: '', fat: '', carb: '' }
+type BlankForm = { hr: string; kcal: string; carb: string }
+const BLANK: BlankForm = { hr: '', kcal: '', carb: '' }
 
 export default function BurnSchemaScreen() {
   const { sport } = useLocalSearchParams<{ sport: string }>()
@@ -44,14 +46,19 @@ export default function BurnSchemaScreen() {
       Alert.alert('Invalid', 'Enter valid positive numbers.')
       return
     }
+    const carb = form.carb ? parseFloat(form.carb) : null
+    if (carb !== null && isNaN(carb)) {
+      Alert.alert('Invalid', 'Enter a valid number for carbs.')
+      return
+    }
     setSaving(true)
     const { error } = await supabase.from('burn_schema_points').upsert({
       user_id: userId,
       sport_type: sport,
       hr_value: hr,
       kcal_per_hour: kcal,
-      fat_g_per_hour: form.fat ? parseFloat(form.fat) : null,
-      carb_g_per_hour: form.carb ? parseFloat(form.carb) : null,
+      fat_g_per_hour: null,
+      carb_g_per_hour: carb,
     }, { onConflict: 'user_id,sport_type,hr_value' })
     setSaving(false)
     if (error) { Alert.alert('Error', error.message); return }
@@ -69,158 +76,283 @@ export default function BurnSchemaScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Pressable style={styles.back} onPress={() => router.back()}>
-        <Text style={styles.backText}>← Back</Text>
+        <Ionicons name="arrow-back" size={20} color={C.accent} />
+        <Text style={styles.backText}>Back</Text>
       </Pressable>
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Burn schema</Text>
-        <Text style={styles.sport}>{sport}</Text>
+        <Text style={styles.label}>Burn schema</Text>
+        <Text style={styles.title}>{sport}</Text>
+
+        <View style={styles.infoBox}>
+          <Ionicons name="information-circle-outline" size={16} color={C.accent2} style={{ marginTop: 1 }} />
+          <Text style={styles.infoText}>
+            Enter how many kcal/hr you burn at each heart rate. Optionally add carbs (g/hr).
+            HR values are free to choose and apply only to {sport}.
+          </Text>
+        </View>
 
         {points.length < 2 && (
           <View style={styles.warnBox}>
+            <Ionicons name="warning-outline" size={15} color="#E6A817" style={{ marginTop: 1 }} />
             <Text style={styles.warnText}>
-              Add at least 2 points to enable custom calorie calculation for this sport.
+              Add at least 2 points to activate the custom calculation for {sport}.
             </Text>
-          </View>
-        )}
-
-        {/* Points table */}
-        {points.length > 0 && (
-          <View style={styles.table}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.cell, styles.headerCell]}>HR</Text>
-              <Text style={[styles.cell, styles.headerCell]}>kcal/hr</Text>
-              <Text style={[styles.cell, styles.headerCell]}>fat g/hr</Text>
-              <Text style={[styles.cell, styles.headerCell]}>carb g/hr</Text>
-              <View style={{ width: 32 }} />
-            </View>
-            {points.map(pt => (
-              <View key={pt.id} style={styles.tableRow}>
-                <Text style={styles.cell}>{pt.hr_value}</Text>
-                <Text style={styles.cell}>{pt.kcal_per_hour}</Text>
-                <Text style={styles.cell}>{pt.fat_g_per_hour ?? '—'}</Text>
-                <Text style={styles.cell}>{pt.carb_g_per_hour ?? '—'}</Text>
-                <Pressable onPress={() => deletePoint(pt.id)} hitSlop={8}>
-                  <Text style={styles.deleteBtn}>×</Text>
-                </Pressable>
-              </View>
-            ))}
           </View>
         )}
 
         {/* Chart */}
         {points.length >= 2 && <BurnChart points={points} width={chartWidth} />}
 
+        {/* Points table */}
+        {points.length > 0 && (
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.cell, styles.headerCell]}>HR (bpm)</Text>
+              <Text style={[styles.cell, styles.headerCell]}>kcal/hr</Text>
+              <Text style={[styles.cell, styles.headerCell]}>carb g/hr</Text>
+              <View style={{ width: 36 }} />
+            </View>
+            {points.map(pt => (
+              <View key={pt.id} style={styles.tableRow}>
+                <Text style={styles.cell}>{pt.hr_value} bpm</Text>
+                <Text style={styles.cell}>{pt.kcal_per_hour}</Text>
+                <Text style={styles.cell}>{pt.carb_g_per_hour != null ? pt.carb_g_per_hour : '—'}</Text>
+                <Pressable onPress={() => deletePoint(pt.id)} hitSlop={8} style={styles.deleteBtn}>
+                  <Ionicons name="trash-outline" size={16} color={C.text3} />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Add form */}
         <Text style={styles.formTitle}>Add point</Text>
+
         <View style={styles.row}>
-          <View style={styles.half}>
+          <View style={styles.third}>
             <Text style={styles.inputLabel}>HR (bpm)</Text>
-            <TextInput style={styles.input} placeholder="e.g. 150" keyboardType="numeric"
-              value={form.hr} onChangeText={v => setForm(f => ({ ...f, hr: v }))} />
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. 150"
+              placeholderTextColor={C.text3}
+              keyboardType="numeric"
+              value={form.hr}
+              onChangeText={v => setForm(f => ({ ...f, hr: v }))}
+            />
           </View>
-          <View style={styles.half}>
-            <Text style={styles.inputLabel}>kcal/hr</Text>
-            <TextInput style={styles.input} placeholder="e.g. 570" keyboardType="numeric"
-              value={form.kcal} onChangeText={v => setForm(f => ({ ...f, kcal: v }))} />
+          <View style={styles.third}>
+            <Text style={styles.inputLabel}>kcal/hr *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. 570"
+              placeholderTextColor={C.text3}
+              keyboardType="numeric"
+              value={form.kcal}
+              onChangeText={v => setForm(f => ({ ...f, kcal: v }))}
+            />
+          </View>
+          <View style={styles.third}>
+            <Text style={styles.inputLabel}>Carb g/hr</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="optional"
+              placeholderTextColor={C.text3}
+              keyboardType="numeric"
+              value={form.carb}
+              onChangeText={v => setForm(f => ({ ...f, carb: v }))}
+            />
           </View>
         </View>
-        <View style={styles.row}>
-          <View style={styles.half}>
-            <Text style={styles.inputLabel}>Fat (g/hr)</Text>
-            <TextInput style={styles.input} placeholder="optional" keyboardType="numeric"
-              value={form.fat} onChangeText={v => setForm(f => ({ ...f, fat: v }))} />
-          </View>
-          <View style={styles.half}>
-            <Text style={styles.inputLabel}>Carb (g/hr)</Text>
-            <TextInput style={styles.input} placeholder="optional" keyboardType="numeric"
-              value={form.carb} onChangeText={v => setForm(f => ({ ...f, carb: v }))} />
-          </View>
-        </View>
-        <Pressable style={[styles.addBtn, saving && styles.addBtnDisabled]} onPress={addPoint} disabled={saving}>
-          <Text style={styles.addBtnText}>Add</Text>
+
+        <Pressable
+          style={[styles.addBtn, saving && styles.addBtnDisabled]}
+          onPress={addPoint}
+          disabled={saving}
+        >
+          <Ionicons name="add" size={18} color="#fff" />
+          <Text style={styles.addBtnText}>{saving ? 'Saving…' : 'Add point'}</Text>
         </Pressable>
+
+        <View style={styles.hintBox}>
+          <Text style={styles.hintTitle}>How it works</Text>
+          <Text style={styles.hintText}>
+            • Add one point per heart rate value you know from training or measurement.{'\n'}
+            • The app linearly interpolates between points.{'\n'}
+            • No carbs entered? Carb tracking is skipped for this sport.{'\n'}
+            • No points? Falls back to standard MET calculation.
+          </Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   )
 }
 
 function BurnChart({ points, width }: { points: BurnSchemaPoint[]; width: number }) {
-  const H = 180
-  const PAD = { top: 16, right: 16, bottom: 32, left: 52 }
+  const H = 190
+  const PAD = { top: 20, right: 20, bottom: 36, left: 56 }
   const chartW = Math.max(width - PAD.left - PAD.right, 1)
   const chartH = H - PAD.top - PAD.bottom
 
   const hrMin = points[0].hr_value
   const hrMax = points[points.length - 1].hr_value
-  const kcalMax = Math.max(...points.map(p => p.kcal_per_hour)) * 1.1 || 1
+  const kcalMax = Math.max(...points.map(p => p.kcal_per_hour)) * 1.15 || 1
   const hrRange = hrMax - hrMin || 1
 
   const toX = (hr: number) => PAD.left + ((hr - hrMin) / hrRange) * chartW
   const toY = (k: number) => PAD.top + chartH - (k / kcalMax) * chartH
   const polyline = points.map(p => `${toX(p.hr_value)},${toY(p.kcal_per_hour)}`).join(' ')
 
-  // Y-axis ticks
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(kcalMax * f / 1.1))
+  const carbPoints = points.filter(p => p.carb_g_per_hour != null)
+  const carbMax = carbPoints.length > 0
+    ? Math.max(...carbPoints.map(p => p.carb_g_per_hour!)) * 1.15 || 1
+    : 1
+  const toCarbY = (g: number) => PAD.top + chartH - (g / carbMax) * chartH
+  const carbPolyline = carbPoints.map(p => `${toX(p.hr_value)},${toCarbY(p.carb_g_per_hour!)}`).join(' ')
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round((kcalMax / 1.15) * f))
 
   return (
-    <Svg width={width} height={H} style={styles.chart}>
-      {yTicks.map(val => {
-        const y = toY(val)
-        return (
-          <View key={val}>
-            <Line x1={PAD.left} y1={y} x2={PAD.left + chartW} y2={y} stroke="#f0f0f0" strokeWidth={1} />
-            <SvgText x={PAD.left - 4} y={y + 4} fontSize={9} fill="#bbb" textAnchor="end">{val}</SvgText>
-          </View>
-        )
-      })}
-      <Line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top + chartH} stroke="#ddd" strokeWidth={1} />
-      <Line x1={PAD.left} y1={PAD.top + chartH} x2={PAD.left + chartW} y2={PAD.top + chartH} stroke="#ddd" strokeWidth={1} />
-      <Polyline points={polyline} fill="none" stroke="#FC4C02" strokeWidth={2.5} strokeLinejoin="round" />
-      {points.map(p => (
-        <SvgText key={p.id} x={toX(p.hr_value)} y={PAD.top + chartH + 18} fontSize={10} fill="#aaa" textAnchor="middle">
-          {p.hr_value}
+    <View style={styles.chartContainer}>
+      <Svg width={width} height={H}>
+        {/* Grid lines */}
+        {yTicks.map(val => {
+          const y = toY(val)
+          return (
+            <Line key={val} x1={PAD.left} y1={y} x2={PAD.left + chartW} y2={y}
+              stroke={C.surface3} strokeWidth={1} />
+          )
+        })}
+        {/* Y axis */}
+        <Line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top + chartH}
+          stroke={C.border} strokeWidth={1} />
+        {/* X axis */}
+        <Line x1={PAD.left} y1={PAD.top + chartH} x2={PAD.left + chartW} y2={PAD.top + chartH}
+          stroke={C.border} strokeWidth={1} />
+
+        {/* Y axis labels */}
+        {yTicks.map(val => (
+          <SvgText key={val} x={PAD.left - 6} y={toY(val) + 4}
+            fontSize={9} fill={C.text2} textAnchor="end">{val}</SvgText>
+        ))}
+
+        {/* kcal line */}
+        <Polyline points={polyline} fill="none" stroke={C.accent} strokeWidth={2.5} strokeLinejoin="round" />
+        {points.map(p => (
+          <Circle key={p.id} cx={toX(p.hr_value)} cy={toY(p.kcal_per_hour)} r={4}
+            fill={C.accent} />
+        ))}
+
+        {/* carb line */}
+        {carbPoints.length >= 2 && (
+          <>
+            <Polyline points={carbPolyline} fill="none" stroke={C.accent2} strokeWidth={2}
+              strokeLinejoin="round" strokeDasharray="4 3" />
+            {carbPoints.map(p => (
+              <Circle key={p.id} cx={toX(p.hr_value)} cy={toCarbY(p.carb_g_per_hour!)} r={3}
+                fill={C.accent2} />
+            ))}
+          </>
+        )}
+
+        {/* X labels */}
+        {points.map(p => (
+          <SvgText key={p.id} x={toX(p.hr_value)} y={PAD.top + chartH + 20}
+            fontSize={9} fill={C.text2} textAnchor="middle">{p.hr_value}</SvgText>
+        ))}
+
+        {/* Y axis label */}
+        <SvgText x={10} y={PAD.top + chartH / 2}
+          fontSize={9} fill={C.text2}
+          rotation={-90} originX={10} originY={PAD.top + chartH / 2}>
+          kcal/hr
         </SvgText>
-      ))}
-      <SvgText x={12} y={PAD.top + chartH / 2 + 22} fontSize={9} fill="#bbb"
-        rotation={-90} originX={12} originY={PAD.top + chartH / 2}>
-        kcal/hr
-      </SvgText>
-    </Svg>
+
+        {/* X axis label */}
+        <SvgText x={PAD.left + chartW / 2} y={H - 2}
+          fontSize={9} fill={C.text2} textAnchor="middle">
+          HR (bpm)
+        </SvgText>
+      </Svg>
+
+      {/* Legend */}
+      <View style={styles.legend}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: C.accent }]} />
+          <Text style={styles.legendText}>kcal/hr</Text>
+        </View>
+        {carbPoints.length >= 2 && (
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: C.accent2 }]} />
+            <Text style={styles.legendText}>carb g/hr</Text>
+          </View>
+        )}
+      </View>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  back: { paddingHorizontal: 16, paddingVertical: 12 },
-  backText: { fontSize: 16, color: '#FC4C02', fontWeight: '600' },
-  content: { padding: 16, paddingBottom: 48 },
-  title: { fontSize: 13, fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.6 },
-  sport: { fontSize: 26, fontWeight: '800', marginBottom: 16 },
-  warnBox: { backgroundColor: '#FFF8E1', borderRadius: 10, padding: 14, marginBottom: 16 },
-  warnText: { fontSize: 13, color: '#795548', lineHeight: 18 },
-  table: { marginBottom: 8 },
+  container: { flex: 1, backgroundColor: C.bg },
+  back: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 12 },
+  backText: { fontSize: 15, color: C.accent, fontWeight: '600' },
+  content: { padding: 16, paddingBottom: 56 },
+  label: { fontSize: 11, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.8 },
+  title: { fontSize: 26, fontWeight: '800', color: C.text1, marginBottom: 16 },
+
+  infoBox: {
+    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+    backgroundColor: 'rgba(124,131,253,0.1)', borderRadius: 10,
+    padding: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(124,131,253,0.2)',
+  },
+  infoText: { flex: 1, fontSize: 13, color: C.accent2, lineHeight: 18 },
+
+  warnBox: {
+    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+    backgroundColor: 'rgba(230,168,23,0.1)', borderRadius: 10,
+    padding: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(230,168,23,0.2)',
+  },
+  warnText: { flex: 1, fontSize: 13, color: '#E6A817', lineHeight: 18 },
+
+  chartContainer: { marginVertical: 12 },
+  legend: { flexDirection: 'row', gap: 16, paddingHorizontal: 4, marginTop: 4 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendText: { fontSize: 11, color: C.text2 },
+
+  table: { marginBottom: 16 },
   tableHeader: {
     flexDirection: 'row', alignItems: 'center',
-    paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: '#eee',
+    paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: C.divider,
   },
   tableRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#f8f8f8',
+    paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: C.surface2,
   },
-  cell: { flex: 1, fontSize: 14, color: '#333' },
-  headerCell: { fontSize: 10, fontWeight: '700', color: '#bbb', textTransform: 'uppercase' },
-  deleteBtn: { fontSize: 20, color: '#ccc', width: 32, textAlign: 'center' },
-  chart: { marginVertical: 12 },
-  formTitle: { fontSize: 14, fontWeight: '700', color: '#444', marginTop: 16, marginBottom: 12 },
-  row: { flexDirection: 'row', gap: 12, marginBottom: 4 },
-  half: { flex: 1, marginBottom: 10 },
-  inputLabel: { fontSize: 10, fontWeight: '700', color: '#aaa', marginBottom: 4, textTransform: 'uppercase' },
+  cell: { flex: 1, fontSize: 14, color: C.text1 },
+  headerCell: { fontSize: 10, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.4 },
+  deleteBtn: { width: 36, alignItems: 'center' },
+
+  formTitle: { fontSize: 14, fontWeight: '700', color: C.text2, marginTop: 8, marginBottom: 12 },
+  row: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  third: { flex: 1 },
+  inputLabel: { fontSize: 10, fontWeight: '700', color: C.text3, marginBottom: 5, textTransform: 'uppercase' },
   input: {
-    borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 8,
-    padding: 11, fontSize: 14, backgroundColor: '#fafafa',
+    borderWidth: 1, borderColor: C.border, borderRadius: 8,
+    padding: 11, fontSize: 14, backgroundColor: C.surface,
+    color: C.text1, marginBottom: 4,
   },
-  addBtn: { backgroundColor: '#FC4C02', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 8 },
+  addBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: C.accent, padding: 14, borderRadius: 10, marginTop: 6,
+  },
   addBtnDisabled: { opacity: 0.5 },
   addBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  hintBox: {
+    backgroundColor: C.surface, borderRadius: 12, padding: 14, marginTop: 24,
+    borderWidth: 1, borderColor: C.border,
+  },
+  hintTitle: { fontSize: 13, fontWeight: '700', color: C.text2, marginBottom: 8 },
+  hintText: { fontSize: 12, color: C.text3, lineHeight: 19 },
 })

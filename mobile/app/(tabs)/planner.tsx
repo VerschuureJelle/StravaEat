@@ -7,9 +7,10 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
+import { C } from '../../lib/theme'
 import type {
   HeartRateZone, BurnSchemaPoint, SportEnergySetting, PlannedWorkout,
-  TrainingProgram, TrainingProgramSession, ProgramType, UserProfile,
+  TrainingProgram, TrainingProgramSession, ProgramType,
 } from '../../types'
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -756,8 +757,8 @@ export default function PlannerScreen() {
                 </View>
                 <Pressable onPress={() => deletePlan(plan.id)} hitSlop={12} disabled={deletingPlanId === plan.id}>
                   {deletingPlanId === plan.id
-                    ? <ActivityIndicator size="small" color="#ccc" />
-                    : <Ionicons name="trash-outline" size={18} color="#ccc" />
+                    ? <ActivityIndicator size="small" color={C.text3} />
+                    : <Ionicons name="trash-outline" size={18} color={C.text3} />
                   }
                 </Pressable>
               </View>
@@ -778,7 +779,7 @@ export default function PlannerScreen() {
               style={[st.modeBtn, mode === m.key && { backgroundColor: sportColor, borderColor: sportColor }]}
               onPress={() => setMode(m.key)}
             >
-              <Ionicons name={m.icon} size={14} color={mode === m.key ? '#fff' : '#888'} />
+              <Ionicons name={m.icon} size={14} color={mode === m.key ? '#fff' : C.text3} />
               <Text style={[st.modeBtnText, mode === m.key && st.modeBtnTextActive]}>{m.label}</Text>
             </Pressable>
           ))}
@@ -793,7 +794,7 @@ export default function PlannerScreen() {
                 <MaterialCommunityIcons name={getSportIcon(selectedSport) as any} size={20} color={sportColor} />
                 <Text style={st.sportDropText}>{selectedSport || 'Select sport…'}</Text>
               </View>
-              <Ionicons name="chevron-down" size={18} color="#888" />
+              <Ionicons name="chevron-down" size={18} color={C.text2} />
             </Pressable>
           </>
         )}
@@ -847,6 +848,7 @@ export default function PlannerScreen() {
                 onChangeText={v => { setTargetKcal(v); setCalculated(false) }}
                 keyboardType="numeric"
                 placeholder="Other amount"
+                placeholderTextColor={C.text3}
               />
               <Text style={st.kcalUnit}>kcal</Text>
             </View>
@@ -867,18 +869,18 @@ export default function PlannerScreen() {
                 </View>
                 <View style={st.suggestionMeta}>
                   <View style={st.metaItem}>
-                    <Ionicons name="flame-outline" size={13} color="#aaa" />
+                    <Ionicons name="flame-outline" size={13} color={C.text3} />
                     <Text style={st.metaText}>{s.kcalPerHour} kcal/hr</Text>
                   </View>
                   {s.distanceFormatted && (
                     <View style={st.metaItem}>
-                      <Ionicons name="navigate-outline" size={13} color="#aaa" />
+                      <Ionicons name="navigate-outline" size={13} color={C.text3} />
                       <Text style={st.metaText}>{s.distanceFormatted}</Text>
                     </View>
                   )}
                   {s.paceFormatted && (
                     <View style={st.metaItem}>
-                      <Ionicons name="speedometer-outline" size={13} color="#aaa" />
+                      <Ionicons name="speedometer-outline" size={13} color={C.text3} />
                       <Text style={st.metaText}>{s.paceFormatted}</Text>
                     </View>
                   )}
@@ -915,7 +917,7 @@ export default function PlannerScreen() {
                     <Text style={st.segIndex}>Segment {idx + 1}</Text>
                     {segments.length > 1 && (
                       <Pressable onPress={() => removeSegment(seg.id)} hitSlop={10}>
-                        <Ionicons name="close-circle-outline" size={20} color="#ccc" />
+                        <Ionicons name="close-circle-outline" size={20} color={C.text3} />
                       </Pressable>
                     )}
                   </View>
@@ -942,6 +944,7 @@ export default function PlannerScreen() {
                         value={seg.value}
                         onChangeText={v => updateSegment(seg.id, { value: v })}
                         placeholder={seg.inputType === 'distance' ? (isSwim ? 'e.g. 400' : 'e.g. 5') : 'e.g. 20'}
+                        placeholderTextColor={C.text3}
                         keyboardType="decimal-pad"
                       />
                       <Text style={st.segInputUnit}>{seg.inputType === 'distance' ? (isSwim ? 'm' : 'km') : 'min'}</Text>
@@ -952,6 +955,7 @@ export default function PlannerScreen() {
                         value={seg.repeats}
                         onChangeText={v => updateSegment(seg.id, { repeats: v })}
                         placeholder="1"
+                        placeholderTextColor={C.text3}
                         keyboardType="number-pad"
                       />
                       <Text style={st.segInputUnit}>repeats</Text>
@@ -1060,7 +1064,7 @@ export default function PlannerScreen() {
         {mode === 'ai' && (
           <>
             <View style={st.aiInfoBox}>
-              <Ionicons name="sparkles-outline" size={14} color="#7C83FD" />
+              <Ionicons name="sparkles-outline" size={14} color={C.accent2} />
               <Text style={st.aiInfoText}>
                 Set your goal and duration — the AI Coach will design a workout around your HR zones and historical pace.
               </Text>
@@ -1072,7 +1076,7 @@ export default function PlannerScreen() {
               {AI_DURATION_PRESETS.map(d => (
                 <Pressable
                   key={d}
-                  style={[st.aiDurationBtn, aiDuration === d && { backgroundColor: '#7C83FD', borderColor: '#7C83FD' }]}
+                  style={[st.aiDurationBtn, aiDuration === d && { backgroundColor: C.accent2, borderColor: C.accent2 }]}
                   onPress={() => setAiDuration(d)}
                 >
                   <Text style={[st.aiDurationBtnText, aiDuration === d && { color: '#fff' }]}>{d}'</Text>
@@ -1086,10 +1090,10 @@ export default function PlannerScreen() {
               {AI_GOALS.map(g => (
                 <Pressable
                   key={g.key}
-                  style={[st.aiGoalCard, aiGoal === g.key && { borderColor: '#7C83FD', backgroundColor: '#F0F0FF' }]}
+                  style={[st.aiGoalCard, aiGoal === g.key && { borderColor: C.accent2, backgroundColor: 'rgba(124,131,253,0.12)' }]}
                   onPress={() => setAiGoal(g.key)}
                 >
-                  <Text style={[st.aiGoalLabel, aiGoal === g.key && { color: '#7C83FD', fontWeight: '800' }]}>{g.label}</Text>
+                  <Text style={[st.aiGoalLabel, aiGoal === g.key && { color: C.accent2, fontWeight: '800' }]}>{g.label}</Text>
                   <Text style={st.aiGoalNote}>{g.note}</Text>
                 </Pressable>
               ))}
@@ -1102,13 +1106,14 @@ export default function PlannerScreen() {
               value={aiNotes}
               onChangeText={setAiNotes}
               placeholder={'e.g. include a long warm-up, avoid sprints, focus on cadence…'}
+              placeholderTextColor={C.text3}
               multiline
               numberOfLines={3}
               textAlignVertical="top"
             />
 
             <Pressable
-              style={[st.calcBtn, { backgroundColor: '#7C83FD' }, aiLoading && st.planBtnDisabled]}
+              style={[st.calcBtn, { backgroundColor: C.accent2 }, aiLoading && st.planBtnDisabled]}
               onPress={askAI}
               disabled={aiLoading}
             >
@@ -1124,7 +1129,7 @@ export default function PlannerScreen() {
             {aiResult && (
               <View style={st.aiResultCard}>
                 <View style={st.aiResultHeader}>
-                  <Ionicons name="sparkles-outline" size={14} color="#7C83FD" />
+                  <Ionicons name="sparkles-outline" size={14} color={C.accent2} />
                   <Text style={st.aiResultTitle}>AI Coach plan</Text>
                   {aiResult.estimated_kcal && (
                     <View style={st.aiKcalBadge}>
@@ -1194,7 +1199,7 @@ export default function PlannerScreen() {
                         <Text style={st.weekProgress}>{weekDone}/{weekSessions.length}</Text>
                         <Ionicons
                           name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                          size={16} color="#bbb"
+                          size={16} color={C.text3}
                         />
                       </Pressable>
 
@@ -1220,19 +1225,19 @@ export default function PlannerScreen() {
                             <View style={st.sessionMeta}>
                               {session.target_km && (
                                 <View style={st.metaItem}>
-                                  <Ionicons name="navigate-outline" size={11} color="#bbb" />
+                                  <Ionicons name="navigate-outline" size={11} color={C.text3} />
                                   <Text style={st.sessionMetaText}>{session.target_km} km</Text>
                                 </View>
                               )}
                               {session.target_pace_sec_km && (
                                 <View style={st.metaItem}>
-                                  <Ionicons name="speedometer-outline" size={11} color="#bbb" />
+                                  <Ionicons name="speedometer-outline" size={11} color={C.text3} />
                                   <Text style={st.sessionMetaText}>{formatPace(session.target_pace_sec_km)}</Text>
                                 </View>
                               )}
                               {session.estimated_kcal && (
                                 <View style={st.metaItem}>
-                                  <Ionicons name="flame-outline" size={11} color="#bbb" />
+                                  <Ionicons name="flame-outline" size={11} color={C.text3} />
                                   <Text style={st.sessionMetaText}>~{session.estimated_kcal} kcal</Text>
                                 </View>
                               )}
@@ -1263,7 +1268,7 @@ export default function PlannerScreen() {
                     )
                   }}
                 >
-                  <Ionicons name="add-circle-outline" size={16} color="#888" />
+                  <Ionicons name="add-circle-outline" size={16} color={C.text2} />
                   <Text style={st.newProgramBtnText}>Start a new program</Text>
                 </Pressable>
               </>
@@ -1281,7 +1286,7 @@ export default function PlannerScreen() {
                 </View>
 
                 <View style={st.aiInfoBox}>
-                  <Ionicons name="information-circle-outline" size={14} color="#5C63D8" />
+                  <Ionicons name="information-circle-outline" size={14} color={C.accent2} />
                   <Text style={st.aiInfoText}>
                     Review your plan below. When you save it, session names like "{cfg.label === '5K' ? '5k' : cfg.label} Program w1d1" will auto-match Strava activities with the same name.
                   </Text>
@@ -1299,13 +1304,13 @@ export default function PlannerScreen() {
                         </View>
                         <Text style={st.weekLabel}>Week {weekNum}</Text>
                         <Text style={st.weekProgress}>{weekSessions.length} sessions</Text>
-                        <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#bbb" />
+                        <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={C.text3} />
                       </Pressable>
 
                       {isExpanded && weekSessions.map((session, i) => (
                         <View key={i} style={st.sessionRow}>
-                          <View style={[st.sessionCheck, { borderColor: '#e0e0e0' }]}>
-                            <Ionicons name="ellipse-outline" size={14} color="#ddd" />
+                          <View style={[st.sessionCheck, { borderColor: C.border }]}>
+                            <Ionicons name="ellipse-outline" size={14} color={C.text4} />
                           </View>
                           <View style={st.sessionInfo}>
                             <Text style={st.sessionName}>{session.session_name}</Text>
@@ -1313,19 +1318,19 @@ export default function PlannerScreen() {
                             <View style={st.sessionMeta}>
                               {session.target_km && (
                                 <View style={st.metaItem}>
-                                  <Ionicons name="navigate-outline" size={11} color="#bbb" />
+                                  <Ionicons name="navigate-outline" size={11} color={C.text3} />
                                   <Text style={st.sessionMetaText}>{session.target_km} km</Text>
                                 </View>
                               )}
                               {session.target_pace_sec_km && (
                                 <View style={st.metaItem}>
-                                  <Ionicons name="speedometer-outline" size={11} color="#bbb" />
+                                  <Ionicons name="speedometer-outline" size={11} color={C.text3} />
                                   <Text style={st.sessionMetaText}>{formatPace(session.target_pace_sec_km)}</Text>
                                 </View>
                               )}
                               {session.estimated_kcal && (
                                 <View style={st.metaItem}>
-                                  <Ionicons name="flame-outline" size={11} color="#bbb" />
+                                  <Ionicons name="flame-outline" size={11} color={C.text3} />
                                   <Text style={st.sessionMetaText}>~{session.estimated_kcal} kcal</Text>
                                 </View>
                               )}
@@ -1355,7 +1360,7 @@ export default function PlannerScreen() {
               /* Program creation wizard */
               <>
                 <View style={st.aiInfoBox}>
-                  <Ionicons name="trophy-outline" size={14} color="#5C63D8" />
+                  <Ionicons name="trophy-outline" size={14} color={C.accent2} />
                   <Text style={st.aiInfoText}>
                     Build a structured multi-week training plan tailored to your goal race and current fitness.
                   </Text>
@@ -1388,7 +1393,7 @@ export default function PlannerScreen() {
                     onPress={() => adjustWeeks(-1)}
                     disabled={programWeeks <= cfg.minWeeks}
                   >
-                    <Ionicons name="remove" size={20} color={programWeeks <= cfg.minWeeks ? '#ccc' : '#333'} />
+                    <Ionicons name="remove" size={20} color={programWeeks <= cfg.minWeeks ? C.text3 : C.text1} />
                   </Pressable>
                   <View style={st.stepperCenter}>
                     <Text style={[st.stepperValue, { color: cfg.color }]}>{programWeeks}</Text>
@@ -1399,7 +1404,7 @@ export default function PlannerScreen() {
                     onPress={() => adjustWeeks(1)}
                     disabled={programWeeks >= cfg.maxWeeks}
                   >
-                    <Ionicons name="add" size={20} color={programWeeks >= cfg.maxWeeks ? '#ccc' : '#333'} />
+                    <Ionicons name="add" size={20} color={programWeeks >= cfg.maxWeeks ? C.text3 : C.text1} />
                   </Pressable>
                 </View>
                 <Text style={st.stepperHint}>{cfg.minWeeks}–{cfg.maxWeeks} weeks for {cfg.label}</Text>
@@ -1524,6 +1529,7 @@ export default function PlannerScreen() {
                       onChangeText={setStartingKm}
                       keyboardType="decimal-pad"
                       placeholder="e.g. 8"
+                      placeholderTextColor={C.text3}
                     />
                     <Text style={st.startingUnit}>km</Text>
                     <Text style={st.startingPointHint}>at</Text>
@@ -1534,6 +1540,7 @@ export default function PlannerScreen() {
                         onChangeText={setStartingPaceMin}
                         keyboardType="number-pad"
                         placeholder="5"
+                        placeholderTextColor={C.text3}
                         maxLength={2}
                       />
                       <Text style={st.paceSep}>:</Text>
@@ -1543,6 +1550,7 @@ export default function PlannerScreen() {
                         onChangeText={v => setStartingPaceSec(v.replace(/\D/g, '').slice(0, 2))}
                         keyboardType="number-pad"
                         placeholder="30"
+                        placeholderTextColor={C.text3}
                         maxLength={2}
                       />
                     </View>
@@ -1558,6 +1566,7 @@ export default function PlannerScreen() {
                   value={calibrationNotes}
                   onChangeText={setCalibrationNotes}
                   placeholder="e.g. I prefer morning runs, no more than 4 sessions per week, avoid back-to-back hard days, focus on aerobic base first..."
+                  placeholderTextColor={C.text3}
                   multiline
                   numberOfLines={4}
                   textAlignVertical="top"
@@ -1591,75 +1600,75 @@ export default function PlannerScreen() {
 // ─── styles ────────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: C.bg },
   content: { padding: 20, paddingBottom: 60 },
 
-  screenTitle: { fontSize: 26, fontWeight: '800', marginBottom: 20 },
+  screenTitle: { fontSize: 26, fontWeight: '800', marginBottom: 20, color: C.text1 },
 
   sectionLabel: {
-    fontSize: 11, fontWeight: '700', color: '#aaa',
+    fontSize: 11, fontWeight: '700', color: C.text3,
     textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12,
   },
-  label: { fontSize: 11, fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 },
+  label: { fontSize: 11, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 },
 
   // Today's plan card
   todayCard: {
-    backgroundColor: '#fafafa', borderRadius: 16, padding: 16,
-    borderWidth: 1, borderColor: '#ebebeb', marginBottom: 24,
+    backgroundColor: C.surface2, borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: C.border, marginBottom: 24,
   },
   planRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 10, gap: 12 },
-  planRowBorder: { borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  planRowBorder: { borderBottomWidth: 1, borderBottomColor: C.divider },
   planDot: { width: 8, height: 8, borderRadius: 4, marginTop: 4 },
   planInfo: { flex: 1 },
-  planSport: { fontSize: 14, fontWeight: '700', color: '#111', marginBottom: 2 },
-  planMeta: { fontSize: 12, color: '#888', marginBottom: 2 },
-  planDesc: { fontSize: 12, color: '#aaa', lineHeight: 17 },
+  planSport: { fontSize: 14, fontWeight: '700', color: C.text1, marginBottom: 2 },
+  planMeta: { fontSize: 12, color: C.text2, marginBottom: 2 },
+  planDesc: { fontSize: 12, color: C.text3, lineHeight: 17 },
 
   // Mode selector — 2×2 grid
   modeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
   modeBtn: {
     flexBasis: '47%', flexGrow: 1,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
+    paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface2,
   },
-  modeBtnText: { fontSize: 12, fontWeight: '600', color: '#888' },
+  modeBtnText: { fontSize: 12, fontWeight: '600', color: C.text3 },
   modeBtnTextActive: { color: '#fff' },
 
   // Sport dropdown
   sportDropBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 2, borderRadius: 12, padding: 14, backgroundColor: '#fafafa', marginBottom: 24,
+    borderWidth: 2, borderRadius: 12, padding: 14, backgroundColor: C.surface2, marginBottom: 24,
   },
   sportDropLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  sportDropText: { fontSize: 16, fontWeight: '700', color: '#111' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sportDropText: { fontSize: 16, fontWeight: '700', color: C.text1 },
+  modalOverlay: { flex: 1, backgroundColor: C.overlay, justifyContent: 'flex-end' },
   sportSheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingTop: 8, paddingBottom: 40, maxHeight: '60%',
   },
   sportSheetTitle: {
-    fontSize: 12, fontWeight: '700', color: '#aaa', textTransform: 'uppercase',
+    fontSize: 12, fontWeight: '700', color: C.text3, textTransform: 'uppercase',
     letterSpacing: 0.8, paddingHorizontal: 20, paddingVertical: 12,
   },
   sportSheetRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    paddingHorizontal: 20, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#f5f5f5',
+    paddingHorizontal: 20, paddingVertical: 16, borderTopWidth: 1, borderTopColor: C.divider,
   },
-  sportSheetRowText: { fontSize: 16, color: '#222', flex: 1 },
+  sportSheetRowText: { fontSize: 16, color: C.text1, flex: 1 },
 
   kcalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   kcalPreset: {
     paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10,
-    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface2,
   },
-  kcalPresetText: { fontSize: 14, fontWeight: '600', color: '#555' },
+  kcalPresetText: { fontSize: 14, fontWeight: '600', color: C.text2 },
   kcalPresetTextActive: { color: '#fff' },
   kcalInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 24 },
   kcalInput: {
-    flex: 1, borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 10,
-    padding: 12, fontSize: 16, backgroundColor: '#fafafa',
+    flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 10,
+    padding: 12, fontSize: 16, backgroundColor: C.surface2, color: C.text1,
   },
-  kcalUnit: { fontSize: 14, color: '#aaa', fontWeight: '600' },
+  kcalUnit: { fontSize: 14, color: C.text3, fontWeight: '600' },
 
   calcBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1669,32 +1678,32 @@ const st = StyleSheet.create({
 
   // Segment builder
   segCard: {
-    backgroundColor: '#fafafa', borderRadius: 14, padding: 14,
-    borderWidth: 1, borderColor: '#ebebeb', marginBottom: 10,
+    backgroundColor: C.surface2, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: C.border, marginBottom: 10,
   },
   segHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  segIndex: { fontSize: 11, fontWeight: '700', color: '#bbb', textTransform: 'uppercase', letterSpacing: 0.5 },
+  segIndex: { fontSize: 11, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.5 },
   segToggleRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   segToggleBtn: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8,
-    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fff',
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface3,
   },
-  segToggleText: { fontSize: 13, fontWeight: '600', color: '#555' },
+  segToggleText: { fontSize: 13, fontWeight: '600', color: C.text2 },
   segInputRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   segInputGroup: { flex: 2 },
   segRepeatGroup: { flex: 1 },
   segInput: {
-    borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 8,
-    padding: 10, fontSize: 15, backgroundColor: '#fff', marginBottom: 2,
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 8,
+    padding: 10, fontSize: 15, backgroundColor: C.surface3, marginBottom: 2, color: C.text1,
   },
-  segInputUnit: { fontSize: 11, color: '#bbb', textAlign: 'center' },
+  segInputUnit: { fontSize: 11, color: C.text3, textAlign: 'center' },
   segZoneRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   segZoneBtn: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
-    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fff',
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface3,
   },
-  segZoneBtnNum: { fontSize: 13, fontWeight: '800', color: '#555' },
-  segZoneDetail: { fontSize: 11, color: '#aaa', marginTop: 7 },
+  segZoneBtnNum: { fontSize: 13, fontWeight: '800', color: C.text2 },
+  segZoneDetail: { fontSize: 11, color: C.text3, marginTop: 7 },
 
   addSegBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -1702,71 +1711,71 @@ const st = StyleSheet.create({
   },
   addSegBtnText: { fontSize: 14, fontWeight: '700' },
 
-  segResultCard: { borderLeftWidth: 4, borderRadius: 12, backgroundColor: '#fafafa', padding: 16, marginBottom: 12 },
+  segResultCard: { borderLeftWidth: 4, borderRadius: 12, backgroundColor: C.surface2, padding: 16, marginBottom: 12 },
   segResultTotals: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   segResultStat: { flex: 1, alignItems: 'center' },
   segResultValue: { fontSize: 26, fontWeight: '800' },
-  segResultLabel: { fontSize: 11, color: '#aaa', marginTop: 2 },
-  divider: { width: 1, height: 36, backgroundColor: '#e0e0e0' },
-  segBreakRow: { paddingVertical: 6, borderTopWidth: 1, borderTopColor: '#efefef' },
-  segBreakLabel: { fontSize: 13, fontWeight: '600', color: '#333', marginBottom: 1 },
-  segBreakMeta: { fontSize: 12, color: '#aaa' },
+  segResultLabel: { fontSize: 11, color: C.text3, marginTop: 2 },
+  divider: { width: 1, height: 36, backgroundColor: C.border },
+  segBreakRow: { paddingVertical: 6, borderTopWidth: 1, borderTopColor: C.divider },
+  segBreakLabel: { fontSize: 13, fontWeight: '600', color: C.text1, marginBottom: 1 },
+  segBreakMeta: { fontSize: 12, color: C.text3 },
 
   // Suggestions (kcal mode)
   suggestionCard: {
-    borderLeftWidth: 4, borderRadius: 12, backgroundColor: '#fafafa',
+    borderLeftWidth: 4, borderRadius: 12, backgroundColor: C.surface2,
     padding: 16, marginBottom: 12,
   },
   suggestionTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  zoneName: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 2 },
-  zoneHR: { fontSize: 12, color: '#aaa' },
+  zoneName: { fontSize: 16, fontWeight: '700', color: C.text1, marginBottom: 2 },
+  zoneHR: { fontSize: 12, color: C.text3 },
   duration: { fontSize: 26, fontWeight: '800' },
   suggestionMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 14 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText: { fontSize: 13, color: '#555' },
+  metaText: { fontSize: 13, color: C.text2 },
 
-  planBtn: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#FC4C02', borderRadius: 8, padding: 10, alignItems: 'center' },
+  planBtn: { backgroundColor: C.surface3, borderWidth: 1.5, borderColor: '#FC4C02', borderRadius: 8, padding: 10, alignItems: 'center' },
   planBtnDisabled: { opacity: 0.5 },
   planBtnText: { color: '#FC4C02', fontWeight: '700', fontSize: 14 },
 
   // AI mode
-  aiInfoBox: { flexDirection: 'row', gap: 8, backgroundColor: '#F0F0FF', borderRadius: 12, padding: 12, marginBottom: 20 },
-  aiInfoText: { flex: 1, fontSize: 13, color: '#5C63D8', lineHeight: 18 },
+  aiInfoBox: { flexDirection: 'row', gap: 8, backgroundColor: 'rgba(124,131,253,0.12)', borderRadius: 12, padding: 12, marginBottom: 20 },
+  aiInfoText: { flex: 1, fontSize: 13, color: C.accent2, lineHeight: 18 },
   aiInput: {
-    borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 12,
-    padding: 14, fontSize: 15, backgroundColor: '#fafafa',
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 12,
+    padding: 14, fontSize: 15, backgroundColor: C.surface2, color: C.text1,
     minHeight: 100, marginBottom: 16,
   },
-  aiResultCard: { backgroundColor: '#fafafa', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#e8e8ff' },
+  aiResultCard: { backgroundColor: C.surface2, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: 'rgba(124,131,253,0.25)' },
   aiResultHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
-  aiResultTitle: { fontSize: 14, fontWeight: '700', color: '#333', flex: 1 },
+  aiResultTitle: { fontSize: 14, fontWeight: '700', color: C.text1, flex: 1 },
   aiKcalBadge: { backgroundColor: '#7C83FD22', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  aiKcalBadgeText: { fontSize: 12, fontWeight: '700', color: '#7C83FD' },
-  aiResultText: { fontSize: 14, color: '#333', lineHeight: 21 },
+  aiKcalBadgeText: { fontSize: 12, fontWeight: '700', color: C.accent2 },
+  aiResultText: { fontSize: 14, color: C.text1, lineHeight: 21 },
 
   emptyBox: { padding: 24, alignItems: 'center' },
-  emptyText: { fontSize: 14, color: '#aaa', textAlign: 'center' },
+  emptyText: { fontSize: 14, color: C.text3, textAlign: 'center' },
 
   // Programs mode
   progHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14, gap: 12 },
-  progTitle: { fontSize: 20, fontWeight: '800', color: '#111', marginBottom: 2 },
-  progSubtitle: { fontSize: 13, color: '#aaa' },
+  progTitle: { fontSize: 20, fontWeight: '800', color: C.text1, marginBottom: 2 },
+  progSubtitle: { fontSize: 13, color: C.text3 },
   endProgBtn: {
-    backgroundColor: '#fafafa', borderWidth: 1, borderColor: '#e0e0e0',
+    backgroundColor: C.surface2, borderWidth: 1, borderColor: C.border,
     borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6,
   },
-  endProgBtnText: { fontSize: 13, fontWeight: '700', color: '#888' },
+  endProgBtnText: { fontSize: 13, fontWeight: '700', color: C.text2 },
 
   progProgressRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
   progProgressTrack: {
-    flex: 1, height: 8, backgroundColor: '#f0f0f0', borderRadius: 4, overflow: 'hidden',
+    flex: 1, height: 8, backgroundColor: C.surface3, borderRadius: 4, overflow: 'hidden',
   },
   progProgressFill: { height: '100%', borderRadius: 4, minWidth: 4 },
-  progProgressLabel: { fontSize: 13, fontWeight: '700', color: '#555', minWidth: 60, textAlign: 'right' },
+  progProgressLabel: { fontSize: 13, fontWeight: '700', color: C.text2, minWidth: 60, textAlign: 'right' },
 
   weekBlock: {
-    backgroundColor: '#fafafa', borderRadius: 14,
-    borderWidth: 1, borderColor: '#ebebeb', marginBottom: 10, overflow: 'hidden',
+    backgroundColor: C.surface2, borderRadius: 14,
+    borderWidth: 1, borderColor: C.border, marginBottom: 10, overflow: 'hidden',
   },
   weekHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -1777,45 +1786,45 @@ const st = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   weekBadgeText: { fontSize: 13, fontWeight: '800' },
-  weekLabel: { flex: 1, fontSize: 15, fontWeight: '700', color: '#111' },
-  weekProgress: { fontSize: 13, color: '#aaa', fontWeight: '600' },
+  weekLabel: { flex: 1, fontSize: 15, fontWeight: '700', color: C.text1 },
+  weekProgress: { fontSize: 13, color: C.text3, fontWeight: '600' },
 
   sessionRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     paddingHorizontal: 14, paddingVertical: 12,
-    borderTopWidth: 1, borderTopColor: '#f0f0f0',
+    borderTopWidth: 1, borderTopColor: C.divider,
   },
   sessionRowDone: { opacity: 0.6 },
   sessionCheck: {
     width: 26, height: 26, borderRadius: 13,
-    borderWidth: 2, borderColor: '#ddd',
+    borderWidth: 2, borderColor: C.border,
     alignItems: 'center', justifyContent: 'center',
     marginTop: 1,
   },
   sessionInfo: { flex: 1 },
-  sessionName: { fontSize: 14, fontWeight: '700', color: '#111', marginBottom: 3 },
-  sessionNameDone: { textDecorationLine: 'line-through', color: '#aaa' },
-  sessionDesc: { fontSize: 13, color: '#666', lineHeight: 18, marginBottom: 6 },
+  sessionName: { fontSize: 14, fontWeight: '700', color: C.text1, marginBottom: 3 },
+  sessionNameDone: { textDecorationLine: 'line-through', color: C.text3 },
+  sessionDesc: { fontSize: 13, color: C.text2, lineHeight: 18, marginBottom: 6 },
   sessionMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  sessionMetaText: { fontSize: 11, color: '#bbb' },
+  sessionMetaText: { fontSize: 11, color: C.text3 },
 
   newProgramBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     paddingVertical: 14, marginTop: 8,
   },
-  newProgramBtnText: { fontSize: 14, color: '#aaa', fontWeight: '600' },
+  newProgramBtnText: { fontSize: 14, color: C.text3, fontWeight: '600' },
 
   // Wizard — program type grid
   programTypeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 24 },
   programTypeCard: {
     flexBasis: '47%', flexGrow: 1,
-    backgroundColor: '#fafafa', borderRadius: 14,
-    borderWidth: 2, borderColor: '#e8e8e8',
+    backgroundColor: C.surface2, borderRadius: 14,
+    borderWidth: 2, borderColor: C.border,
     padding: 14, alignItems: 'center', gap: 4,
   },
   programTypeEmoji: { fontSize: 26 },
-  programTypeLabel: { fontSize: 15, fontWeight: '700', color: '#222' },
-  programTypeRange: { fontSize: 11, color: '#aaa' },
+  programTypeLabel: { fontSize: 15, fontWeight: '700', color: C.text1 },
+  programTypeRange: { fontSize: 11, color: C.text3 },
 
   // Wizard — week stepper
   weekStepperRow: {
@@ -1824,35 +1833,35 @@ const st = StyleSheet.create({
   },
   stepperBtn: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: '#f5f5f5', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#e0e0e0',
+    backgroundColor: C.surface2, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: C.border,
   },
   stepperBtnDisabled: { opacity: 0.3 },
   stepperCenter: { alignItems: 'center' },
   stepperValue: { fontSize: 40, fontWeight: '900', lineHeight: 44 },
-  stepperUnit: { fontSize: 12, color: '#aaa', fontWeight: '600' },
-  stepperHint: { fontSize: 12, color: '#bbb', textAlign: 'center', marginBottom: 24 },
+  stepperUnit: { fontSize: 12, color: C.text3, fontWeight: '600' },
+  stepperHint: { fontSize: 12, color: C.text3, textAlign: 'center', marginBottom: 24 },
 
   // Wizard — starting point
   startingPointCard: {
-    backgroundColor: '#fafafa', borderRadius: 14, borderWidth: 1, borderColor: '#ebebeb',
+    backgroundColor: C.surface2, borderRadius: 14, borderWidth: 1, borderColor: C.border,
     padding: 14, marginBottom: 24, gap: 10,
   },
-  startingPointHint: { fontSize: 13, color: '#888' },
+  startingPointHint: { fontSize: 13, color: C.text2 },
   startingPointRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   startingInput: {
-    borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 8,
-    padding: 10, fontSize: 16, backgroundColor: '#fff', textAlign: 'center',
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 8,
+    padding: 10, fontSize: 16, backgroundColor: C.surface3, color: C.text1, textAlign: 'center',
   },
-  startingUnit: { fontSize: 13, color: '#888', fontWeight: '600' },
+  startingUnit: { fontSize: 13, color: C.text2, fontWeight: '600' },
   paceInputRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   paceInput: { width: 44 },
-  paceSep: { fontSize: 18, fontWeight: '700', color: '#555' },
+  paceSep: { fontSize: 18, fontWeight: '700', color: C.text2 },
 
   // Wizard — calibration
   calibrationInput: {
-    borderWidth: 1.5, borderColor: '#e0e0e0', borderRadius: 12,
-    padding: 14, fontSize: 14, backgroundColor: '#fafafa',
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 12,
+    padding: 14, fontSize: 14, backgroundColor: C.surface2, color: C.text1,
     minHeight: 110, marginBottom: 20,
   },
 
@@ -1860,39 +1869,39 @@ const st = StyleSheet.create({
   subConfigRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   subConfigCard: {
     flexBasis: '47%', flexGrow: 1,
-    backgroundColor: '#fafafa', borderRadius: 12,
-    borderWidth: 2, borderColor: '#e8e8e8',
+    backgroundColor: C.surface2, borderRadius: 12,
+    borderWidth: 2, borderColor: C.border,
     padding: 12, gap: 2,
   },
-  subConfigLabel: { fontSize: 14, fontWeight: '700', color: '#222' },
-  subConfigNote: { fontSize: 11, color: '#aaa' },
+  subConfigLabel: { fontSize: 14, fontWeight: '700', color: C.text1 },
+  subConfigNote: { fontSize: 11, color: C.text3 },
 
   bodyPartRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   bodyPartChip: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface2,
   },
-  bodyPartChipText: { fontSize: 13, fontWeight: '600', color: '#555' },
+  bodyPartChipText: { fontSize: 13, fontWeight: '600', color: C.text2 },
 
   swimToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
-  swimToggleLabel: { fontSize: 14, fontWeight: '600', color: '#333' },
+  swimToggleLabel: { fontSize: 14, fontWeight: '600', color: C.text1 },
   swimToggleBtns: { flexDirection: 'row', gap: 8 },
   swimToggleBtn: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
-    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface2,
   },
-  swimToggleBtnText: { fontSize: 13, fontWeight: '600', color: '#555' },
+  swimToggleBtnText: { fontSize: 13, fontWeight: '600', color: C.text2 },
 
   ftpBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#f5fff5', borderRadius: 10, padding: 10, marginBottom: 20,
-    borderWidth: 1, borderColor: '#c8e6c9',
+    backgroundColor: 'rgba(76,175,80,0.12)', borderRadius: 10, padding: 10, marginBottom: 20,
+    borderWidth: 1, borderColor: C.border,
   },
   ftpBadgeText: { fontSize: 13, fontWeight: '600' },
 
   // Workout diagram
   diagramLabel: {
-    fontSize: 10, fontWeight: '700', color: '#bbb',
+    fontSize: 10, fontWeight: '700', color: C.text3,
     textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, marginTop: 4,
   },
   diagramBar: {
@@ -1909,7 +1918,7 @@ const st = StyleSheet.create({
   diagramLegend: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   diagramLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   diagramLegendDot: { width: 8, height: 8, borderRadius: 4 },
-  diagramLegendText: { fontSize: 11, color: '#888', fontWeight: '600' },
+  diagramLegendText: { fontSize: 11, color: C.text2, fontWeight: '600' },
   segZoneTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   segZoneTagText: { fontSize: 11, fontWeight: '800' },
 
@@ -1917,16 +1926,16 @@ const st = StyleSheet.create({
   aiDurationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   aiDurationBtn: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
-    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface2,
   },
-  aiDurationBtnText: { fontSize: 14, fontWeight: '700', color: '#555' },
+  aiDurationBtnText: { fontSize: 14, fontWeight: '700', color: C.text2 },
   aiGoalGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   aiGoalCard: {
     flexBasis: '47%', flexGrow: 1,
-    backgroundColor: '#fafafa', borderRadius: 12,
-    borderWidth: 2, borderColor: '#e8e8e8',
+    backgroundColor: C.surface2, borderRadius: 12,
+    borderWidth: 2, borderColor: C.border,
     padding: 12, gap: 2,
   },
-  aiGoalLabel: { fontSize: 14, fontWeight: '700', color: '#222' },
-  aiGoalNote: { fontSize: 11, color: '#aaa' },
+  aiGoalLabel: { fontSize: 14, fontWeight: '700', color: C.text1 },
+  aiGoalNote: { fontSize: 11, color: C.text3 },
 })
