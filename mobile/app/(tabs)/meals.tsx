@@ -118,7 +118,7 @@ export default function MealsScreen() {
           <View style={[st.progressCard, allDone && st.progressCardDone]}>
             {allDone ? (
               <View style={st.doneRow}>
-                <Ionicons name="checkmark-circle" size={22} color="#4CAF50" />
+                <Ionicons name="checkmark-circle" size={22} color={C.success} />
                 <Text style={st.doneText}>All meals done for today!</Text>
               </View>
             ) : (
@@ -173,7 +173,7 @@ export default function MealsScreen() {
                   <Ionicons
                     name="time-outline"
                     size={13}
-                    color={overdue ? '#EF5350' : C.text3}
+                    color={overdue ? C.danger : C.text3}
                   />
                   <Text style={[st.mealTime, overdue && st.mealTimeOverdue]}>
                     {meal.scheduled_time}
@@ -207,9 +207,9 @@ const st = StyleSheet.create({
     backgroundColor: C.surface, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: C.border,
   },
-  progressCardDone: { backgroundColor: 'rgba(76,175,80,0.1)', borderColor: 'rgba(76,175,80,0.25)' },
+  progressCardDone: { backgroundColor: C.successBg, borderColor: C.successBorder },
   doneRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  doneText: { fontSize: 15, fontWeight: '700', color: '#4CAF50' },
+  doneText: { fontSize: 15, fontWeight: '700', color: C.success },
   progressLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   progressLabel: { fontSize: 14, fontWeight: '600', color: C.text2 },
   progressPct: { fontSize: 14, fontWeight: '800', color: C.accent },
@@ -223,7 +223,7 @@ const st = StyleSheet.create({
     borderLeftWidth: 3, borderLeftColor: 'transparent',
   },
   mealCardChecked: { opacity: 0.5 },
-  mealCardOverdue: { borderLeftColor: '#EF5350' },
+  mealCardOverdue: { borderLeftColor: C.danger },
 
   checkbox: {
     width: 28, height: 28, borderRadius: 14,
@@ -239,14 +239,14 @@ const st = StyleSheet.create({
 
   mealMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   mealTime: { fontSize: 13, color: C.text3 },
-  mealTimeOverdue: { color: '#EF5350', fontWeight: '600' },
+  mealTimeOverdue: { color: C.danger, fontWeight: '600' },
 
   overdueTag: {
-    backgroundColor: 'rgba(239,83,80,0.15)', borderRadius: 6,
+    backgroundColor: C.dangerBg, borderRadius: 6,
     paddingHorizontal: 7, paddingVertical: 2, marginLeft: 2,
   },
-  overdueTagText: { fontSize: 11, fontWeight: '700', color: '#EF5350' },
-  checkedLabel: { fontSize: 11, fontWeight: '600', color: '#4CAF50', marginLeft: 2 },
+  overdueTagText: { fontSize: 11, fontWeight: '700', color: C.danger },
+  checkedLabel: { fontSize: 11, fontWeight: '600', color: C.success, marginLeft: 2 },
 
   emptyBox: { alignItems: 'center', paddingVertical: 56, gap: 12 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: C.text2 },

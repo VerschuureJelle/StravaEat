@@ -94,7 +94,7 @@ export default function BurnSchemaScreen() {
 
         {points.length < 2 && (
           <View style={styles.warnBox}>
-            <Ionicons name="warning-outline" size={15} color="#E6A817" style={{ marginTop: 1 }} />
+            <Ionicons name="warning-outline" size={15} color={C.warning} style={{ marginTop: 1 }} />
             <Text style={styles.warnText}>
               Add at least 2 points to activate the custom calculation for {sport}.
             </Text>
@@ -302,17 +302,17 @@ const styles = StyleSheet.create({
 
   infoBox: {
     flexDirection: 'row', gap: 8, alignItems: 'flex-start',
-    backgroundColor: 'rgba(124,131,253,0.1)', borderRadius: 10,
-    padding: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(124,131,253,0.2)',
+    backgroundColor: C.accent2Bg, borderRadius: 10,
+    padding: 12, marginBottom: 12, borderWidth: 1, borderColor: C.accent2Border,
   },
   infoText: { flex: 1, fontSize: 13, color: C.accent2, lineHeight: 18 },
 
   warnBox: {
     flexDirection: 'row', gap: 8, alignItems: 'flex-start',
-    backgroundColor: 'rgba(230,168,23,0.1)', borderRadius: 10,
-    padding: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(230,168,23,0.2)',
+    backgroundColor: C.warningBg, borderRadius: 10,
+    padding: 12, marginBottom: 12, borderWidth: 1, borderColor: C.warningBorder,
   },
-  warnText: { flex: 1, fontSize: 13, color: '#E6A817', lineHeight: 18 },
+  warnText: { flex: 1, fontSize: 13, color: C.warning, lineHeight: 18 },
 
   chartContainer: { marginVertical: 12 },
   legend: { flexDirection: 'row', gap: 16, paddingHorizontal: 4, marginTop: 4 },
@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.accent, padding: 14, borderRadius: 10, marginTop: 6,
   },
   addBtnDisabled: { opacity: 0.5 },
-  addBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  addBtnText: { color: C.white, fontWeight: '700', fontSize: 15 },
 
   hintBox: {
     backgroundColor: C.surface, borderRadius: 12, padding: 14, marginTop: 24,

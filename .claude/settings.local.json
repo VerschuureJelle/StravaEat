@@ -4,7 +4,13 @@
       "Bash(export PATH=\"$PATH:/usr/local/bin:/opt/homebrew/bin\")",
       "Bash(npm --version)",
       "Bash(npx --version)",
-      "Bash(supabase migration *)"
+      "Bash(supabase migration *)",
+      "Bash(grep -r \"LinearGradient\\\\|gradient\" /Users/jelleverschuure/StravaEat/mobile --include=\"*.tsx\" --include=\"*.ts\" ! -path \"*/node_modules/*\")",
+      "Bash(mkdir -p /Users/jelleverschuure/.claude/projects/-Users-jelleverschuure-StravaEat/memory)",
+      "Bash(grep -rn \"#[0-9A-Fa-f]\\\\{3,6\\\\}\\\\|'rgba\\(\" \"/Users/jelleverschuure/StravaEat/mobile/app\" --include=\"*.tsx\" --include=\"*.ts\" -l)"
+    ],
+    "additionalDirectories": [
+      "/Users/jelleverschuure/.claude/projects/-Users-jelleverschuure-StravaEat"
     ]
   }
 }

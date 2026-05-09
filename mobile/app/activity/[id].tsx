@@ -8,7 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { C } from '../../lib/theme'
 import type { ActivityWithZones, Lap } from '../../types'
 
-const ZONE_COLORS = ['#29B6F6', '#66BB6A', '#FFCA28', '#FF9800', '#EF5350']
+const ZONE_COLORS = [C.swim, C.success, C.warning, C.run, C.danger]
 
 function formatDuration(sec: number) {
   const h = Math.floor(sec / 3600)
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: C.surface, borderRadius: 10, padding: 14, alignItems: 'center',
     borderWidth: 1, borderColor: C.border,
   },
-  statBoxOrange: { backgroundColor: C.accentBg, borderColor: 'rgba(255,92,0,0.25)' },
+  statBoxOrange: { backgroundColor: C.accentBg, borderColor: C.border },
   statValue: { fontSize: 26, fontWeight: '800', color: C.text1 },
   statValueOrange: { color: C.accent },
   statLabel: { fontSize: 11, color: C.text2, marginTop: 3, fontWeight: '600' },

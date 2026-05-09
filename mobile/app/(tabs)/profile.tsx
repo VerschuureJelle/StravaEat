@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
+import { C } from '../../lib/theme'
 import type { UserProfile } from '../../types'
 
 const STRAVA_CLIENT_ID = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID!
@@ -73,6 +74,7 @@ export default function ProfileScreen() {
         style={styles.input}
         value={profile[key] != null ? String(profile[key]) : ''}
         keyboardType={numeric ? 'numeric' : 'default'}
+        placeholderTextColor={C.text3}
         onChangeText={(v) =>
           setProfile((p) => ({ ...p, [key]: numeric ? (v ? parseFloat(v) : null) : v }))
         }
@@ -85,7 +87,6 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.header}>Profile</Text>
 
-        {/* Strava connection status */}
         <View style={styles.stravaRow}>
           <View>
             <Text style={styles.stravaLabel}>Strava</Text>
@@ -118,37 +119,42 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: C.bg },
   content: { padding: 24 },
-  header: { fontSize: 28, fontWeight: '700', marginBottom: 24 },
+  header: { fontSize: 28, fontWeight: '700', color: C.text1, marginBottom: 24 },
   stravaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f8f8f8',
+    backgroundColor: C.surface2,
     borderRadius: 10,
     padding: 16,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  stravaLabel: { fontSize: 14, fontWeight: '700' },
-  stravaStatus: { fontSize: 13, color: '#888', marginTop: 2 },
+  stravaLabel: { fontSize: 14, fontWeight: '700', color: C.text1 },
+  stravaStatus: { fontSize: 13, color: C.text2, marginTop: 2 },
   stravaBtn: {
-    backgroundColor: '#FC4C02',
+    backgroundColor: C.accent,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
   },
-  stravaBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 6, marginTop: 16 },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, fontSize: 16 },
+  stravaBtnText: { color: C.white, fontWeight: '700', fontSize: 13 },
+  label: { fontSize: 14, fontWeight: '600', color: C.text2, marginBottom: 6, marginTop: 16 },
+  input: {
+    borderWidth: 1, borderColor: C.border, borderRadius: 8,
+    padding: 12, fontSize: 16, backgroundColor: C.surface, color: C.text1,
+  },
   button: {
-    backgroundColor: '#FC4C02',
+    backgroundColor: C.accent,
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 32,
   },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  buttonText: { color: C.white, fontSize: 16, fontWeight: '600' },
   signOutBtn: { padding: 16, alignItems: 'center', marginTop: 12 },
-  signOutText: { color: '#999', fontSize: 14 },
+  signOutText: { color: C.text3, fontSize: 14 },
 })

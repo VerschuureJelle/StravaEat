@@ -1,6 +1,7 @@
-import { View, Text, Pressable, StyleSheet, Image } from 'react-native'
+import { View, Text, Pressable, StyleSheet } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
+import { C } from '../../lib/theme'
 
 export default function WelcomeScreen() {
   const router = useRouter()
@@ -28,24 +29,24 @@ export default function WelcomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', justifyContent: 'space-between', padding: 32 },
+  container: { flex: 1, backgroundColor: C.bg, justifyContent: 'space-between', padding: 32 },
   top: { flex: 1, justifyContent: 'center' },
-  title: { fontSize: 42, fontWeight: '800', color: '#FC4C02', marginBottom: 16 },
-  subtitle: { fontSize: 17, color: '#555', lineHeight: 26 },
+  title: { fontSize: 42, fontWeight: '800', color: C.accent, marginBottom: 16 },
+  subtitle: { fontSize: 17, color: C.text2, lineHeight: 26 },
   bottom: { gap: 12 },
   primaryBtn: {
-    backgroundColor: '#FC4C02',
+    backgroundColor: C.accent,
     padding: 16,
     borderRadius: 10,
     alignItems: 'center',
   },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  primaryBtnText: { color: C.white, fontSize: 16, fontWeight: '700' },
   secondaryBtn: {
     borderWidth: 1.5,
-    borderColor: '#FC4C02',
+    borderColor: C.accent,
     padding: 16,
     borderRadius: 10,
     alignItems: 'center',
   },
-  secondaryBtnText: { color: '#FC4C02', fontSize: 16, fontWeight: '700' },
+  secondaryBtnText: { color: C.accent, fontSize: 16, fontWeight: '700' },
 })

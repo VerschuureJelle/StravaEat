@@ -27,11 +27,11 @@ function normalizeType(type: string): string {
 }
 
 function getSportColor(type: string): string {
-  if (/swim/i.test(type)) return '#29B6F6'
-  if (/run|jog/i.test(type)) return '#EF5350'
-  if (/walk/i.test(type)) return '#FF8A65'
-  if (/ride|bike|cycling|virtual/i.test(type)) return '#66BB6A'
-  return '#90A4AE'
+  if (/swim/i.test(type)) return '#38BDF8'
+  if (/run|jog/i.test(type)) return '#818CF8'
+  if (/walk/i.test(type)) return '#94A3B8'
+  if (/ride|bike|cycling|virtual/i.test(type)) return '#6366F1'
+  return '#94A3B8'
 }
 
 function getSportIcon(type: string): string {
@@ -128,13 +128,13 @@ interface GeneratedSession {
 // ─── program config ─────────────────────────────────────────────────────────
 
 const PROGRAM_CONFIG: Record<ProgramType, { label: string; minWeeks: number; maxWeeks: number; emoji: string; color: string }> = {
-  '5k':            { label: '5K',           minWeeks: 4,  maxWeeks: 12, emoji: '🏃', color: '#EF5350' },
-  '10k':           { label: '10K',          minWeeks: 6,  maxWeeks: 14, emoji: '🏃', color: '#FF8A65' },
-  'half_marathon': { label: 'Half Marathon', minWeeks: 8,  maxWeeks: 16, emoji: '🏅', color: '#AB47BC' },
-  'marathon':      { label: 'Marathon',      minWeeks: 16, maxWeeks: 32, emoji: '🏆', color: '#5C6BC0' },
-  'swim':          { label: 'Swimming',      minWeeks: 6,  maxWeeks: 20, emoji: '🏊', color: '#29B6F6' },
-  'cycling':       { label: 'Cycling',       minWeeks: 8,  maxWeeks: 24, emoji: '🚴', color: '#66BB6A' },
-  'strength':      { label: 'Strength',      minWeeks: 6,  maxWeeks: 16, emoji: '💪', color: '#7E57C2' },
+  '5k':            { label: '5K',           minWeeks: 4,  maxWeeks: 12, emoji: '🏃', color: '#818CF8' },
+  '10k':           { label: '10K',          minWeeks: 6,  maxWeeks: 14, emoji: '🏃', color: '#6366F1' },
+  'half_marathon': { label: 'Half Marathon', minWeeks: 8,  maxWeeks: 16, emoji: '🏅', color: '#3730A3' },
+  'marathon':      { label: 'Marathon',      minWeeks: 16, maxWeeks: 32, emoji: '🏆', color: '#1E1B4B' },
+  'swim':          { label: 'Swimming',      minWeeks: 6,  maxWeeks: 20, emoji: '🏊', color: '#38BDF8' },
+  'cycling':       { label: 'Cycling',       minWeeks: 8,  maxWeeks: 24, emoji: '🚴', color: '#6366F1' },
+  'strength':      { label: 'Strength',      minWeeks: 6,  maxWeeks: 16, emoji: '💪', color: '#94A3B8' },
 }
 
 const PROGRAM_TYPES: ProgramType[] = ['5k', '10k', 'half_marathon', 'marathon', 'swim', 'cycling', 'strength']
@@ -180,7 +180,7 @@ const AI_GOALS = [
 const AI_DURATION_PRESETS = ['20', '30', '45', '60', '75', '90', '120']
 
 function zoneBarColor(n: number): string {
-  return ['#64B5F6', '#66BB6A', '#FFCA28', '#FF7043', '#EF5350'][n - 1] ?? '#90A4AE'
+  return ['#BAE6FD', '#38BDF8', '#818CF8', '#6366F1', '#3730A3'][n - 1] ?? '#94A3B8'
 }
 
 // ─── screen ────────────────────────────────────────────────────────────────
@@ -572,20 +572,44 @@ export default function PlannerScreen() {
     let startingKmVal: number | null = null
     let paceSecTotal: number | null = null
 
-    if (isRunning || isSwim || isCycling) {
+    if (isRunning) {
       const km = parseFloat(startingKm)
-      if (!isStrength && (isNaN(km) || km <= 0)) {
-        Alert.alert('Invalid', `Enter your current ${isSwim ? 'swim distance (m→km)' : isRunning ? 'longest run' : 'ride distance'} in km.`)
+      if (isNaN(km) || km <= 0) {
+        Alert.alert('Invalid', 'Enter your current longest run in km.')
         return
       }
       startingKmVal = km
       const paceMin = parseInt(startingPaceMin || '0')
       const paceSec = parseInt(startingPaceSec || '0')
-      if (!isStrength && paceMin <= 0 && paceSec <= 0) {
-        Alert.alert('Invalid', `Enter your current ${isSwim ? 'swim' : isRunning ? 'running' : 'cycling'} pace.`)
+      if (paceMin <= 0 && paceSec <= 0) {
+        Alert.alert('Invalid', 'Enter your current running pace.')
         return
       }
       paceSecTotal = paceMin * 60 + paceSec
+    }
+
+    if (isSwim) {
+      const meters = parseFloat(startingKm)
+      if (isNaN(meters) || meters <= 0) {
+        Alert.alert('Invalid', 'Enter your current swim distance in meters.')
+        return
+      }
+      startingKmVal = meters / 1000
+      const paceMin = parseInt(startingPaceMin || '0')
+      const paceSec = parseInt(startingPaceSec || '0')
+      if (paceMin <= 0 && paceSec <= 0) {
+        Alert.alert('Invalid', 'Enter your average pace per 100m.')
+        return
+      }
+      // Convert /100m pace to /km equivalent for the API
+      paceSecTotal = (paceMin * 60 + paceSec) * 10
+    }
+
+    if (isCycling) {
+      if (!ftpWatts || ftpWatts <= 0) {
+        Alert.alert('Invalid', 'Enter your FTP in watts.')
+        return
+      }
     }
 
     setProgramGenerating(true)
@@ -817,8 +841,8 @@ export default function PlannerScreen() {
                     }}
                   >
                     <MaterialCommunityIcons name={getSportIcon(sport) as any} size={20} color={getSportColor(sport)} />
-                    <Text style={[st.sportSheetRowText, selectedSport === sport && { color: '#FC4C02', fontWeight: '700' }]}>{sport}</Text>
-                    {selectedSport === sport && <Ionicons name="checkmark" size={16} color="#FC4C02" />}
+                    <Text style={[st.sportSheetRowText, selectedSport === sport && { color: C.accent, fontWeight: '700' }]}>{sport}</Text>
+                    {selectedSport === sport && <Ionicons name="checkmark" size={16} color={C.accent} />}
                   </Pressable>
                 ))}
               </ScrollView>
@@ -890,7 +914,7 @@ export default function PlannerScreen() {
                   onPress={() => planFromKcalMode(s)}
                   disabled={saving}
                 >
-                  {saving ? <ActivityIndicator size="small" color="#FC4C02" /> : <Text style={st.planBtnText}>Plan for today →</Text>}
+                  {saving ? <ActivityIndicator size="small" color={C.accent} /> : <Text style={st.planBtnText}>Plan for today →</Text>}
                 </Pressable>
               </View>
             ))}
@@ -1053,7 +1077,7 @@ export default function PlannerScreen() {
                   onPress={planFromBuildMode}
                   disabled={saving}
                 >
-                  {saving ? <ActivityIndicator size="small" color="#FC4C02" /> : <Text style={st.planBtnText}>Plan for today →</Text>}
+                  {saving ? <ActivityIndicator size="small" color={C.accent} /> : <Text style={st.planBtnText}>Plan for today →</Text>}
                 </Pressable>
               </View>
             )}
@@ -1144,7 +1168,7 @@ export default function PlannerScreen() {
                   disabled={saving}
                 >
                   {saving
-                    ? <ActivityIndicator size="small" color="#FC4C02" />
+                    ? <ActivityIndicator size="small" color={C.accent} />
                     : <Text style={st.planBtnText}>Save as today's plan →</Text>
                   }
                 </Pressable>
@@ -1177,7 +1201,7 @@ export default function PlannerScreen() {
                 {/* Progress bar */}
                 <View style={st.progProgressRow}>
                   <View style={st.progProgressTrack}>
-                    <View style={[st.progProgressFill, { width: `${Math.round(progress * 100)}%` as any, backgroundColor: PROGRAM_CONFIG[activeProgram.program_type as ProgramType]?.color ?? '#FC4C02' }]} />
+                    <View style={[st.progProgressFill, { width: `${Math.round(progress * 100)}%` as any, backgroundColor: PROGRAM_CONFIG[activeProgram.program_type as ProgramType]?.color ?? C.accent }]} />
                   </View>
                   <Text style={st.progProgressLabel}>{completedCount}/{programSessions.length} done</Text>
                 </View>
@@ -1187,7 +1211,7 @@ export default function PlannerScreen() {
                   const weekSessions = programSessions.filter(s => s.week_number === weekNum)
                   const weekDone = weekSessions.filter(s => s.completed).length
                   const isExpanded = expandedWeeks.has(weekNum)
-                  const progColor = PROGRAM_CONFIG[activeProgram.program_type as ProgramType]?.color ?? '#FC4C02'
+                  const progColor = PROGRAM_CONFIG[activeProgram.program_type as ProgramType]?.color ?? C.accent
 
                   return (
                     <View key={weekNum} style={st.weekBlock}>
@@ -1243,8 +1267,8 @@ export default function PlannerScreen() {
                               )}
                               {session.strava_activity_id && (
                                 <View style={st.metaItem}>
-                                  <Ionicons name="link-outline" size={11} color="#FC4C02" />
-                                  <Text style={[st.sessionMetaText, { color: '#FC4C02' }]}>Strava</Text>
+                                  <Ionicons name="link-outline" size={11} color={C.accent} />
+                                  <Text style={[st.sessionMetaText, { color: C.accent }]}>Strava</Text>
                                 </View>
                               )}
                             </View>
@@ -1519,7 +1543,9 @@ export default function PlannerScreen() {
                 {programType !== 'strength' && (
                 <Text style={st.label}>Your current fitness</Text>
                 )}
-                {programType !== 'strength' && (
+
+                {/* Running */}
+                {['5k', '10k', 'half_marathon', 'marathon'].includes(programType) && (
                 <View style={st.startingPointCard}>
                   <Text style={st.startingPointHint}>I can currently run</Text>
                   <View style={st.startingPointRow}>
@@ -1555,6 +1581,65 @@ export default function PlannerScreen() {
                       />
                     </View>
                     <Text style={st.startingUnit}>/km</Text>
+                  </View>
+                </View>
+                )}
+
+                {/* Swimming */}
+                {programType === 'swim' && (
+                <View style={st.startingPointCard}>
+                  <Text style={st.startingPointHint}>I can currently swim</Text>
+                  <View style={st.startingPointRow}>
+                    <TextInput
+                      style={[st.startingInput, { flex: 2 }]}
+                      value={startingKm}
+                      onChangeText={setStartingKm}
+                      keyboardType="decimal-pad"
+                      placeholder="e.g. 1500"
+                      placeholderTextColor={C.text3}
+                    />
+                    <Text style={st.startingUnit}>m</Text>
+                    <Text style={st.startingPointHint}>at</Text>
+                    <View style={st.paceInputRow}>
+                      <TextInput
+                        style={[st.startingInput, st.paceInput]}
+                        value={startingPaceMin}
+                        onChangeText={setStartingPaceMin}
+                        keyboardType="number-pad"
+                        placeholder="2"
+                        placeholderTextColor={C.text3}
+                        maxLength={2}
+                      />
+                      <Text style={st.paceSep}>:</Text>
+                      <TextInput
+                        style={[st.startingInput, st.paceInput]}
+                        value={startingPaceSec}
+                        onChangeText={v => setStartingPaceSec(v.replace(/\D/g, '').slice(0, 2))}
+                        keyboardType="number-pad"
+                        placeholder="00"
+                        placeholderTextColor={C.text3}
+                        maxLength={2}
+                      />
+                    </View>
+                    <Text style={st.startingUnit}>/100m</Text>
+                  </View>
+                </View>
+                )}
+
+                {/* Cycling */}
+                {programType === 'cycling' && (
+                <View style={st.startingPointCard}>
+                  <Text style={st.startingPointHint}>My FTP is</Text>
+                  <View style={st.startingPointRow}>
+                    <TextInput
+                      style={[st.startingInput, { flex: 2 }]}
+                      value={ftpWatts != null ? String(ftpWatts) : ''}
+                      onChangeText={v => setFtpWatts(v ? parseInt(v) : null)}
+                      keyboardType="number-pad"
+                      placeholder="e.g. 200"
+                      placeholderTextColor={C.text3}
+                    />
+                    <Text style={st.startingUnit}>watts</Text>
                   </View>
                 </View>
                 )}
@@ -1734,9 +1819,9 @@ const st = StyleSheet.create({
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 13, color: C.text2 },
 
-  planBtn: { backgroundColor: C.surface3, borderWidth: 1.5, borderColor: '#FC4C02', borderRadius: 8, padding: 10, alignItems: 'center' },
+  planBtn: { backgroundColor: C.surface3, borderWidth: 1.5, borderColor: C.accent, borderRadius: 8, padding: 10, alignItems: 'center' },
   planBtnDisabled: { opacity: 0.5 },
-  planBtnText: { color: '#FC4C02', fontWeight: '700', fontSize: 14 },
+  planBtnText: { color: C.accent, fontWeight: '700', fontSize: 14 },
 
   // AI mode
   aiInfoBox: { flexDirection: 'row', gap: 8, backgroundColor: 'rgba(124,131,253,0.12)', borderRadius: 12, padding: 12, marginBottom: 20 },
@@ -1749,7 +1834,7 @@ const st = StyleSheet.create({
   aiResultCard: { backgroundColor: C.surface2, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: 'rgba(124,131,253,0.25)' },
   aiResultHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
   aiResultTitle: { fontSize: 14, fontWeight: '700', color: C.text1, flex: 1 },
-  aiKcalBadge: { backgroundColor: '#7C83FD22', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  aiKcalBadge: { backgroundColor: C.accentBg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   aiKcalBadgeText: { fontSize: 12, fontWeight: '700', color: C.accent2 },
   aiResultText: { fontSize: 14, color: C.text1, lineHeight: 21 },
 

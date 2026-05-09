@@ -26,11 +26,11 @@ function isOverdue(scheduledTime: string): boolean {
 }
 
 function getSportColor(type: string): string {
-  if (/swim/i.test(type)) return '#29B6F6'
-  if (/run|jog/i.test(type)) return '#EF5350'
-  if (/walk/i.test(type)) return '#FF8A65'
-  if (/ride|bike|cycling|virtual/i.test(type)) return '#66BB6A'
-  return '#90A4AE'
+  if (/swim/i.test(type)) return '#38BDF8'
+  if (/run|jog/i.test(type)) return '#818CF8'
+  if (/walk/i.test(type)) return '#94A3B8'
+  if (/ride|bike|cycling|virtual/i.test(type)) return '#6366F1'
+  return '#94A3B8'
 }
 
 function getSportIcon(type: string): string {
@@ -79,7 +79,7 @@ export default function NutritionScreen() {
   const progress = target != null && target > 0 ? Math.min(consumed / target, 1) : 0
   const checkedCount = meals.filter(m => m.checked).length
   const allMealsDone = meals.length > 0 && checkedCount === meals.length
-  const barColor = remaining != null && remaining < 0 ? '#EF5350' : '#FC4C02'
+  const barColor = remaining != null && remaining < 0 ? '#EF5350' : C.accent
 
   useFocusEffect(useCallback(() => {
     loadAll()
@@ -244,14 +244,14 @@ export default function NutritionScreen() {
                   )}
                   {burnedKcal > 0 && (
                     <View style={st.breakdownChip}>
-                      <Ionicons name="flame-outline" size={11} color="#FC4C02" />
-                      <Text style={[st.breakdownText, { color: '#FC4C02' }]}>+{Math.round(burnedKcal)} burned</Text>
+                      <Ionicons name="flame-outline" size={11} color={C.accent} />
+                      <Text style={[st.breakdownText, { color: C.accent }]}>+{Math.round(burnedKcal)} burned</Text>
                     </View>
                   )}
                   {plannedKcal > 0 && (
                     <View style={st.breakdownChip}>
-                      <Ionicons name="calendar-outline" size={11} color="#7C83FD" />
-                      <Text style={[st.breakdownText, { color: '#7C83FD' }]}>+{plannedKcal} planned</Text>
+                      <Ionicons name="calendar-outline" size={11} color={C.accent2} />
+                      <Text style={[st.breakdownText, { color: C.accent2 }]}>+{plannedKcal} planned</Text>
                     </View>
                   )}
                 </View>
@@ -371,9 +371,9 @@ export default function NutritionScreen() {
                   <>
                     {hasMacros && (
                       <View style={st.macroTotalsRow}>
-                        {totalP > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: '#EF5350' }]}>P {Math.round(totalP)}g</Text></View>}
-                        {totalF > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: '#FF8A65' }]}>F {Math.round(totalF)}g</Text></View>}
-                        {totalC > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: '#66BB6A' }]}>C {Math.round(totalC)}g</Text></View>}
+                        {totalP > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: C.accent }]}>P {Math.round(totalP)}g</Text></View>}
+                        {totalF > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: '#94A3B8' }]}>F {Math.round(totalF)}g</Text></View>}
+                        {totalC > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: C.accent2 }]}>C {Math.round(totalC)}g</Text></View>}
                       </View>
                     )}
                     <View style={st.totalRow}>
@@ -404,7 +404,7 @@ export default function NutritionScreen() {
                       <Text style={st.mealProgressPct}>{Math.round((checkedCount / meals.length) * 100)}%</Text>
                     </View>
                     <View style={st.barTrack}>
-                      <View style={[st.barFill, { width: `${(checkedCount / meals.length) * 100}%` as any, backgroundColor: '#FC4C02' }]} />
+                      <View style={[st.barFill, { width: `${(checkedCount / meals.length) * 100}%` as any, backgroundColor: C.accent }]} />
                     </View>
                   </>
                 )}
@@ -435,7 +435,7 @@ export default function NutritionScreen() {
                 >
                   <View style={[st.checkbox, meal.checked && st.checkboxChecked]}>
                     {isChecking
-                      ? <ActivityIndicator size="small" color={meal.checked ? '#fff' : '#FC4C02'} />
+                      ? <ActivityIndicator size="small" color={meal.checked ? '#fff' : C.accent} />
                       : meal.checked
                         ? <Ionicons name="checkmark" size={16} color="#fff" />
                         : null
@@ -515,7 +515,7 @@ const st = StyleSheet.create({
   macroInputWrap: { flex: 1 },
   macroInput: { marginBottom: 0 },
   addBtn: {
-    backgroundColor: '#FC4C02', borderRadius: 10, width: 46, height: 46,
+    backgroundColor: C.accent, borderRadius: 10, width: 46, height: 46,
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -537,7 +537,7 @@ const st = StyleSheet.create({
   // Meal plan sub-tab
   mealProgressLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   mealProgressLabel: { fontSize: 14, fontWeight: '600', color: C.text2 },
-  mealProgressPct: { fontSize: 14, fontWeight: '800', color: '#FC4C02' },
+  mealProgressPct: { fontSize: 14, fontWeight: '800', color: C.accent },
   doneRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   doneText: { fontSize: 15, fontWeight: '700', color: '#388E3C' },
 
@@ -556,7 +556,7 @@ const st = StyleSheet.create({
     borderWidth: 2, borderColor: C.border,
     alignItems: 'center', justifyContent: 'center', backgroundColor: C.surface2,
   },
-  checkboxChecked: { backgroundColor: '#FC4C02', borderColor: '#FC4C02' },
+  checkboxChecked: { backgroundColor: C.accent, borderColor: C.accent },
   mealInfo: { flex: 1 },
   mealName: { fontSize: 16, fontWeight: '600', color: C.text1, marginBottom: 4 },
   mealNameChecked: { textDecorationLine: 'line-through', color: C.text2 },

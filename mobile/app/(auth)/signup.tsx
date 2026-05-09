@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
+import { C } from '../../lib/theme'
 
 export default function SignUpScreen() {
   const router = useRouter()
@@ -45,8 +46,6 @@ export default function SignUpScreen() {
         email: form.email,
         password: form.password,
         options: {
-          // All profile fields stored in user_metadata so the DB trigger
-          // can persist them regardless of whether email confirmation is on
           data: {
             username: form.username,
             date_of_birth: form.dateOfBirth,
@@ -58,10 +57,8 @@ export default function SignUpScreen() {
       if (!data.user) throw new Error('Sign up failed — no user returned.')
 
       if (data.session) {
-        // Email confirmation is disabled — user is signed in immediately
         router.replace('/(auth)/onboarding')
       } else {
-        // Email confirmation is enabled — ask them to check their inbox
         Alert.alert(
           'Check your email',
           `We sent a confirmation link to ${form.email}. Click it to activate your account, then sign in.`,
@@ -90,6 +87,7 @@ export default function SignUpScreen() {
           value={form.username}
           onChangeText={set('username')}
           placeholder="e.g. jellerun"
+          placeholderTextColor={C.text3}
           autoCapitalize="none"
           autoComplete="username"
         />
@@ -100,6 +98,7 @@ export default function SignUpScreen() {
           value={form.email}
           onChangeText={set('email')}
           placeholder="you@example.com"
+          placeholderTextColor={C.text3}
           keyboardType="email-address"
           autoCapitalize="none"
           autoComplete="email"
@@ -111,6 +110,7 @@ export default function SignUpScreen() {
           value={form.password}
           onChangeText={set('password')}
           placeholder="Min. 8 characters"
+          placeholderTextColor={C.text3}
           secureTextEntry
           autoComplete="new-password"
         />
@@ -121,6 +121,7 @@ export default function SignUpScreen() {
           value={form.confirmPassword}
           onChangeText={set('confirmPassword')}
           placeholder="Repeat your password"
+          placeholderTextColor={C.text3}
           secureTextEntry
           autoComplete="new-password"
         />
@@ -131,6 +132,7 @@ export default function SignUpScreen() {
           value={form.dateOfBirth}
           onChangeText={set('dateOfBirth')}
           placeholder="YYYY-MM-DD"
+          placeholderTextColor={C.text3}
           keyboardType="numeric"
         />
 
@@ -152,7 +154,7 @@ export default function SignUpScreen() {
           disabled={loading}
         >
           {loading
-            ? <ActivityIndicator color="#fff" />
+            ? <ActivityIndicator color={C.white} />
             : <Text style={styles.buttonText}>Create account</Text>}
         </Pressable>
 
@@ -167,32 +169,36 @@ export default function SignUpScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: C.bg },
   back: { padding: 16 },
-  backText: { fontSize: 16, color: '#FC4C02', fontWeight: '600' },
+  backText: { fontSize: 16, color: C.accent, fontWeight: '600' },
   content: { padding: 24, paddingTop: 8, paddingBottom: 48 },
-  title: { fontSize: 28, fontWeight: '800', marginBottom: 24 },
-  label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 6, marginTop: 16 },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 14, fontSize: 16 },
+  title: { fontSize: 28, fontWeight: '800', color: C.text1, marginBottom: 24 },
+  label: { fontSize: 14, fontWeight: '600', color: C.text2, marginBottom: 6, marginTop: 16 },
+  input: {
+    borderWidth: 1, borderColor: C.border, borderRadius: 10,
+    padding: 14, fontSize: 16, backgroundColor: C.surface, color: C.text1,
+  },
   termsRow: { flexDirection: 'row', alignItems: 'center', marginTop: 24, gap: 12 },
   checkbox: {
     width: 22, height: 22, borderRadius: 5,
-    borderWidth: 1.5, borderColor: '#ddd',
+    borderWidth: 1.5, borderColor: C.border,
     alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.surface,
   },
-  checkboxChecked: { backgroundColor: '#FC4C02', borderColor: '#FC4C02' },
-  checkmark: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  termsText: { flex: 1, fontSize: 14, color: '#555' },
-  termsLink: { color: '#FC4C02', fontWeight: '600' },
+  checkboxChecked: { backgroundColor: C.accent, borderColor: C.accent },
+  checkmark: { color: C.white, fontSize: 13, fontWeight: '700' },
+  termsText: { flex: 1, fontSize: 14, color: C.text2 },
+  termsLink: { color: C.accent, fontWeight: '600' },
   button: {
-    backgroundColor: '#FC4C02',
+    backgroundColor: C.accent,
     padding: 16,
     borderRadius: 10,
     alignItems: 'center',
     marginTop: 32,
   },
   buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  switchText: { textAlign: 'center', marginTop: 20, color: '#888', fontSize: 14 },
-  switchLink: { color: '#FC4C02', fontWeight: '600' },
+  buttonText: { color: C.white, fontSize: 16, fontWeight: '700' },
+  switchText: { textAlign: 'center', marginTop: 20, color: C.text2, fontSize: 14 },
+  switchLink: { color: C.accent, fontWeight: '600' },
 })

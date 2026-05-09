@@ -34,11 +34,11 @@ function normalizeType(type: string): string {
 }
 
 function getSportColor(type: string): string {
-  if (/swim/i.test(type)) return '#29B6F6'
-  if (/run|jog/i.test(type)) return '#EF5350'
-  if (/walk/i.test(type)) return '#FF8A65'
-  if (/ride|bike|cycling|virtual/i.test(type)) return '#66BB6A'
-  return '#90A4AE'
+  if (/swim/i.test(type)) return '#38BDF8'
+  if (/run|jog/i.test(type)) return '#818CF8'
+  if (/walk/i.test(type)) return '#94A3B8'
+  if (/ride|bike|cycling|virtual/i.test(type)) return '#6366F1'
+  return '#94A3B8'
 }
 
 function getSportIcon(type: string): string {
@@ -211,7 +211,7 @@ const calSt = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: '14.285714%', alignItems: 'center', paddingVertical: 3 },
   num: { fontSize: 12, color: C.text2 },
-  dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#FC4C02', marginTop: 2 },
+  dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: C.accent, marginTop: 2 },
 })
 
 // ─── grouping ──────────────────────────────────────────────────────────────
@@ -552,7 +552,7 @@ const st = StyleSheet.create({
     padding: 9, fontSize: 13, backgroundColor: C.surface2, color: C.text1,
   },
   customSep: { fontSize: 18, color: C.text3, marginBottom: 10 },
-  applyBtn: { backgroundColor: '#FC4C02', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 1 },
+  applyBtn: { backgroundColor: C.accent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 1 },
   applyBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
   navRow: { flexDirection: 'row', paddingHorizontal: 8, paddingBottom: 6, gap: 4 },
@@ -560,14 +560,14 @@ const st = StyleSheet.create({
   navArrow: { fontSize: 26, color: C.text2, lineHeight: 30 },
 
   calToggleBtn: { paddingHorizontal: 16, paddingVertical: 8 },
-  calToggleText: { fontSize: 13, color: '#FC4C02', fontWeight: '600' },
+  calToggleText: { fontSize: 13, color: C.accent, fontWeight: '600' },
   divider: { height: 1, backgroundColor: C.divider },
 
   monthHeader: { backgroundColor: C.bg, paddingTop: 16 },
   monthHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, marginBottom: 6 },
   monthHeaderText: { fontSize: 16, fontWeight: '800', color: C.text1 },
   calToggleBtn2: { paddingVertical: 4, paddingHorizontal: 8 },
-  calToggleText2: { fontSize: 12, color: '#FC4C02', fontWeight: '600' },
+  calToggleText2: { fontSize: 12, color: C.accent, fontWeight: '600' },
 
   dayHeader: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 5 },
   dayHeaderText: { fontSize: 12, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.8 },

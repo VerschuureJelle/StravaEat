@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: C.accent, padding: 12,
     borderRadius: 8, alignItems: 'center', marginTop: 4,
   },
-  saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  saveBtnText: { color: C.white, fontWeight: '700', fontSize: 14 },
   cancelBtn: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 4 },
   cancelBtnText: { color: C.text2, fontSize: 14 },
 })

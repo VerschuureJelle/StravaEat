@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Modal,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import * as Location from 'expo-location'
 import { Ionicons } from '@expo/vector-icons'
@@ -14,18 +14,18 @@ import { supabase } from '../../lib/supabase'
 // ─── theme ─────────────────────────────────────────────────────────────────
 
 const T = {
-  bg:       '#F4F4F8',
+  bg:       '#F8F9FF',
   surface:  '#FFFFFF',
-  surface2: '#F0F0F5',
-  border:   '#E8E8F0',
-  divider:  '#F0F0F5',
-  gradA:    '#FF4500',
-  gradB:    '#FF8C00',
-  accent:   '#FF4500',
-  purple:   '#6C5CE7',
-  text1:    '#1A1A2E',
-  text2:    '#74748A',
-  text3:    '#A0A0B0',
+  surface2: '#F0F3FF',
+  border:   '#DDE2F5',
+  divider:  '#EEF0FA',
+  gradA:    '#1E1B4B',
+  gradB:    '#3730A3',
+  accent:   '#1E1B4B',
+  purple:   '#818CF8',
+  text1:    '#1A1E3C',
+  text2:    '#5A6088',
+  text3:    '#9AA0C4',
 } as const
 
 // ─── WMO weather code helpers ──────────────────────────────────────────────
@@ -72,9 +72,43 @@ interface TodayActivity { id: string; name: string; type: string; total_kcal: nu
 interface PlannedWorkoutItem {
   id: string; sport_type: string; target_kcal: number
   target_duration_min: number | null; target_hr: number | null; workout_description: string | null
+  zone_number?: number | null
+}
+interface FuelingSetting {
+  sport_type: string; threshold_min: number; carbs_per_interval_g: number; interval_min: number
 }
 type TrainingApp = 'trainingpeaks' | 'runna' | null
 type WeatherView = 'today' | 'week'
+
+// Vetpercentage per hartslagzone (sport science schatting)
+const ZONE_FUEL: Record<number, { fatPct: number; carbPct: number }> = {
+  1: { fatPct: 0.80, carbPct: 0.20 },
+  2: { fatPct: 0.65, carbPct: 0.35 },
+  3: { fatPct: 0.45, carbPct: 0.55 },
+  4: { fatPct: 0.25, carbPct: 0.75 },
+  5: { fatPct: 0.10, carbPct: 0.90 },
+}
+
+function calcWorkoutFuel(kcal: number, zoneNum: number | null | undefined) {
+  const split = ZONE_FUEL[zoneNum ?? 3] ?? ZONE_FUEL[3]
+  return {
+    fatG: Math.round((kcal * split.fatPct) / 9),
+    carbG: Math.round((kcal * split.carbPct) / 4),
+  }
+}
+
+function calcFuelingRec(durationMin: number | null, setting: FuelingSetting | undefined) {
+  if (!durationMin || !setting) return null
+  if (durationMin <= setting.threshold_min) return null
+  const extraMin = durationMin - setting.threshold_min
+  const intervals = Math.ceil(extraMin / setting.interval_min)
+  return {
+    totalCarbs: intervals * setting.carbs_per_interval_g,
+    carbs_per_interval_g: setting.carbs_per_interval_g,
+    interval_min: setting.interval_min,
+    intervals,
+  }
+}
 
 // ─── weather parsing ───────────────────────────────────────────────────────
 
@@ -152,11 +186,11 @@ function localDate(): string {
 }
 
 function getSportColor(type: string): string {
-  if (/swim/i.test(type)) return '#29B6F6'
-  if (/run|jog/i.test(type)) return '#EF5350'
-  if (/walk/i.test(type)) return '#FF8A65'
-  if (/ride|bike|cycling|virtual/i.test(type)) return '#66BB6A'
-  return '#90A4AE'
+  if (/swim/i.test(type)) return '#38BDF8'
+  if (/run|jog/i.test(type)) return '#818CF8'
+  if (/walk/i.test(type)) return '#94A3B8'
+  if (/ride|bike|cycling|virtual/i.test(type)) return '#6366F1'
+  return '#94A3B8'
 }
 
 function getSportIcon(type: string): string {
@@ -170,6 +204,7 @@ function getSportIcon(type: string): string {
 // ─── screen ────────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
+  const router = useRouter()
   const [userName, setUserName] = useState<string | null>(null)
   const [dailyTarget, setDailyTarget] = useState<number | null>(null)
   const [todayActivities, setTodayActivities] = useState<TodayActivity[]>([])
@@ -180,6 +215,8 @@ export default function HomeScreen() {
   const [weatherError, setWeatherError] = useState<string | null>(null)
   const [weatherView, setWeatherView] = useState<WeatherView>('today')
   const [connectedApp, setConnectedApp] = useState<TrainingApp>(null)
+  const [fuelingSettings, setFuelingSettings] = useState<FuelingSetting[]>([])
+  const [zoneMap, setZoneMap] = useState<Record<string, number>>({})
 
   const burnedToday = todayActivities.reduce((s, a) => s + a.total_kcal, 0)
   const plannedKcalToday = plannedWorkouts.reduce((s, p) => s + p.target_kcal, 0)
@@ -194,18 +231,32 @@ export default function HomeScreen() {
     if (!user) return
     const todayDate = localDate()
     const todayISOStart = `${todayDate}T00:00:00`
-    const [profileRes, actsRes, plannedRes] = await Promise.all([
+    const [profileRes, actsRes, plannedRes, zonesRes, fuelingRes] = await Promise.all([
       supabase.from('users').select('name, daily_kcal_target').eq('id', user.id).single(),
       supabase.from('activities').select('id, name, type, total_kcal').eq('user_id', user.id)
         .gte('date', todayISOStart).not('total_kcal', 'is', null),
       supabase.from('planned_workouts')
-        .select('id, sport_type, target_kcal, target_duration_min, target_hr, workout_description')
+        .select('id, sport_type, target_kcal, target_duration_min, target_hr, workout_description, zone_id')
         .eq('user_id', user.id).eq('planned_for', todayDate),
+      supabase.from('heart_rate_zones').select('id, zone_number').eq('user_id', user.id),
+      supabase.from('fueling_settings').select('sport_type, threshold_min, carbs_per_interval_g, interval_min').eq('user_id', user.id),
     ])
     setUserName(profileRes.data?.name ?? null)
     setDailyTarget(profileRes.data?.daily_kcal_target ?? null)
     setTodayActivities(actsRes.data ?? [])
-    setPlannedWorkouts(plannedRes.data ?? [])
+
+    // Bouw zone_id → zone_number map
+    const zm: Record<string, number> = {}
+    for (const z of (zonesRes.data ?? [])) zm[z.id] = z.zone_number
+    setZoneMap(zm)
+
+    // Koppel zone_number aan planned workouts
+    const planned = (plannedRes.data ?? []).map((w: any) => ({
+      ...w,
+      zone_number: w.zone_id ? zm[w.zone_id] ?? null : null,
+    }))
+    setPlannedWorkouts(planned)
+    setFuelingSettings(fuelingRes.data ?? [])
   }
 
   async function loadWeather() {
@@ -266,12 +317,17 @@ export default function HomeScreen() {
               <Text style={st.greetText}>{greeting(userName)}</Text>
               <Text style={st.dateText}>{formatDate()}</Text>
             </View>
-            {weather && (
-              <View style={st.heroWeatherBadge}>
-                <Ionicons name={wmo(weather.code).icon} size={16} color="rgba(255,255,255,0.9)" />
-                <Text style={st.heroWeatherTemp}>{weather.temp}°</Text>
-              </View>
-            )}
+            <View style={st.heroTopRight}>
+              {weather && (
+                <View style={st.heroWeatherBadge}>
+                  <Ionicons name={wmo(weather.code).icon} size={16} color="rgba(255,255,255,0.9)" />
+                  <Text style={st.heroWeatherTemp}>{weather.temp}°</Text>
+                </View>
+              )}
+              <Pressable style={st.heroSettingsBtn} onPress={() => router.push('/settings')}>
+                <Ionicons name="settings-outline" size={18} color="rgba(255,255,255,0.9)" />
+              </Pressable>
+            </View>
           </View>
 
           {/* Big kcal number */}
@@ -356,7 +412,7 @@ export default function HomeScreen() {
           <View style={st.card}>
             <Text style={st.cardTitle}>Today's workout</Text>
             {plannedWorkouts.length > 0 ? (
-              <PlannedWorkoutList workouts={plannedWorkouts} />
+              <PlannedWorkoutList workouts={plannedWorkouts} fuelingSettings={fuelingSettings} />
             ) : connectedApp === null ? (
               <>
                 <Text style={st.connectNote}>
@@ -484,13 +540,17 @@ function WeekForecast({ daily }: { daily: DailyPoint[] }) {
 
 // ─── Planned workout list ──────────────────────────────────────────────────
 
-function PlannedWorkoutList({ workouts }: { workouts: PlannedWorkoutItem[] }) {
+function PlannedWorkoutList({ workouts, fuelingSettings }: { workouts: PlannedWorkoutItem[]; fuelingSettings: FuelingSetting[] }) {
   return (
     <View style={{ gap: 10, marginTop: 10 }}>
       {workouts.map(w => {
         const color = getSportColor(w.sport_type)
         const icon = getSportIcon(w.sport_type)
         const isAI = Boolean(w.workout_description)
+        const fuel = w.zone_number != null ? calcWorkoutFuel(w.target_kcal, w.zone_number) : null
+        const fuelSetting = fuelingSettings.find(f => f.sport_type.toLowerCase() === w.sport_type.toLowerCase())
+        const rec = calcFuelingRec(w.target_duration_min, fuelSetting)
+
         return (
           <View key={w.id} style={[pw.card, { borderLeftColor: isAI ? T.purple : color }]}>
             <View style={pw.row}>
@@ -505,6 +565,7 @@ function PlannedWorkoutList({ workouts }: { workouts: PlannedWorkoutItem[] }) {
                 </View>
               )}
             </View>
+
             {w.workout_description ? (
               <Text style={pw.description} numberOfLines={4}>{w.workout_description}</Text>
             ) : (
@@ -525,6 +586,34 @@ function PlannedWorkoutList({ workouts }: { workouts: PlannedWorkoutItem[] }) {
                     <Text style={[pw.chipText, { color: T.text2 }]}>{w.target_hr} bpm</Text>
                   </View>
                 )}
+              </View>
+            )}
+
+            {/* Verwachte brandstofverbranding */}
+            {fuel && (
+              <View style={pw.fuelRow}>
+                <View style={pw.fuelItem}>
+                  <Ionicons name="water-outline" size={12} color="#5C6BC0" />
+                  <Text style={pw.fuelLabel}>Koolhydraten</Text>
+                  <Text style={[pw.fuelValue, { color: '#5C6BC0' }]}>{fuel.carbG}g</Text>
+                </View>
+                <View style={pw.fuelDivider} />
+                <View style={pw.fuelItem}>
+                  <Ionicons name="ellipse-outline" size={12} color="#FF8A65" />
+                  <Text style={pw.fuelLabel}>Vet</Text>
+                  <Text style={[pw.fuelValue, { color: '#FF8A65' }]}>{fuel.fatG}g</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Voedingsaanbeveling tijdens training */}
+            {rec && (
+              <View style={pw.recBox}>
+                <Ionicons name="nutrition-outline" size={14} color={color} style={{ marginTop: 1 }} />
+                <Text style={[pw.recText, { color: T.text1 }]}>
+                  <Text style={{ fontWeight: '700' }}>Eet tijdens training: </Text>
+                  {rec.totalCarbs}g koolhydraten ({rec.carbs_per_interval_g}g per {rec.interval_min} min)
+                </Text>
               </View>
             )}
           </View>
@@ -643,11 +732,16 @@ function WorkoutPlaceholder({ app, onDisconnect }: { app: TrainingApp; onDisconn
 
 const st = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: T.gradA },
-  scroll: { backgroundColor: T.bg, paddingBottom: 48 },
+  scroll: { backgroundColor: T.bg, paddingBottom: 48, flexGrow: 1 },
 
   // Hero
   hero: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32 },
   heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
+  heroTopRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  heroSettingsBtn: {
+    backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20,
+    padding: 7,
+  },
   greetText: { fontSize: 22, fontWeight: '800', color: '#fff' },
   dateText: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
   heroWeatherBadge: {
@@ -672,7 +766,8 @@ const st = StyleSheet.create({
   cardsArea: { padding: 16, gap: 14, marginTop: -20 },
   card: {
     backgroundColor: T.surface, borderRadius: 20, padding: 20,
-    shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 12,
+    borderWidth: 1, borderColor: T.border,
+    shadowColor: '#1E1B4B', shadowOpacity: 0.08, shadowRadius: 16,
     shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
   cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
@@ -726,7 +821,7 @@ const st = StyleSheet.create({
 })
 
 const mo = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(26,26,46,0.5)', justifyContent: 'flex-end' },
+  overlay: { flex: 1, backgroundColor: 'rgba(30,27,75,0.6)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12,
@@ -771,6 +866,21 @@ const pw = StyleSheet.create({
   description: { fontSize: 13, color: T.text2, lineHeight: 19 },
   aiBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   aiBadgeText: { fontSize: 10, fontWeight: '700' },
+  fuelRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: T.surface2, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 8, marginTop: 10, gap: 0,
+  },
+  fuelItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  fuelDivider: { width: 1, height: 14, backgroundColor: T.border, marginHorizontal: 8 },
+  fuelLabel: { fontSize: 11, color: T.text2, flex: 1 },
+  fuelValue: { fontSize: 13, fontWeight: '800' },
+  recBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 7,
+    backgroundColor: T.surface2, borderRadius: 10,
+    padding: 10, marginTop: 8,
+  },
+  recText: { flex: 1, fontSize: 12, lineHeight: 17 },
 })
 
 const wst = StyleSheet.create({

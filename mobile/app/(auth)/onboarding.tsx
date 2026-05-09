@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router'
 import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
+import { C } from '../../lib/theme'
 import { generateZonesFromMaxHR } from '../../constants/zones'
 import type { SportHistory, Sex } from '../../types'
 
@@ -81,7 +82,7 @@ export default function OnboardingScreen() {
       response_type: 'code',
       scope: 'activity:read_all',
       approval_prompt: 'auto',
-      state: user.id,   // pass user ID so callback links to existing account
+      state: user.id,
     })
     await WebBrowser.openAuthSessionAsync(
       `https://www.strava.com/oauth/authorize?${params}`,
@@ -103,7 +104,6 @@ export default function OnboardingScreen() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not signed in')
 
-      // Save profile
       const { error: profileError } = await supabase.from('users').upsert({
         id: user.id,
         name: data.name || null,
@@ -116,7 +116,6 @@ export default function OnboardingScreen() {
       })
       if (profileError) throw profileError
 
-      // Create zones from max HR
       const zones = generateZonesFromMaxHR(parseInt(data.max_hr)).map((z) => ({
         ...z,
         user_id: user.id,
@@ -167,6 +166,7 @@ export default function OnboardingScreen() {
           value={data.name}
           onChangeText={(v) => setData((d) => ({ ...d, name: v }))}
           placeholder="Your name"
+          placeholderTextColor={C.text3}
         />
 
         <Text style={styles.label}>Age</Text>
@@ -176,6 +176,7 @@ export default function OnboardingScreen() {
           onChangeText={(v) => setData((d) => ({ ...d, age: v }))}
           keyboardType="numeric"
           placeholder="e.g. 30"
+          placeholderTextColor={C.text3}
         />
 
         <Text style={styles.label}>Weight (kg) *</Text>
@@ -185,6 +186,7 @@ export default function OnboardingScreen() {
           onChangeText={(v) => setData((d) => ({ ...d, weight_kg: v }))}
           keyboardType="numeric"
           placeholder="e.g. 75"
+          placeholderTextColor={C.text3}
         />
 
         <Text style={styles.label}>Sex</Text>
@@ -224,6 +226,7 @@ export default function OnboardingScreen() {
           onChangeText={(v) => setData((d) => ({ ...d, max_hr: v }))}
           keyboardType="numeric"
           placeholder="e.g. 190  (or use 220 − age as estimate)"
+          placeholderTextColor={C.text3}
         />
 
         <Text style={styles.label}>Resting Heart Rate (bpm)</Text>
@@ -233,6 +236,7 @@ export default function OnboardingScreen() {
           onChangeText={(v) => setData((d) => ({ ...d, resting_hr: v }))}
           keyboardType="numeric"
           placeholder="e.g. 55"
+          placeholderTextColor={C.text3}
         />
 
         {previewZones && (
@@ -249,7 +253,7 @@ export default function OnboardingScreen() {
         )}
 
         <Pressable style={[styles.button, loading && styles.buttonDisabled]} onPress={handleComplete} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Get started</Text>}
+          {loading ? <ActivityIndicator color={C.white} /> : <Text style={styles.buttonText}>Get started</Text>}
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -257,52 +261,58 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: C.bg },
   stravaScreen: { flex: 1, padding: 32, justifyContent: 'center' },
   stravaBtn: {
-    backgroundColor: '#FC4C02',
+    backgroundColor: C.accent,
     padding: 16,
     borderRadius: 10,
     alignItems: 'center',
     marginTop: 32,
   },
-  stravaBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  skipText: { textAlign: 'center', marginTop: 16, color: '#999', fontSize: 14 },
+  stravaBtnText: { color: C.white, fontSize: 16, fontWeight: '700' },
+  skipText: { textAlign: 'center', marginTop: 16, color: C.text3, fontSize: 14 },
   content: { padding: 24, paddingBottom: 48 },
-  title: { fontSize: 24, fontWeight: '700', marginBottom: 8 },
-  subtitle: { fontSize: 14, color: '#666', marginBottom: 24 },
-  label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 6, marginTop: 16 },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, fontSize: 16 },
+  title: { fontSize: 24, fontWeight: '700', color: C.text1, marginBottom: 8 },
+  subtitle: { fontSize: 14, color: C.text2, marginBottom: 24 },
+  label: { fontSize: 14, fontWeight: '600', color: C.text2, marginBottom: 6, marginTop: 16 },
+  input: {
+    borderWidth: 1, borderColor: C.border, borderRadius: 8,
+    padding: 12, fontSize: 16, backgroundColor: C.surface, color: C.text1,
+  },
   optionRow: { flexDirection: 'row', gap: 8 },
   optionBtn: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: C.border,
     borderRadius: 8,
     padding: 10,
     alignItems: 'center',
+    backgroundColor: C.surface,
   },
-  optionBtnActive: { borderColor: '#FC4C02', backgroundColor: '#FFF0EB' },
-  optionText: { fontSize: 14, color: '#666' },
-  optionTextActive: { color: '#FC4C02', fontWeight: '600' },
+  optionBtnActive: { borderColor: C.accent, backgroundColor: C.accentBg },
+  optionText: { fontSize: 14, color: C.text2 },
+  optionTextActive: { color: C.accent, fontWeight: '600' },
   zonePreview: {
     marginTop: 24,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: C.surface2,
     borderRadius: 8,
     padding: 16,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  zonePreviewTitle: { fontSize: 14, fontWeight: '700', marginBottom: 12 },
+  zonePreviewTitle: { fontSize: 14, fontWeight: '700', color: C.text1, marginBottom: 12 },
   zoneRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  zoneName: { fontSize: 14, color: '#333' },
-  zoneBpm: { fontSize: 14, color: '#666' },
-  zoneNote: { fontSize: 12, color: '#999', marginTop: 12 },
+  zoneName: { fontSize: 14, color: C.text1 },
+  zoneBpm: { fontSize: 14, color: C.text2 },
+  zoneNote: { fontSize: 12, color: C.text3, marginTop: 12 },
   button: {
-    backgroundColor: '#FC4C02',
+    backgroundColor: C.accent,
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 32,
   },
   buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  buttonText: { color: C.white, fontSize: 16, fontWeight: '600' },
 })

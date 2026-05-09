@@ -6,8 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
-import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../../lib/supabase'
+import { C } from '../../../lib/theme'
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
 
@@ -46,21 +46,25 @@ function formatDist(type: string, m: number | null) {
 }
 
 function getSportColor(type: string) {
-  if (/swim/i.test(type)) return '#29B6F6'
-  if (/run|jog/i.test(type)) return '#EF5350'
-  if (/walk/i.test(type)) return '#FF8A65'
-  if (/ride|bike|cycling|virtual/i.test(type)) return '#66BB6A'
-  return '#90A4AE'
+  if (/swim/i.test(type)) return C.swim
+  if (/run|jog/i.test(type)) return C.run
+  if (/walk/i.test(type)) return C.walk
+  if (/ride|bike|cycling|virtual/i.test(type)) return C.ride
+  return C.sport
 }
 
 function noteTypeLabel(t: NoteType) {
   return t === 'workout' ? 'Workout' : t === 'nutrition' ? 'Nutrition' : 'Note'
 }
 function noteTypeColor(t: NoteType) {
-  return t === 'workout' ? '#FC4C02' : t === 'nutrition' ? '#66BB6A' : '#5C6BC0'
+  return t === 'workout' ? C.accent : t === 'nutrition' ? C.success : C.ride
 }
 function noteTypeIcon(t: NoteType): any {
   return t === 'workout' ? 'flash' : t === 'nutrition' ? 'restaurant' : 'chatbubble-ellipses'
+}
+
+function zoneColor(n: number) {
+  return ([C.swim, C.success, C.warning, C.run, C.danger] as string[])[n - 1] ?? C.text4
 }
 
 export default function AthleteDetailScreen() {
@@ -122,11 +126,11 @@ export default function AthleteDetailScreen() {
       <SafeAreaView style={st.container}>
         <View style={st.headerRow}>
           <Pressable onPress={() => router.back()} style={st.backBtn}>
-            <Ionicons name="chevron-back" size={22} color="#333" />
+            <Ionicons name="chevron-back" size={22} color={C.text1} />
           </Pressable>
           <Text style={st.title}>Athlete</Text>
         </View>
-        <ActivityIndicator color="#FC4C02" style={{ marginTop: 32 }} />
+        <ActivityIndicator color={C.accent} style={{ marginTop: 32 }} />
       </SafeAreaView>
     )
   }
@@ -145,10 +149,9 @@ export default function AthleteDetailScreen() {
     <SafeAreaView style={st.container}>
       <ScrollView contentContainerStyle={st.content} showsVerticalScrollIndicator={false}>
 
-        {/* Header */}
         <View style={st.headerRow}>
           <Pressable onPress={() => router.back()} style={st.backBtn}>
-            <Ionicons name="chevron-back" size={22} color="#333" />
+            <Ionicons name="chevron-back" size={22} color={C.text1} />
           </Pressable>
           <Text style={st.title} numberOfLines={1}>{profile.name ?? 'Athlete'}</Text>
         </View>
@@ -244,7 +247,7 @@ export default function AthleteDetailScreen() {
             <Text style={st.cardTitle}>Meal Plan</Text>
             {meal_templates.map(m => (
               <View key={m.meal_index} style={st.mealRow}>
-                <Ionicons name="time-outline" size={13} color="#bbb" />
+                <Ionicons name="time-outline" size={13} color={C.text4} />
                 <Text style={st.mealTime}>{m.scheduled_time}</Text>
                 <Text style={st.mealName}>{m.name}</Text>
               </View>
@@ -275,7 +278,6 @@ export default function AthleteDetailScreen() {
         <View style={st.card}>
           <Text style={st.cardTitle}>Send a note</Text>
 
-          {/* Note type selector */}
           <View style={st.noteTypeRow}>
             {(['note', 'workout', 'nutrition'] as NoteType[]).map(t => (
               <Pressable
@@ -283,8 +285,8 @@ export default function AthleteDetailScreen() {
                 style={[st.noteTypeBtn, noteType === t && { backgroundColor: noteTypeColor(t) }]}
                 onPress={() => setNoteType(t)}
               >
-                <Ionicons name={noteTypeIcon(t)} size={13} color={noteType === t ? '#fff' : '#666'} />
-                <Text style={[st.noteTypeBtnText, noteType === t && { color: '#fff' }]}>{noteTypeLabel(t)}</Text>
+                <Ionicons name={noteTypeIcon(t)} size={13} color={noteType === t ? C.white : C.text2} />
+                <Text style={[st.noteTypeBtnText, noteType === t && { color: C.white }]}>{noteTypeLabel(t)}</Text>
               </Pressable>
             ))}
           </View>
@@ -298,6 +300,7 @@ export default function AthleteDetailScreen() {
                   ? 'Give a nutrition tip or target…'
                   : 'Leave a note for this athlete…'
             }
+            placeholderTextColor={C.text3}
             value={noteContent}
             onChangeText={setNoteContent}
             multiline
@@ -311,9 +314,9 @@ export default function AthleteDetailScreen() {
             disabled={!noteContent.trim() || sending}
           >
             {sending
-              ? <ActivityIndicator color="#fff" size="small" />
+              ? <ActivityIndicator color={C.white} size="small" />
               : <>
-                  <Ionicons name="send" size={15} color="#fff" />
+                  <Ionicons name="send" size={15} color={C.white} />
                   <Text style={st.sendBtnText}>Send</Text>
                 </>
             }
@@ -334,83 +337,79 @@ function StatChip({ label, value }: { label: string; value: string }) {
   )
 }
 
-function zoneColor(n: number) {
-  return ['#29B6F6', '#66BB6A', '#FFCA28', '#FF7043', '#EF5350'][n - 1] ?? '#aaa'
-}
-
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9f9f9' },
+  container: { flex: 1, backgroundColor: C.bg },
   content: { padding: 16, paddingBottom: 48, gap: 12 },
 
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 },
   backBtn: { padding: 4 },
-  title: { flex: 1, fontSize: 22, fontWeight: '800', color: '#111' },
+  title: { flex: 1, fontSize: 22, fontWeight: '800', color: C.text1 },
 
   card: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 16,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    backgroundColor: C.surface, borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: C.border,
   },
-  cardTitle: { fontSize: 13, fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 12 },
+  cardTitle: { fontSize: 13, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 12 },
 
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  statChip: { backgroundColor: '#f5f5f5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
-  statChipLabel: { fontSize: 10, fontWeight: '700', color: '#aaa', textTransform: 'uppercase' },
-  statChipValue: { fontSize: 14, fontWeight: '700', color: '#111', marginTop: 2 },
-  sportHistory: { fontSize: 13, color: '#666', marginTop: 4, lineHeight: 18 },
+  statChip: { backgroundColor: C.surface2, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
+  statChipLabel: { fontSize: 10, fontWeight: '700', color: C.text3, textTransform: 'uppercase' },
+  statChipValue: { fontSize: 14, fontWeight: '700', color: C.text1, marginTop: 2 },
+  sportHistory: { fontSize: 13, color: C.text2, marginTop: 4, lineHeight: 18 },
 
-  zoneRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5, borderTopWidth: 1, borderTopColor: '#f5f5f5' },
+  zoneRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5, borderTopWidth: 1, borderTopColor: C.divider },
   zoneDot: { width: 8, height: 8, borderRadius: 4 },
-  zoneName: { flex: 1, fontSize: 13, color: '#333' },
-  zoneRange: { fontSize: 12, color: '#aaa', fontWeight: '600' },
+  zoneName: { flex: 1, fontSize: 13, color: C.text1 },
+  zoneRange: { fontSize: 12, color: C.text3, fontWeight: '600' },
 
   actRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingVertical: 8, borderLeftWidth: 3, paddingLeft: 10, marginBottom: 6,
-    borderTopWidth: 1, borderTopColor: '#f5f5f5',
+    borderTopWidth: 1, borderTopColor: C.divider,
   },
   actInfo: { flex: 1 },
-  actName: { fontSize: 14, fontWeight: '600', color: '#111', marginBottom: 2 },
-  actMeta: { fontSize: 12, color: '#aaa' },
-  actKcal: { fontSize: 14, fontWeight: '700', color: '#FC4C02' },
+  actName: { fontSize: 14, fontWeight: '600', color: C.text1, marginBottom: 2 },
+  actMeta: { fontSize: 12, color: C.text3 },
+  actKcal: { fontSize: 14, fontWeight: '700', color: C.accent },
 
-  nutritionSummary: { alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f5f5f5', marginBottom: 8 },
-  nutritionAvg: { fontSize: 32, fontWeight: '800', color: '#FC4C02' },
-  nutritionAvgLabel: { fontSize: 12, color: '#aaa', fontWeight: '600' },
-  foodRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, borderTopWidth: 1, borderTopColor: '#f5f5f5' },
-  foodName: { flex: 1, fontSize: 13, color: '#333' },
-  foodKcal: { fontSize: 13, fontWeight: '600', color: '#666' },
+  nutritionSummary: { alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.divider, marginBottom: 8 },
+  nutritionAvg: { fontSize: 32, fontWeight: '800', color: C.accent },
+  nutritionAvgLabel: { fontSize: 12, color: C.text3, fontWeight: '600' },
+  foodRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, borderTopWidth: 1, borderTopColor: C.divider },
+  foodName: { flex: 1, fontSize: 13, color: C.text1 },
+  foodKcal: { fontSize: 13, fontWeight: '600', color: C.text2 },
 
-  mealRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderTopWidth: 1, borderTopColor: '#f5f5f5' },
-  mealTime: { fontSize: 13, color: '#aaa', width: 46 },
-  mealName: { flex: 1, fontSize: 13, color: '#333' },
+  mealRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderTopWidth: 1, borderTopColor: C.divider },
+  mealTime: { fontSize: 13, color: C.text3, width: 46 },
+  mealName: { flex: 1, fontSize: 13, color: C.text1 },
 
   noteRow: {
     borderLeftWidth: 3, paddingLeft: 10, marginBottom: 10,
-    paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#f5f5f5',
+    paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.divider,
   },
   noteHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 },
   noteTag: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, flex: 1 },
-  noteDate: { fontSize: 11, color: '#bbb' },
-  noteContent: { fontSize: 13, color: '#333', lineHeight: 18 },
+  noteDate: { fontSize: 11, color: C.text4 },
+  noteContent: { fontSize: 13, color: C.text1, lineHeight: 18 },
 
   noteTypeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   noteTypeBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-    borderRadius: 8, paddingVertical: 8, backgroundColor: '#f5f5f5',
+    borderRadius: 8, paddingVertical: 8, backgroundColor: C.surface2,
   },
-  noteTypeBtnText: { fontSize: 12, fontWeight: '700', color: '#666' },
+  noteTypeBtnText: { fontSize: 12, fontWeight: '700', color: C.text2 },
 
   noteInput: {
-    borderWidth: 1.5, borderColor: '#e8e8e8', borderRadius: 10,
-    padding: 12, fontSize: 14, color: '#111', minHeight: 90,
-    marginBottom: 12, lineHeight: 20,
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 10,
+    padding: 12, fontSize: 14, color: C.text1, minHeight: 90,
+    marginBottom: 12, lineHeight: 20, backgroundColor: C.surface,
   },
   sendBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#FC4C02', borderRadius: 10, paddingVertical: 12,
+    backgroundColor: C.accent, borderRadius: 10, paddingVertical: 12,
   },
   sendBtnDisabled: { opacity: 0.4 },
-  sendBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  sendBtnText: { color: C.white, fontWeight: '700', fontSize: 15 },
 
-  noDataText: { fontSize: 13, color: '#bbb', fontStyle: 'italic' },
+  noDataText: { fontSize: 13, color: C.text4, fontStyle: 'italic' },
 })

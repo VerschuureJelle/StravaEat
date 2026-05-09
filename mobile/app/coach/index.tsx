@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
+import { C } from '../../lib/theme'
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
 
@@ -200,13 +201,13 @@ export default function CoachHubScreen() {
         {/* Header */}
         <View style={st.headerRow}>
           <Pressable onPress={() => router.back()} style={st.backBtn}>
-            <Ionicons name="chevron-back" size={22} color="#333" />
+            <Ionicons name="chevron-back" size={22} color={C.text1} />
           </Pressable>
           <Text style={st.title}>Coach</Text>
         </View>
 
         {loading ? (
-          <ActivityIndicator color="#FC4C02" style={{ marginTop: 32 }} />
+          <ActivityIndicator color={C.accent} style={{ marginTop: 32 }} />
         ) : (
           <>
             {/* ── MY COACH (athlete view) ──────────────────────── */}
@@ -223,7 +224,7 @@ export default function CoachHubScreen() {
                 <View key={c.coach_id} style={st.coachCard}>
                   <View style={st.coachCardHeader}>
                     <View style={st.coachAvatar}>
-                      <Ionicons name="person" size={20} color="#FC4C02" />
+                      <Ionicons name="person" size={20} color={C.accent} />
                     </View>
                     <Text style={st.coachName}>{c.coach_name ?? 'Coach'}</Text>
                     <Pressable onPress={() => revokeCoach(c.coach_id, c.coach_name)} style={st.revokeBtn}>
@@ -245,7 +246,7 @@ export default function CoachHubScreen() {
                       <Switch
                         value={c[field]}
                         onValueChange={v => updatePrivacy(c.coach_id, field, v)}
-                        trackColor={{ true: '#FC4C02', false: '#e0e0e0' }}
+                        trackColor={{ true: C.accent, false: C.surface3 }}
                         thumbColor="#fff"
                       />
                     </View>
@@ -325,10 +326,10 @@ export default function CoachHubScreen() {
                   onPress={() => router.push(`/coach/athlete/${a.athlete_id}`)}
                 >
                   <View style={st.coachAvatar}>
-                    <Ionicons name="person" size={18} color="#666" />
+                    <Ionicons name="person" size={18} color={C.text2} />
                   </View>
                   <Text style={st.athleteName}>{a.athlete_name ?? 'Athlete'}</Text>
-                  <Ionicons name="chevron-forward" size={18} color="#ccc" />
+                  <Ionicons name="chevron-forward" size={18} color={C.text4} />
                 </Pressable>
               ))
             )}
@@ -340,58 +341,61 @@ export default function CoachHubScreen() {
 }
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9f9f9' },
+  container: { flex: 1, backgroundColor: C.bg },
   content: { padding: 16, paddingBottom: 48 },
 
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 8 },
   backBtn: { padding: 4 },
-  title: { fontSize: 24, fontWeight: '800', color: '#111' },
+  title: { fontSize: 24, fontWeight: '800', color: C.text1 },
 
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 },
 
   card: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    backgroundColor: C.surface, borderRadius: 16, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: C.border,
+    shadowColor: '#1E1B4B', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: '#111', marginBottom: 4 },
-  cardNote: { fontSize: 13, color: '#aaa', marginBottom: 14, lineHeight: 18 },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: C.text1, marginBottom: 4 },
+  cardNote: { fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 18 },
 
   emptyCard: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 24,
+    backgroundColor: C.surface, borderRadius: 16, padding: 24,
     alignItems: 'center', gap: 8, marginBottom: 12,
+    borderWidth: 1, borderColor: C.border,
   },
-  emptyText: { fontSize: 15, fontWeight: '600', color: '#aaa' },
-  emptyNote: { fontSize: 13, color: '#ccc', textAlign: 'center', maxWidth: 240, lineHeight: 18 },
+  emptyText: { fontSize: 15, fontWeight: '600', color: C.text3 },
+  emptyNote: { fontSize: 13, color: C.text3, textAlign: 'center', maxWidth: 240, lineHeight: 18 },
 
   coachCard: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    backgroundColor: C.surface, borderRadius: 16, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: C.border,
+    shadowColor: '#1E1B4B', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
   coachCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
   coachAvatar: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: '#FFF3EE', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.accentBg, alignItems: 'center', justifyContent: 'center',
   },
-  coachName: { flex: 1, fontSize: 16, fontWeight: '700', color: '#111' },
-  revokeBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: '#FFF0F0' },
+  coachName: { flex: 1, fontSize: 16, fontWeight: '700', color: C.text1 },
+  revokeBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: 'rgba(239,83,80,0.1)' },
   revokeBtnText: { fontSize: 12, fontWeight: '700', color: '#EF5350' },
 
-  privacyLabel: { fontSize: 12, fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
-  privacyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, borderTopWidth: 1, borderTopColor: '#f5f5f5' },
-  privacyRowLabel: { fontSize: 14, color: '#333' },
+  privacyLabel: { fontSize: 12, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
+  privacyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, borderTopWidth: 1, borderTopColor: C.divider },
+  privacyRowLabel: { fontSize: 14, color: C.text1 },
 
   codeBox: { alignItems: 'center', gap: 8, paddingTop: 4 },
-  codeText: { fontSize: 36, fontWeight: '900', color: '#FC4C02', letterSpacing: 6, fontVariant: ['tabular-nums'] },
-  codeExpiry: { fontSize: 12, color: '#aaa' },
+  codeText: { fontSize: 36, fontWeight: '900', color: C.accent, letterSpacing: 6, fontVariant: ['tabular-nums'] },
+  codeExpiry: { fontSize: 12, color: C.text3 },
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#FC4C02', borderRadius: 10,
+    backgroundColor: C.accent, borderRadius: 10,
     paddingHorizontal: 20, paddingVertical: 10, marginTop: 4,
   },
   shareBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
   actionBtn: {
-    backgroundColor: '#FC4C02', borderRadius: 10,
+    backgroundColor: C.accent, borderRadius: 10,
     paddingVertical: 12, alignItems: 'center',
   },
   actionBtnDisabled: { opacity: 0.5 },
@@ -399,12 +403,12 @@ const st = StyleSheet.create({
 
   codeInputRow: { flexDirection: 'row', gap: 10 },
   codeInput: {
-    flex: 1, borderWidth: 1.5, borderColor: '#ddd', borderRadius: 10,
-    padding: 11, fontSize: 16, fontWeight: '700', letterSpacing: 3, color: '#111',
-    backgroundColor: '#fafafa',
+    flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 10,
+    padding: 11, fontSize: 16, fontWeight: '700', letterSpacing: 3, color: C.text1,
+    backgroundColor: C.surface2,
   },
   goBtn: {
-    backgroundColor: '#FC4C02', borderRadius: 10,
+    backgroundColor: C.accent, borderRadius: 10,
     paddingHorizontal: 18, justifyContent: 'center',
   },
   goBtnDisabled: { opacity: 0.4 },
@@ -412,8 +416,8 @@ const st = StyleSheet.create({
 
   athleteRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 8,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    backgroundColor: C.surface, borderRadius: 14, padding: 14, marginBottom: 8,
+    borderWidth: 1, borderColor: C.border,
   },
-  athleteName: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111' },
+  athleteName: { flex: 1, fontSize: 15, fontWeight: '600', color: C.text1 },
 })

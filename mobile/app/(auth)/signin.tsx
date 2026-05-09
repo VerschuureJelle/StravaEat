@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Alert 
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
+import { C } from '../../lib/theme'
 
 export default function SignInScreen() {
   const router = useRouter()
@@ -61,6 +62,7 @@ export default function SignInScreen() {
           value={email}
           onChangeText={setEmail}
           placeholder="you@example.com"
+          placeholderTextColor={C.text3}
           keyboardType="email-address"
           autoCapitalize="none"
           autoComplete="email"
@@ -72,6 +74,7 @@ export default function SignInScreen() {
           value={password}
           onChangeText={setPassword}
           placeholder="Your password"
+          placeholderTextColor={C.text3}
           secureTextEntry
           autoComplete="password"
         />
@@ -82,7 +85,7 @@ export default function SignInScreen() {
           disabled={loading}
         >
           {loading
-            ? <ActivityIndicator color="#fff" />
+            ? <ActivityIndicator color={C.white} />
             : <Text style={styles.buttonText}>Sign in</Text>}
         </Pressable>
 
@@ -95,22 +98,25 @@ export default function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: C.bg },
   back: { padding: 16 },
-  backText: { fontSize: 16, color: '#FC4C02', fontWeight: '600' },
+  backText: { fontSize: 16, color: C.accent, fontWeight: '600' },
   content: { flex: 1, padding: 24, paddingTop: 8 },
-  title: { fontSize: 28, fontWeight: '800', marginBottom: 32 },
-  label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 6, marginTop: 16 },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 14, fontSize: 16 },
+  title: { fontSize: 28, fontWeight: '800', color: C.text1, marginBottom: 32 },
+  label: { fontSize: 14, fontWeight: '600', color: C.text2, marginBottom: 6, marginTop: 16 },
+  input: {
+    borderWidth: 1, borderColor: C.border, borderRadius: 10,
+    padding: 14, fontSize: 16, backgroundColor: C.surface, color: C.text1,
+  },
   button: {
-    backgroundColor: '#FC4C02',
+    backgroundColor: C.accent,
     padding: 16,
     borderRadius: 10,
     alignItems: 'center',
     marginTop: 32,
   },
   buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  switchText: { textAlign: 'center', marginTop: 20, color: '#888', fontSize: 14 },
-  switchLink: { color: '#FC4C02', fontWeight: '600' },
+  buttonText: { color: C.white, fontSize: 16, fontWeight: '700' },
+  switchText: { textAlign: 'center', marginTop: 20, color: C.text2, fontSize: 14 },
+  switchLink: { color: C.accent, fontWeight: '600' },
 })
