@@ -160,9 +160,9 @@ export default function MealsScreen() {
             >
               <View style={[st.checkbox, meal.checked && st.checkboxChecked]}>
                 {isChecking
-                  ? <ActivityIndicator size="small" color={meal.checked ? '#fff' : C.accent} />
+                  ? <ActivityIndicator size="small" color={meal.checked ? C.white : C.accent} />
                   : meal.checked
-                    ? <Ionicons name="checkmark" size={16} color="#fff" />
+                    ? <Ionicons name="checkmark" size={16} color={C.white} />
                     : null
                 }
               </View>

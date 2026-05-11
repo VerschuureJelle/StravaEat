@@ -10,23 +10,7 @@ import * as Location from 'expo-location'
 import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
-
-// ─── theme ─────────────────────────────────────────────────────────────────
-
-const T = {
-  bg:       '#F8F9FF',
-  surface:  '#FFFFFF',
-  surface2: '#F0F3FF',
-  border:   '#DDE2F5',
-  divider:  '#EEF0FA',
-  gradA:    '#1E1B4B',
-  gradB:    '#3730A3',
-  accent:   '#1E1B4B',
-  purple:   '#818CF8',
-  text1:    '#1A1E3C',
-  text2:    '#5A6088',
-  text3:    '#9AA0C4',
-} as const
+import { C } from '../../lib/theme'
 
 // ─── WMO weather code helpers ──────────────────────────────────────────────
 
@@ -186,11 +170,11 @@ function localDate(): string {
 }
 
 function getSportColor(type: string): string {
-  if (/swim/i.test(type)) return '#38BDF8'
-  if (/run|jog/i.test(type)) return '#818CF8'
-  if (/walk/i.test(type)) return '#94A3B8'
-  if (/ride|bike|cycling|virtual/i.test(type)) return '#6366F1'
-  return '#94A3B8'
+  if (/swim/i.test(type)) return C.swim
+  if (/run|jog/i.test(type)) return C.run
+  if (/walk/i.test(type)) return C.walk
+  if (/ride|bike|cycling|virtual/i.test(type)) return C.ride
+  return C.sport
 }
 
 function getSportIcon(type: string): string {
@@ -307,7 +291,7 @@ export default function HomeScreen() {
       >
         {/* ── Gradient hero ─────────────────────────────────── */}
         <LinearGradient
-          colors={[T.gradA, T.gradB]}
+          colors={[C.gradA, C.gradB]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={st.hero}
@@ -389,7 +373,7 @@ export default function HomeScreen() {
               )}
             </View>
 
-            {weatherLoading && <ActivityIndicator color={T.accent} style={{ marginVertical: 16 }} />}
+            {weatherLoading && <ActivityIndicator color={C.accent} style={{ marginVertical: 16 }} />}
 
             {weatherError && (
               <View style={st.weatherError}>
@@ -420,11 +404,11 @@ export default function HomeScreen() {
                 </Text>
                 <View style={st.appRow}>
                   <Pressable style={st.appBtn} onPress={() => setConnectedApp('trainingpeaks')}>
-                    <Ionicons name="barbell-outline" size={20} color="#4A90D9" />
+                    <Ionicons name="barbell-outline" size={20} color={C.accent2} />
                     <Text style={st.appBtnText}>TrainingPeaks</Text>
                   </Pressable>
                   <Pressable style={st.appBtn} onPress={() => setConnectedApp('runna')}>
-                    <Ionicons name="walk-outline" size={20} color="#00C853" />
+                    <Ionicons name="walk-outline" size={20} color={C.success} />
                     <Text style={st.appBtnText}>Runna</Text>
                   </Pressable>
                 </View>
@@ -454,15 +438,15 @@ export default function HomeScreen() {
 function TodayWeather({ weather }: { weather: Weather }) {
   const rec = getRecommendation(weather)
   const recColors = {
-    good: { bg: 'rgba(76,175,80,0.1)',   text: '#388E3C', icon: 'checkmark-circle-outline' as IoniconsName },
-    ok:   { bg: 'rgba(255,152,0,0.1)',   text: '#E65100', icon: 'alert-circle-outline' as IoniconsName },
-    bad:  { bg: 'rgba(239,83,80,0.1)',   text: '#C62828', icon: 'close-circle-outline' as IoniconsName },
+    good: { bg: C.successBg,  text: C.success,  icon: 'checkmark-circle-outline' as IoniconsName },
+    ok:   { bg: C.warningBg,  text: C.warning,  icon: 'alert-circle-outline' as IoniconsName },
+    bad:  { bg: C.dangerBg,   text: C.danger,   icon: 'close-circle-outline' as IoniconsName },
   }[rec.level]
 
   return (
     <>
       <View style={st.weatherMain}>
-        <Ionicons name={wmo(weather.code).icon} size={48} color={T.accent} />
+        <Ionicons name={wmo(weather.code).icon} size={48} color={C.accent} />
         <View>
           <Text style={st.tempBig}>{weather.temp}°C</Text>
           <Text style={st.tempRange}>{weather.tempMax}° / {weather.tempMin}°</Text>
@@ -480,10 +464,10 @@ function TodayWeather({ weather }: { weather: Weather }) {
           {weather.hourly.map(h => (
             <View key={h.time} style={st.hourlyItem}>
               <Text style={st.hourlyTime}>{h.time}</Text>
-              <Ionicons name={wmo(h.code).icon} size={16} color={T.text3} style={{ marginVertical: 4 }} />
+              <Ionicons name={wmo(h.code).icon} size={16} color={C.text3} style={{ marginVertical: 4 }} />
               <Text style={st.hourlyTemp}>{h.temp}°</Text>
               {h.rainPct > 0 && (
-                <Text style={[st.hourlyRain, h.rainPct > 50 && { color: '#1565C0', fontWeight: '700' }]}>
+                <Text style={[st.hourlyRain, h.rainPct > 50 && { color: C.rain, fontWeight: '700' }]}>
                   {h.rainPct}%
                 </Text>
               )}
@@ -503,7 +487,7 @@ function TodayWeather({ weather }: { weather: Weather }) {
 function WeatherChip({ icon, label }: { icon: IoniconsName; label: string }) {
   return (
     <View style={st.weatherMetaItem}>
-      <Ionicons name={icon} size={12} color={T.text3} />
+      <Ionicons name={icon} size={12} color={C.text3} />
       <Text style={st.weatherMetaText}>{label}</Text>
     </View>
   )
@@ -515,9 +499,9 @@ function WeekForecast({ daily }: { daily: DailyPoint[] }) {
   return (
     <View>
       {daily.map((d, i) => (
-        <View key={i} style={[st.weekRow, i < daily.length - 1 && { borderBottomWidth: 1, borderBottomColor: T.divider }]}>
-          <Text style={[st.weekDay, i === 0 && { fontWeight: '700', color: T.text1 }]}>{d.dayLabel}</Text>
-          <Ionicons name={wmo(d.code).icon} size={20} color={i === 0 ? T.accent : T.text3} />
+        <View key={i} style={[st.weekRow, i < daily.length - 1 && { borderBottomWidth: 1, borderBottomColor: C.divider }]}>
+          <Text style={[st.weekDay, i === 0 && { fontWeight: '700', color: C.text1 }]}>{d.dayLabel}</Text>
+          <Ionicons name={wmo(d.code).icon} size={20} color={i === 0 ? C.accent : C.text3} />
           <View style={{ flexDirection: 'row', gap: 6, marginLeft: 'auto' }}>
             <Text style={st.weekTempHigh}>{d.tempMax}°</Text>
             <Text style={st.weekTempLow}>{d.tempMin}°</Text>
@@ -525,8 +509,8 @@ function WeekForecast({ daily }: { daily: DailyPoint[] }) {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, width: 44, marginLeft: 10 }}>
             {d.rainPct > 0 && (
               <>
-                <Ionicons name="water-outline" size={11} color={d.rainPct > 50 ? '#1565C0' : T.text3} />
-                <Text style={[st.weekRain, d.rainPct > 50 && { color: '#1565C0', fontWeight: '700' }]}>
+                <Ionicons name="water-outline" size={11} color={d.rainPct > 50 ? C.rain : C.text3} />
+                <Text style={[st.weekRain, d.rainPct > 50 && { color: C.rain, fontWeight: '700' }]}>
                   {d.rainPct}%
                 </Text>
               </>
@@ -552,16 +536,16 @@ function PlannedWorkoutList({ workouts, fuelingSettings }: { workouts: PlannedWo
         const rec = calcFuelingRec(w.target_duration_min, fuelSetting)
 
         return (
-          <View key={w.id} style={[pw.card, { borderLeftColor: isAI ? T.purple : color }]}>
+          <View key={w.id} style={[pw.card, { borderLeftColor: isAI ? C.accent2 : color }]}>
             <View style={pw.row}>
               {isAI
-                ? <Ionicons name="sparkles-outline" size={15} color={T.purple} />
+                ? <Ionicons name="sparkles-outline" size={15} color={C.accent2} />
                 : <MaterialCommunityIcons name={icon as any} size={17} color={color} />
               }
-              <Text style={[pw.sport, { color: isAI ? T.purple : T.text1 }]}>{w.sport_type}</Text>
+              <Text style={[pw.sport, { color: isAI ? C.accent2 : C.text1 }]}>{w.sport_type}</Text>
               {isAI && (
-                <View style={[pw.aiBadge, { backgroundColor: `${T.purple}18` }]}>
-                  <Text style={[pw.aiBadgeText, { color: T.purple }]}>AI Coach</Text>
+                <View style={[pw.aiBadge, { backgroundColor: C.accent2Bg }]}>
+                  <Text style={[pw.aiBadgeText, { color: C.accent2 }]}>AI Coach</Text>
                 </View>
               )}
             </View>
@@ -575,15 +559,15 @@ function PlannedWorkoutList({ workouts, fuelingSettings }: { workouts: PlannedWo
                   <Text style={[pw.chipText, { color }]}>{w.target_kcal} kcal</Text>
                 </View>
                 {w.target_duration_min !== null && (
-                  <View style={[pw.chip, { backgroundColor: T.surface2 }]}>
-                    <Ionicons name="time-outline" size={11} color={T.text2} />
-                    <Text style={[pw.chipText, { color: T.text2 }]}>{w.target_duration_min} min</Text>
+                  <View style={[pw.chip, { backgroundColor: C.surface2 }]}>
+                    <Ionicons name="time-outline" size={11} color={C.text2} />
+                    <Text style={[pw.chipText, { color: C.text2 }]}>{w.target_duration_min} min</Text>
                   </View>
                 )}
                 {w.target_hr !== null && (
-                  <View style={[pw.chip, { backgroundColor: T.surface2 }]}>
-                    <Ionicons name="heart-outline" size={11} color={T.text2} />
-                    <Text style={[pw.chipText, { color: T.text2 }]}>{w.target_hr} bpm</Text>
+                  <View style={[pw.chip, { backgroundColor: C.surface2 }]}>
+                    <Ionicons name="heart-outline" size={11} color={C.text2} />
+                    <Text style={[pw.chipText, { color: C.text2 }]}>{w.target_hr} bpm</Text>
                   </View>
                 )}
               </View>
@@ -593,15 +577,15 @@ function PlannedWorkoutList({ workouts, fuelingSettings }: { workouts: PlannedWo
             {fuel && (
               <View style={pw.fuelRow}>
                 <View style={pw.fuelItem}>
-                  <Ionicons name="water-outline" size={12} color="#5C6BC0" />
+                  <Ionicons name="water-outline" size={12} color={C.accent2} />
                   <Text style={pw.fuelLabel}>Koolhydraten</Text>
-                  <Text style={[pw.fuelValue, { color: '#5C6BC0' }]}>{fuel.carbG}g</Text>
+                  <Text style={[pw.fuelValue, { color: C.accent2 }]}>{fuel.carbG}g</Text>
                 </View>
                 <View style={pw.fuelDivider} />
                 <View style={pw.fuelItem}>
-                  <Ionicons name="ellipse-outline" size={12} color="#FF8A65" />
+                  <Ionicons name="ellipse-outline" size={12} color={C.warning} />
                   <Text style={pw.fuelLabel}>Vet</Text>
-                  <Text style={[pw.fuelValue, { color: '#FF8A65' }]}>{fuel.fatG}g</Text>
+                  <Text style={[pw.fuelValue, { color: C.warning }]}>{fuel.fatG}g</Text>
                 </View>
               </View>
             )}
@@ -610,7 +594,7 @@ function PlannedWorkoutList({ workouts, fuelingSettings }: { workouts: PlannedWo
             {rec && (
               <View style={pw.recBox}>
                 <Ionicons name="nutrition-outline" size={14} color={color} style={{ marginTop: 1 }} />
-                <Text style={[pw.recText, { color: T.text1 }]}>
+                <Text style={[pw.recText, { color: C.text1 }]}>
                   <Text style={{ fontWeight: '700' }}>Eet tijdens training: </Text>
                   {rec.totalCarbs}g koolhydraten ({rec.carbs_per_interval_g}g per {rec.interval_min} min)
                 </Text>
@@ -647,7 +631,7 @@ function CalorieModal({ visible, baseline, activities, planned, totalTarget, onC
             <>
               <View style={mo.row}>
                 <View style={mo.rowLeft}>
-                  <Ionicons name="body-outline" size={16} color={T.text2} />
+                  <Ionicons name="body-outline" size={16} color={C.text2} />
                   <Text style={mo.rowLabel}>Baseline</Text>
                 </View>
                 <Text style={mo.rowValue}>{baseline.toLocaleString()} kcal</Text>
@@ -658,7 +642,7 @@ function CalorieModal({ visible, baseline, activities, planned, totalTarget, onC
                     <MaterialCommunityIcons name={getSportIcon(a.type) as any} size={16} color={getSportColor(a.type)} />
                     <Text style={mo.rowLabel} numberOfLines={1}>{a.name}</Text>
                   </View>
-                  <Text style={[mo.rowValue, { color: T.accent }]}>+ {Math.round(a.total_kcal).toLocaleString()} kcal</Text>
+                  <Text style={[mo.rowValue, { color: C.accent }]}>+ {Math.round(a.total_kcal).toLocaleString()} kcal</Text>
                 </View>
               ))}
               {activities.length === 0 && (
@@ -673,16 +657,16 @@ function CalorieModal({ visible, baseline, activities, planned, totalTarget, onC
               </View>
               {burned > 0 && (
                 <View style={mo.infoBox}>
-                  <Ionicons name="flame-outline" size={15} color={T.accent} style={{ marginTop: 1 }} />
+                  <Ionicons name="flame-outline" size={15} color={C.accent} style={{ marginTop: 1 }} />
                   <Text style={mo.infoText}>
                     Eat an extra {Math.round(burned).toLocaleString()} kcal to compensate for your {activities.length === 1 ? 'workout' : 'workouts'}.
                   </Text>
                 </View>
               )}
               {planned.length > 0 && (
-                <View style={[mo.infoBox, { backgroundColor: `${T.purple}12` }]}>
-                  <Ionicons name="calendar-outline" size={15} color={T.purple} style={{ marginTop: 1 }} />
-                  <Text style={[mo.infoText, { color: T.purple }]}>
+                <View style={[mo.infoBox, { backgroundColor: C.accent2Bg }]}>
+                  <Ionicons name="calendar-outline" size={15} color={C.accent2} style={{ marginTop: 1 }} />
+                  <Text style={[mo.infoText, { color: C.accent2 }]}>
                     {planned.length === 1 ? 'A planned workout' : `${planned.length} planned workouts`} targeting {plannedKcal.toLocaleString()} kcal.
                   </Text>
                 </View>
@@ -703,7 +687,7 @@ function CalorieModal({ visible, baseline, activities, planned, totalTarget, onC
 
 function WorkoutPlaceholder({ app, onDisconnect }: { app: TrainingApp; onDisconnect: () => void }) {
   const isTP = app === 'trainingpeaks'
-  const color = isTP ? '#4A90D9' : '#00C853'
+  const color = isTP ? C.accent2 : C.success
   const name = isTP ? 'TrainingPeaks' : 'Runna'
   const workout = isTP
     ? { type: 'Run', title: 'Easy recovery run', duration: '45 min', tss: 38, description: 'Keep HR in zone 2.' }
@@ -731,8 +715,8 @@ function WorkoutPlaceholder({ app, onDisconnect }: { app: TrainingApp; onDisconn
 // ─── styles ────────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: T.gradA },
-  scroll: { backgroundColor: T.bg, paddingBottom: 48, flexGrow: 1 },
+  safeArea: { flex: 1, backgroundColor: C.gradA },
+  scroll: { backgroundColor: C.bg, paddingBottom: 48, flexGrow: 1 },
 
   // Hero
   hero: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 32 },
@@ -742,16 +726,16 @@ const st = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20,
     padding: 7,
   },
-  greetText: { fontSize: 22, fontWeight: '800', color: '#fff' },
+  greetText: { fontSize: 22, fontWeight: '800', color: C.white },
   dateText: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
   heroWeatherBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20,
     paddingHorizontal: 12, paddingVertical: 6,
   },
-  heroWeatherTemp: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  heroWeatherTemp: { fontSize: 14, fontWeight: '700', color: C.white },
   heroKcalBlock: { marginBottom: 20 },
-  heroKcalNum: { fontSize: 52, fontWeight: '800', color: '#fff', lineHeight: 54 },
+  heroKcalNum: { fontSize: 52, fontWeight: '800', color: C.white, lineHeight: 54 },
   heroKcalLabel: { fontSize: 15, color: 'rgba(255,255,255,0.8)', fontWeight: '500', marginTop: 2 },
   heroKcalEmpty: { fontSize: 15, color: 'rgba(255,255,255,0.7)', fontStyle: 'italic' },
   heroChips: { flexDirection: 'row', gap: 10 },
@@ -759,125 +743,125 @@ const st = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 8,
   },
-  heroChipNum: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  heroChipNum: { fontSize: 15, fontWeight: '800', color: C.white },
   heroChipLabel: { fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 1 },
 
   // Cards area
   cardsArea: { padding: 16, gap: 14, marginTop: -20 },
   card: {
-    backgroundColor: T.surface, borderRadius: 20, padding: 20,
-    borderWidth: 1, borderColor: T.border,
-    shadowColor: '#1E1B4B', shadowOpacity: 0.08, shadowRadius: 16,
+    backgroundColor: C.surface, borderRadius: 20, padding: 20,
+    borderWidth: 1, borderColor: C.border,
+    shadowColor: C.accent, shadowOpacity: 0.08, shadowRadius: 16,
     shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
   cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  cardTitle: { fontSize: 13, fontWeight: '700', color: T.text2, textTransform: 'uppercase', letterSpacing: 0.6 },
+  cardTitle: { fontSize: 13, fontWeight: '700', color: C.text2, textTransform: 'uppercase', letterSpacing: 0.6 },
 
   // Toggle
-  toggle: { flexDirection: 'row', backgroundColor: T.surface2, borderRadius: 8, padding: 2 },
+  toggle: { flexDirection: 'row', backgroundColor: C.surface2, borderRadius: 8, padding: 2 },
   toggleBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
-  toggleBtnActive: { backgroundColor: T.surface },
-  toggleText: { fontSize: 12, fontWeight: '600', color: T.text3 },
-  toggleTextActive: { color: T.text1 },
+  toggleBtnActive: { backgroundColor: C.surface },
+  toggleText: { fontSize: 12, fontWeight: '600', color: C.text3 },
+  toggleTextActive: { color: C.text1 },
 
   // Weather
   weatherMain: { flexDirection: 'row', alignItems: 'center', gap: 18, marginBottom: 12 },
-  tempBig: { fontSize: 42, fontWeight: '800', color: T.text1, lineHeight: 44 },
-  tempRange: { fontSize: 14, color: T.text2, marginTop: 2 },
+  tempBig: { fontSize: 42, fontWeight: '800', color: C.text1, lineHeight: 44 },
+  tempRange: { fontSize: 14, color: C.text2, marginTop: 2 },
   weatherMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
   weatherMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  weatherMetaText: { fontSize: 13, color: T.text2 },
+  weatherMetaText: { fontSize: 13, color: C.text2 },
   hourlyItem: {
     alignItems: 'center', minWidth: 50, paddingHorizontal: 8, paddingVertical: 8,
-    backgroundColor: T.surface2, borderRadius: 12, marginRight: 6,
+    backgroundColor: C.surface2, borderRadius: 12, marginRight: 6,
   },
-  hourlyTime: { fontSize: 10, color: T.text3, fontWeight: '600' },
-  hourlyTemp: { fontSize: 13, fontWeight: '700', color: T.text1 },
-  hourlyRain: { fontSize: 10, color: T.text3, marginTop: 2 },
+  hourlyTime: { fontSize: 10, color: C.text3, fontWeight: '600' },
+  hourlyTemp: { fontSize: 13, fontWeight: '700', color: C.text1 },
+  hourlyRain: { fontSize: 10, color: C.text3, marginTop: 2 },
   recBox: { flexDirection: 'row', gap: 8, borderRadius: 12, padding: 12 },
   recText: { flex: 1, fontSize: 13, lineHeight: 19 },
 
   // Week
   weekRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 11 },
-  weekDay: { fontSize: 14, color: T.text2, width: 84 },
-  weekTempHigh: { fontSize: 14, fontWeight: '700', color: T.text1, width: 32, textAlign: 'right' },
-  weekTempLow: { fontSize: 14, color: T.text3, width: 32, textAlign: 'right' },
-  weekRain: { fontSize: 12, color: T.text3 },
+  weekDay: { fontSize: 14, color: C.text2, width: 84 },
+  weekTempHigh: { fontSize: 14, fontWeight: '700', color: C.text1, width: 32, textAlign: 'right' },
+  weekTempLow: { fontSize: 14, color: C.text3, width: 32, textAlign: 'right' },
+  weekRain: { fontSize: 12, color: C.text3 },
 
   // Training plan
-  connectNote: { fontSize: 14, color: T.text2, lineHeight: 20, marginBottom: 14 },
+  connectNote: { fontSize: 14, color: C.text2, lineHeight: 20, marginBottom: 14 },
   appRow: { flexDirection: 'row', gap: 12 },
   appBtn: {
-    flex: 1, borderWidth: 1.5, borderColor: T.border, borderRadius: 14,
-    padding: 16, alignItems: 'center', gap: 8, backgroundColor: T.surface2,
+    flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 14,
+    padding: 16, alignItems: 'center', gap: 8, backgroundColor: C.surface2,
   },
-  appBtnText: { fontSize: 13, fontWeight: '700', color: T.text1 },
+  appBtnText: { fontSize: 13, fontWeight: '700', color: C.text1 },
 
   // Error
   weatherError: { alignItems: 'center', paddingVertical: 8 },
-  weatherErrorText: { fontSize: 13, color: T.text2, marginBottom: 10 },
-  retryBtn: { backgroundColor: T.accent, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 },
-  retryBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  weatherErrorText: { fontSize: 13, color: C.text2, marginBottom: 10 },
+  retryBtn: { backgroundColor: C.accent, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 },
+  retryBtnText: { color: C.white, fontWeight: '700', fontSize: 13 },
 })
 
 const mo = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(30,27,75,0.6)', justifyContent: 'flex-end' },
+  overlay: { flex: 1, backgroundColor: 'C.overlay', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12,
     shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20, shadowOffset: { width: 0, height: -4 },
   },
-  handle: { width: 36, height: 4, backgroundColor: T.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  title: { fontSize: 20, fontWeight: '800', color: T.text1, marginBottom: 6 },
-  subtitle: { fontSize: 13, color: T.text2, lineHeight: 18, marginBottom: 24 },
+  handle: { width: 36, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  title: { fontSize: 20, fontWeight: '800', color: C.text1, marginBottom: 6 },
+  subtitle: { fontSize: 13, color: C.text2, lineHeight: 18, marginBottom: 24 },
   row: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: T.divider,
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.divider,
   },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  rowLabel: { fontSize: 15, color: T.text1, flex: 1 },
-  rowValue: { fontSize: 15, fontWeight: '600', color: T.text1 },
-  noActivity: { fontSize: 13, color: T.text3, fontStyle: 'italic' },
-  noTarget: { backgroundColor: T.surface2, borderRadius: 12, padding: 16, marginBottom: 8 },
-  noTargetText: { fontSize: 14, color: T.text2, lineHeight: 20 },
-  divider: { height: 1, backgroundColor: T.divider, marginVertical: 14 },
+  rowLabel: { fontSize: 15, color: C.text1, flex: 1 },
+  rowValue: { fontSize: 15, fontWeight: '600', color: C.text1 },
+  noActivity: { fontSize: 13, color: C.text3, fontStyle: 'italic' },
+  noTarget: { backgroundColor: C.surface2, borderRadius: 12, padding: 16, marginBottom: 8 },
+  noTargetText: { fontSize: 14, color: C.text2, lineHeight: 20 },
+  divider: { height: 1, backgroundColor: C.divider, marginVertical: 14 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  totalLabel: { fontSize: 16, fontWeight: '700', color: T.text1 },
-  totalValue: { fontSize: 24, fontWeight: '800', color: T.text1 },
+  totalLabel: { fontSize: 16, fontWeight: '700', color: C.text1 },
+  totalValue: { fontSize: 24, fontWeight: '800', color: C.text1 },
   infoBox: {
-    flexDirection: 'row', gap: 8, backgroundColor: `${T.accent}12`,
+    flexDirection: 'row', gap: 8, backgroundColor: C.accentBg,
     borderRadius: 12, padding: 12, marginBottom: 10,
   },
-  infoText: { flex: 1, fontSize: 13, color: T.accent, lineHeight: 19 },
-  closeBtn: { backgroundColor: T.accent, borderRadius: 14, padding: 16, alignItems: 'center' },
-  closeBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  infoText: { flex: 1, fontSize: 13, color: C.accent, lineHeight: 19 },
+  closeBtn: { backgroundColor: C.accent, borderRadius: 14, padding: 16, alignItems: 'center' },
+  closeBtnText: { color: C.white, fontWeight: '800', fontSize: 16 },
 })
 
 const pw = StyleSheet.create({
   card: {
-    borderLeftWidth: 4, borderRadius: 12, backgroundColor: T.surface2,
-    padding: 14, borderWidth: 1, borderColor: T.border,
+    borderLeftWidth: 4, borderRadius: 12, backgroundColor: C.surface2,
+    padding: 14, borderWidth: 1, borderColor: C.border,
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   sport: { fontSize: 15, fontWeight: '700', textTransform: 'capitalize', flex: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   chipText: { fontSize: 12, fontWeight: '700' },
-  description: { fontSize: 13, color: T.text2, lineHeight: 19 },
+  description: { fontSize: 13, color: C.text2, lineHeight: 19 },
   aiBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   aiBadgeText: { fontSize: 10, fontWeight: '700' },
   fuelRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: T.surface2, borderRadius: 10,
+    backgroundColor: C.surface2, borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: 8, marginTop: 10, gap: 0,
   },
   fuelItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  fuelDivider: { width: 1, height: 14, backgroundColor: T.border, marginHorizontal: 8 },
-  fuelLabel: { fontSize: 11, color: T.text2, flex: 1 },
+  fuelDivider: { width: 1, height: 14, backgroundColor: C.border, marginHorizontal: 8 },
+  fuelLabel: { fontSize: 11, color: C.text2, flex: 1 },
   fuelValue: { fontSize: 13, fontWeight: '800' },
   recBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 7,
-    backgroundColor: T.surface2, borderRadius: 10,
+    backgroundColor: C.surface2, borderRadius: 10,
     padding: 10, marginTop: 8,
   },
   recText: { flex: 1, fontSize: 12, lineHeight: 17 },
@@ -889,12 +873,12 @@ const wst = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start', marginBottom: 12,
   },
   badgeText: { fontSize: 12, fontWeight: '700' },
-  previewLabel: { fontSize: 10, color: T.text3, marginLeft: 4 },
-  workoutCard: { backgroundColor: T.surface2, borderRadius: 14, padding: 14, marginBottom: 10 },
-  workoutType: { fontSize: 11, fontWeight: '700', color: T.text3, textTransform: 'uppercase', marginBottom: 4 },
-  workoutTitle: { fontSize: 17, fontWeight: '800', color: T.text1, marginBottom: 4 },
-  workoutMeta: { fontSize: 13, color: T.text2, marginBottom: 8 },
-  workoutDesc: { fontSize: 13, color: T.text2, lineHeight: 18 },
+  previewLabel: { fontSize: 10, color: C.text3, marginLeft: 4 },
+  workoutCard: { backgroundColor: C.surface2, borderRadius: 14, padding: 14, marginBottom: 10 },
+  workoutType: { fontSize: 11, fontWeight: '700', color: C.text3, textTransform: 'uppercase', marginBottom: 4 },
+  workoutTitle: { fontSize: 17, fontWeight: '800', color: C.text1, marginBottom: 4 },
+  workoutMeta: { fontSize: 13, color: C.text2, marginBottom: 8 },
+  workoutDesc: { fontSize: 13, color: C.text2, lineHeight: 18 },
   disconnectBtn: { paddingVertical: 8, alignItems: 'center' },
-  disconnectText: { fontSize: 13, color: T.text3 },
+  disconnectText: { fontSize: 13, color: C.text3 },
 })

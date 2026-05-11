@@ -170,7 +170,7 @@ export default function BurnSchemaScreen() {
           onPress={addPoint}
           disabled={saving}
         >
-          <Ionicons name="add" size={18} color="#fff" />
+          <Ionicons name="add" size={18} color={C.white} />
           <Text style={styles.addBtnText}>{saving ? 'Saving…' : 'Add point'}</Text>
         </Pressable>
 

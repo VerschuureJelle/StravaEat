@@ -59,12 +59,12 @@ export default function CoachTab() {
         <Ionicons
           name={isCoach ? 'people' : 'person-outline'}
           size={15}
-          color={isCoach ? '#fff' : C.accent2}
+          color={isCoach ? C.white : C.accent2}
         />
-        <Text style={[st.modeBannerText, isCoach && { color: '#fff' }]}>
+        <Text style={[st.modeBannerText, isCoach && { color: C.white }]}>
           {isCoach ? 'Coach Mode — tap to switch to Athlete' : 'Athlete Mode — tap to switch to Coach'}
         </Text>
-        <Ionicons name="swap-horizontal-outline" size={15} color={isCoach ? '#fff' : C.accent2} />
+        <Ionicons name="swap-horizontal-outline" size={15} color={isCoach ? C.white : C.accent2} />
       </Pressable>
 
       <ScrollView contentContainerStyle={st.content} showsVerticalScrollIndicator={false}>
@@ -97,7 +97,7 @@ export default function CoachTab() {
               Ask your athlete to generate an invite code in their app, then enter it via Manage to connect.
             </Text>
             <Pressable style={st.setupBtn} onPress={() => router.push('/coach' as any)}>
-              <Ionicons name="person-add-outline" size={16} color="#fff" />
+              <Ionicons name="person-add-outline" size={16} color={C.white} />
               <Text style={st.setupBtnText}>Connect an athlete</Text>
             </Pressable>
           </View>
@@ -137,7 +137,7 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center',
     paddingVertical: 9, paddingHorizontal: 16,
   },
-  modeBannerCoach: { backgroundColor: '#3F4691' },
+  modeBannerCoach: { backgroundColor: C.ride },
   modeBannerAthlete: { backgroundColor: C.surface2 },
   modeBannerText: { fontSize: 13, fontWeight: '600', color: C.accent2, flex: 1, textAlign: 'center' },
 
@@ -187,5 +187,5 @@ const st = StyleSheet.create({
     backgroundColor: C.accent, borderRadius: 12,
     paddingHorizontal: 24, paddingVertical: 13, marginTop: 4,
   },
-  setupBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  setupBtnText: { color: C.white, fontWeight: '700', fontSize: 15 },
 })

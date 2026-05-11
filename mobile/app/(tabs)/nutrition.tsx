@@ -26,11 +26,11 @@ function isOverdue(scheduledTime: string): boolean {
 }
 
 function getSportColor(type: string): string {
-  if (/swim/i.test(type)) return '#38BDF8'
-  if (/run|jog/i.test(type)) return '#818CF8'
-  if (/walk/i.test(type)) return '#94A3B8'
-  if (/ride|bike|cycling|virtual/i.test(type)) return '#6366F1'
-  return '#94A3B8'
+  if (/swim/i.test(type)) return C.swim
+  if (/run|jog/i.test(type)) return C.run
+  if (/walk/i.test(type)) return C.walk
+  if (/ride|bike|cycling|virtual/i.test(type)) return C.ride
+  return C.walk
 }
 
 function getSportIcon(type: string): string {
@@ -79,7 +79,7 @@ export default function NutritionScreen() {
   const progress = target != null && target > 0 ? Math.min(consumed / target, 1) : 0
   const checkedCount = meals.filter(m => m.checked).length
   const allMealsDone = meals.length > 0 && checkedCount === meals.length
-  const barColor = remaining != null && remaining < 0 ? '#EF5350' : C.accent
+  const barColor = remaining != null && remaining < 0 ? C.danger : C.accent
 
   useFocusEffect(useCallback(() => {
     loadAll()
@@ -238,7 +238,7 @@ export default function NutritionScreen() {
                 <View style={st.breakdownRow}>
                   {baseline != null && (
                     <View style={st.breakdownChip}>
-                      <Ionicons name="body-outline" size={11} color="#888" />
+                      <Ionicons name="body-outline" size={11} color={C.text2} />
                       <Text style={st.breakdownText}>{baseline.toLocaleString()} baseline</Text>
                     </View>
                   )}
@@ -308,8 +308,8 @@ export default function NutritionScreen() {
                   disabled={adding}
                 >
                   {adding
-                    ? <ActivityIndicator size="small" color="#fff" />
-                    : <Ionicons name="add" size={22} color="#fff" />
+                    ? <ActivityIndicator size="small" color={C.white} />
+                    : <Ionicons name="add" size={22} color={C.white} />
                   }
                 </Pressable>
               </View>
@@ -372,7 +372,7 @@ export default function NutritionScreen() {
                     {hasMacros && (
                       <View style={st.macroTotalsRow}>
                         {totalP > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: C.accent }]}>P {Math.round(totalP)}g</Text></View>}
-                        {totalF > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: '#94A3B8' }]}>F {Math.round(totalF)}g</Text></View>}
+                        {totalF > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: C.walk }]}>F {Math.round(totalF)}g</Text></View>}
                         {totalC > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: C.accent2 }]}>C {Math.round(totalC)}g</Text></View>}
                       </View>
                     )}
@@ -394,7 +394,7 @@ export default function NutritionScreen() {
               <View style={[st.card, allMealsDone && { backgroundColor: 'rgba(76,175,80,0.1)', borderColor: 'rgba(76,175,80,0.2)' }]}>
                 {allMealsDone ? (
                   <View style={st.doneRow}>
-                    <Ionicons name="checkmark-circle" size={22} color="#4CAF50" />
+                    <Ionicons name="checkmark-circle" size={22} color={C.success} />
                     <Text style={st.doneText}>All meals done for today!</Text>
                   </View>
                 ) : (
@@ -435,16 +435,16 @@ export default function NutritionScreen() {
                 >
                   <View style={[st.checkbox, meal.checked && st.checkboxChecked]}>
                     {isChecking
-                      ? <ActivityIndicator size="small" color={meal.checked ? '#fff' : C.accent} />
+                      ? <ActivityIndicator size="small" color={meal.checked ? C.white : C.accent} />
                       : meal.checked
-                        ? <Ionicons name="checkmark" size={16} color="#fff" />
+                        ? <Ionicons name="checkmark" size={16} color={C.white} />
                         : null
                     }
                   </View>
                   <View style={st.mealInfo}>
                     <Text style={[st.mealName, meal.checked && st.mealNameChecked]}>{meal.name}</Text>
                     <View style={st.mealMetaRow}>
-                      <Ionicons name="time-outline" size={13} color={overdue ? '#EF5350' : C.text2} />
+                      <Ionicons name="time-outline" size={13} color={overdue ? C.danger : C.text2} />
                       <Text style={[st.mealTime, overdue && st.mealTimeOverdue]}>{meal.scheduled_time}</Text>
                       {overdue && (
                         <View style={st.overdueTag}>
@@ -497,7 +497,7 @@ const st = StyleSheet.create({
   barFill: { height: 8, borderRadius: 4 },
   progressMeta: { marginBottom: 10 },
   remainingText: { fontSize: 13, color: C.text2, fontWeight: '500' },
-  overText: { color: '#EF5350', fontWeight: '700' },
+  overText: { color: C.danger, fontWeight: '700' },
   noTargetNote: { fontSize: 13, color: C.text3, fontStyle: 'italic' },
   breakdownRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   breakdownChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.surface2, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: C.border },
@@ -539,7 +539,7 @@ const st = StyleSheet.create({
   mealProgressLabel: { fontSize: 14, fontWeight: '600', color: C.text2 },
   mealProgressPct: { fontSize: 14, fontWeight: '800', color: C.accent },
   doneRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  doneText: { fontSize: 15, fontWeight: '700', color: '#388E3C' },
+  doneText: { fontSize: 15, fontWeight: '700', color: C.success },
 
   mealCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
@@ -550,7 +550,7 @@ const st = StyleSheet.create({
     borderLeftWidth: 3, borderLeftColor: 'transparent',
   },
   mealCardChecked: { opacity: 0.55 },
-  mealCardOverdue: { borderLeftColor: '#EF5350' },
+  mealCardOverdue: { borderLeftColor: C.danger },
   checkbox: {
     width: 28, height: 28, borderRadius: 14,
     borderWidth: 2, borderColor: C.border,
@@ -562,10 +562,10 @@ const st = StyleSheet.create({
   mealNameChecked: { textDecorationLine: 'line-through', color: C.text2 },
   mealMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   mealTime: { fontSize: 13, color: C.text3 },
-  mealTimeOverdue: { color: '#EF5350', fontWeight: '600' },
+  mealTimeOverdue: { color: C.danger, fontWeight: '600' },
   overdueTag: { backgroundColor: 'rgba(239,83,80,0.15)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 2 },
-  overdueTagText: { fontSize: 11, fontWeight: '700', color: '#EF5350' },
-  checkedLabel: { fontSize: 11, fontWeight: '600', color: '#4CAF50', marginLeft: 2 },
+  overdueTagText: { fontSize: 11, fontWeight: '700', color: C.danger },
+  checkedLabel: { fontSize: 11, fontWeight: '600', color: C.success, marginLeft: 2 },
   mealEmptyBox: { alignItems: 'center', paddingVertical: 48, gap: 12 },
   mealEmptyTitle: { fontSize: 16, fontWeight: '700', color: C.text2 },
 })

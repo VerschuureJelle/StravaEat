@@ -34,11 +34,11 @@ function normalizeType(type: string): string {
 }
 
 function getSportColor(type: string): string {
-  if (/swim/i.test(type)) return '#38BDF8'
-  if (/run|jog/i.test(type)) return '#818CF8'
-  if (/walk/i.test(type)) return '#94A3B8'
-  if (/ride|bike|cycling|virtual/i.test(type)) return '#6366F1'
-  return '#94A3B8'
+  if (/swim/i.test(type)) return C.swim
+  if (/run|jog/i.test(type)) return C.run
+  if (/walk/i.test(type)) return C.walk
+  if (/ride|bike|cycling|virtual/i.test(type)) return C.ride
+  return C.walk
 }
 
 function getSportIcon(type: string): string {
@@ -553,7 +553,7 @@ const st = StyleSheet.create({
   },
   customSep: { fontSize: 18, color: C.text3, marginBottom: 10 },
   applyBtn: { backgroundColor: C.accent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 1 },
-  applyBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  applyBtnText: { color: C.white, fontWeight: '700', fontSize: 13 },
 
   navRow: { flexDirection: 'row', paddingHorizontal: 8, paddingBottom: 6, gap: 4 },
   navBtn: { padding: 6 },

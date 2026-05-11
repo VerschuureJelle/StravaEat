@@ -27,11 +27,11 @@ function normalizeType(type: string): string {
 }
 
 function getSportColor(type: string): string {
-  if (/swim/i.test(type)) return '#38BDF8'
-  if (/run|jog/i.test(type)) return '#818CF8'
-  if (/walk/i.test(type)) return '#94A3B8'
-  if (/ride|bike|cycling|virtual/i.test(type)) return '#6366F1'
-  return '#94A3B8'
+  if (/swim/i.test(type)) return C.swim
+  if (/run|jog/i.test(type)) return C.run
+  if (/walk/i.test(type)) return C.walk
+  if (/ride|bike|cycling|virtual/i.test(type)) return C.ride
+  return C.walk
 }
 
 function getSportIcon(type: string): string {
@@ -128,13 +128,13 @@ interface GeneratedSession {
 // ─── program config ─────────────────────────────────────────────────────────
 
 const PROGRAM_CONFIG: Record<ProgramType, { label: string; minWeeks: number; maxWeeks: number; emoji: string; color: string }> = {
-  '5k':            { label: '5K',           minWeeks: 4,  maxWeeks: 12, emoji: '🏃', color: '#818CF8' },
-  '10k':           { label: '10K',          minWeeks: 6,  maxWeeks: 14, emoji: '🏃', color: '#6366F1' },
-  'half_marathon': { label: 'Half Marathon', minWeeks: 8,  maxWeeks: 16, emoji: '🏅', color: '#3730A3' },
-  'marathon':      { label: 'Marathon',      minWeeks: 16, maxWeeks: 32, emoji: '🏆', color: '#1E1B4B' },
-  'swim':          { label: 'Swimming',      minWeeks: 6,  maxWeeks: 20, emoji: '🏊', color: '#38BDF8' },
-  'cycling':       { label: 'Cycling',       minWeeks: 8,  maxWeeks: 24, emoji: '🚴', color: '#6366F1' },
-  'strength':      { label: 'Strength',      minWeeks: 6,  maxWeeks: 16, emoji: '💪', color: '#94A3B8' },
+  '5k':            { label: '5K',           minWeeks: 4,  maxWeeks: 12, emoji: '🏃', color: C.run },
+  '10k':           { label: '10K',          minWeeks: 6,  maxWeeks: 14, emoji: '🏃', color: C.ride },
+  'half_marathon': { label: 'Half Marathon', minWeeks: 8,  maxWeeks: 16, emoji: '🏅', color: C.gradB },
+  'marathon':      { label: 'Marathon',      minWeeks: 16, maxWeeks: 32, emoji: '🏆', color: C.accent },
+  'swim':          { label: 'Swimming',      minWeeks: 6,  maxWeeks: 20, emoji: '🏊', color: C.swim },
+  'cycling':       { label: 'Cycling',       minWeeks: 8,  maxWeeks: 24, emoji: '🚴', color: C.ride },
+  'strength':      { label: 'Strength',      minWeeks: 6,  maxWeeks: 16, emoji: '💪', color: C.sport },
 }
 
 const PROGRAM_TYPES: ProgramType[] = ['5k', '10k', 'half_marathon', 'marathon', 'swim', 'cycling', 'strength']
@@ -180,7 +180,7 @@ const AI_GOALS = [
 const AI_DURATION_PRESETS = ['20', '30', '45', '60', '75', '90', '120']
 
 function zoneBarColor(n: number): string {
-  return ['#BAE6FD', '#38BDF8', '#818CF8', '#6366F1', '#3730A3'][n - 1] ?? '#94A3B8'
+  return ([C.text4, C.swim, C.run, C.ride, C.accent] as string[])[n - 1] ?? C.sport
 }
 
 // ─── screen ────────────────────────────────────────────────────────────────
@@ -803,7 +803,7 @@ export default function PlannerScreen() {
               style={[st.modeBtn, mode === m.key && { backgroundColor: sportColor, borderColor: sportColor }]}
               onPress={() => setMode(m.key)}
             >
-              <Ionicons name={m.icon} size={14} color={mode === m.key ? '#fff' : C.text3} />
+              <Ionicons name={m.icon} size={14} color={mode === m.key ? C.white : C.text3} />
               <Text style={[st.modeBtnText, mode === m.key && st.modeBtnTextActive]}>{m.label}</Text>
             </Pressable>
           ))}
@@ -878,7 +878,7 @@ export default function PlannerScreen() {
             </View>
 
             <Pressable style={[st.calcBtn, { backgroundColor: sportColor }]} onPress={calculate}>
-              <Ionicons name="calculator-outline" size={18} color="#fff" />
+              <Ionicons name="calculator-outline" size={18} color={C.white} />
               <Text style={st.calcBtnText}>Calculate</Text>
             </Pressable>
 
@@ -951,13 +951,13 @@ export default function PlannerScreen() {
                       style={[st.segToggleBtn, seg.inputType === 'distance' && { backgroundColor: sportColor, borderColor: sportColor }]}
                       onPress={() => updateSegment(seg.id, { inputType: 'distance', value: '' })}
                     >
-                      <Text style={[st.segToggleText, seg.inputType === 'distance' && { color: '#fff' }]}>Distance</Text>
+                      <Text style={[st.segToggleText, seg.inputType === 'distance' && { color: C.white }]}>Distance</Text>
                     </Pressable>
                     <Pressable
                       style={[st.segToggleBtn, seg.inputType === 'time' && { backgroundColor: sportColor, borderColor: sportColor }]}
                       onPress={() => updateSegment(seg.id, { inputType: 'time', value: '' })}
                     >
-                      <Text style={[st.segToggleText, seg.inputType === 'time' && { color: '#fff' }]}>Time</Text>
+                      <Text style={[st.segToggleText, seg.inputType === 'time' && { color: C.white }]}>Time</Text>
                     </Pressable>
                   </View>
 
@@ -993,7 +993,7 @@ export default function PlannerScreen() {
                         style={[st.segZoneBtn, seg.zoneId === z.id && { backgroundColor: sportColor, borderColor: sportColor }]}
                         onPress={() => updateSegment(seg.id, { zoneId: z.id })}
                       >
-                        <Text style={[st.segZoneBtnNum, seg.zoneId === z.id && { color: '#fff' }]}>Z{z.zone_number}</Text>
+                        <Text style={[st.segZoneBtnNum, seg.zoneId === z.id && { color: C.white }]}>Z{z.zone_number}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -1010,7 +1010,7 @@ export default function PlannerScreen() {
             </Pressable>
 
             <Pressable style={[st.calcBtn, { backgroundColor: sportColor }]} onPress={calculateSegments}>
-              <Ionicons name="stats-chart-outline" size={18} color="#fff" />
+              <Ionicons name="stats-chart-outline" size={18} color={C.white} />
               <Text style={st.calcBtnText}>Calculate workout</Text>
             </Pressable>
 
@@ -1103,7 +1103,7 @@ export default function PlannerScreen() {
                   style={[st.aiDurationBtn, aiDuration === d && { backgroundColor: C.accent2, borderColor: C.accent2 }]}
                   onPress={() => setAiDuration(d)}
                 >
-                  <Text style={[st.aiDurationBtnText, aiDuration === d && { color: '#fff' }]}>{d}'</Text>
+                  <Text style={[st.aiDurationBtnText, aiDuration === d && { color: C.white }]}>{d}'</Text>
                 </Pressable>
               ))}
             </View>
@@ -1114,7 +1114,7 @@ export default function PlannerScreen() {
               {AI_GOALS.map(g => (
                 <Pressable
                   key={g.key}
-                  style={[st.aiGoalCard, aiGoal === g.key && { borderColor: C.accent2, backgroundColor: 'rgba(124,131,253,0.12)' }]}
+                  style={[st.aiGoalCard, aiGoal === g.key && { borderColor: C.accent2, backgroundColor: 'C.accent2Bg' }]}
                   onPress={() => setAiGoal(g.key)}
                 >
                   <Text style={[st.aiGoalLabel, aiGoal === g.key && { color: C.accent2, fontWeight: '800' }]}>{g.label}</Text>
@@ -1142,9 +1142,9 @@ export default function PlannerScreen() {
               disabled={aiLoading}
             >
               {aiLoading
-                ? <ActivityIndicator size="small" color="#fff" />
+                ? <ActivityIndicator size="small" color={C.white} />
                 : <>
-                    <Ionicons name="sparkles-outline" size={18} color="#fff" />
+                    <Ionicons name="sparkles-outline" size={18} color={C.white} />
                     <Text style={st.calcBtnText}>Generate workout</Text>
                   </>
               }
@@ -1235,9 +1235,9 @@ export default function PlannerScreen() {
                             disabled={togglingSession === session.id}
                           >
                             {togglingSession === session.id
-                              ? <ActivityIndicator size="small" color="#fff" />
+                              ? <ActivityIndicator size="small" color={C.white} />
                               : session.completed
-                                ? <Ionicons name="checkmark" size={14} color="#fff" />
+                                ? <Ionicons name="checkmark" size={14} color={C.white} />
                                 : null
                             }
                           </Pressable>
@@ -1372,9 +1372,9 @@ export default function PlannerScreen() {
                   disabled={programSaving}
                 >
                   {programSaving
-                    ? <ActivityIndicator size="small" color="#fff" />
+                    ? <ActivityIndicator size="small" color={C.white} />
                     : <>
-                        <Ionicons name="save-outline" size={18} color="#fff" />
+                        <Ionicons name="save-outline" size={18} color={C.white} />
                         <Text style={st.calcBtnText}>Save program</Text>
                       </>
                   }
@@ -1469,7 +1469,7 @@ export default function PlannerScreen() {
                               }
                             }}
                           >
-                            <Text style={[st.bodyPartChipText, selected && { color: '#fff' }]}>{bp}</Text>
+                            <Text style={[st.bodyPartChipText, selected && { color: C.white }]}>{bp}</Text>
                           </Pressable>
                         )
                       })}
@@ -1501,13 +1501,13 @@ export default function PlannerScreen() {
                           style={[st.swimToggleBtn, swimPool && { backgroundColor: cfg.color, borderColor: cfg.color }]}
                           onPress={() => setSwimPool(true)}
                         >
-                          <Text style={[st.swimToggleBtnText, swimPool && { color: '#fff' }]}>Pool</Text>
+                          <Text style={[st.swimToggleBtnText, swimPool && { color: C.white }]}>Pool</Text>
                         </Pressable>
                         <Pressable
                           style={[st.swimToggleBtn, !swimPool && { backgroundColor: cfg.color, borderColor: cfg.color }]}
                           onPress={() => setSwimPool(false)}
                         >
-                          <Text style={[st.swimToggleBtnText, !swimPool && { color: '#fff' }]}>Open Water</Text>
+                          <Text style={[st.swimToggleBtnText, !swimPool && { color: C.white }]}>Open Water</Text>
                         </Pressable>
                       </View>
                     </View>
@@ -1664,11 +1664,11 @@ export default function PlannerScreen() {
                 >
                   {programGenerating
                     ? <>
-                        <ActivityIndicator size="small" color="#fff" />
+                        <ActivityIndicator size="small" color={C.white} />
                         <Text style={st.calcBtnText}>Generating plan…</Text>
                       </>
                     : <>
-                        <Ionicons name="sparkles-outline" size={18} color="#fff" />
+                        <Ionicons name="sparkles-outline" size={18} color={C.white} />
                         <Text style={st.calcBtnText}>Generate {cfg.label} plan</Text>
                       </>
                   }
@@ -1717,7 +1717,7 @@ const st = StyleSheet.create({
     paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface2,
   },
   modeBtnText: { fontSize: 12, fontWeight: '600', color: C.text3 },
-  modeBtnTextActive: { color: '#fff' },
+  modeBtnTextActive: { color: C.white },
 
   // Sport dropdown
   sportDropBtn: {
@@ -1747,7 +1747,7 @@ const st = StyleSheet.create({
     borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface2,
   },
   kcalPresetText: { fontSize: 14, fontWeight: '600', color: C.text2 },
-  kcalPresetTextActive: { color: '#fff' },
+  kcalPresetTextActive: { color: C.white },
   kcalInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 24 },
   kcalInput: {
     flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 10,
@@ -1759,7 +1759,7 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, padding: 15, borderRadius: 12, marginBottom: 24,
   },
-  calcBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  calcBtnText: { color: C.white, fontWeight: '700', fontSize: 16 },
 
   // Segment builder
   segCard: {
@@ -1824,14 +1824,14 @@ const st = StyleSheet.create({
   planBtnText: { color: C.accent, fontWeight: '700', fontSize: 14 },
 
   // AI mode
-  aiInfoBox: { flexDirection: 'row', gap: 8, backgroundColor: 'rgba(124,131,253,0.12)', borderRadius: 12, padding: 12, marginBottom: 20 },
+  aiInfoBox: { flexDirection: 'row', gap: 8, backgroundColor: 'C.accent2Bg', borderRadius: 12, padding: 12, marginBottom: 20 },
   aiInfoText: { flex: 1, fontSize: 13, color: C.accent2, lineHeight: 18 },
   aiInput: {
     borderWidth: 1.5, borderColor: C.border, borderRadius: 12,
     padding: 14, fontSize: 15, backgroundColor: C.surface2, color: C.text1,
     minHeight: 100, marginBottom: 16,
   },
-  aiResultCard: { backgroundColor: C.surface2, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: 'rgba(124,131,253,0.25)' },
+  aiResultCard: { backgroundColor: C.surface2, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: 'C.accent2Border' },
   aiResultHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
   aiResultTitle: { fontSize: 14, fontWeight: '700', color: C.text1, flex: 1 },
   aiKcalBadge: { backgroundColor: C.accentBg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
@@ -1979,7 +1979,7 @@ const st = StyleSheet.create({
 
   ftpBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(76,175,80,0.12)', borderRadius: 10, padding: 10, marginBottom: 20,
+    backgroundColor: 'C.successBg', borderRadius: 10, padding: 10, marginBottom: 20,
     borderWidth: 1, borderColor: C.border,
   },
   ftpBadgeText: { fontSize: 13, fontWeight: '600' },
@@ -1997,7 +1997,7 @@ const st = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', minWidth: 2,
   },
   diagramSegmentText: {
-    fontSize: 11, fontWeight: '800', color: '#fff',
+    fontSize: 11, fontWeight: '800', color: C.white,
     textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2,
   },
   diagramLegend: { flexDirection: 'row', gap: 12, marginBottom: 12 },

@@ -256,6 +256,17 @@ export default function SettingsScreen() {
     setFuelingConfigs(prev => ({ ...prev, [sport]: config }))
   }
 
+  async function deleteFuelingConfig(sport: string) {
+    if (!userId) return
+    await supabase.from('fueling_settings').delete().eq('user_id', userId).eq('sport_type', sport)
+    setFuelingConfigs(prev => { const n = { ...prev }; delete n[sport]; return n })
+    setDraftFueling(prev => {
+      const n = { ...prev }
+      delete n[sport]
+      return n
+    })
+  }
+
   function updateDraftFueling(sport: string, field: keyof FuelingConfig, value: number) {
     setDraftFueling(prev => ({
       ...prev,
@@ -369,7 +380,7 @@ export default function SettingsScreen() {
             </Pressable>
 
             <Pressable style={styles.coachRow} onPress={() => router.push('/coach')}>
-              <Ionicons name="people-outline" size={20} color="#FC4C02" />
+              <Ionicons name="people-outline" size={20} color={C.accent} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.coachRowTitle}>Coach connections</Text>
                 <Text style={styles.coachRowNote}>Connect with a coach or manage your athletes</Text>
@@ -383,7 +394,7 @@ export default function SettingsScreen() {
                 <Ionicons
                   name={mode === 'coach' ? 'people' : 'person'}
                   size={22}
-                  color={mode === 'coach' ? '#5C6BC0' : '#FC4C02'}
+                  color={mode === 'coach' ? C.ride : C.accent}
                 />
                 <View>
                   <Text style={styles.modeCardTitle}>
@@ -399,8 +410,8 @@ export default function SettingsScreen() {
               <Switch
                 value={mode === 'coach'}
                 onValueChange={v => setMode(v ? 'coach' : 'athlete')}
-                trackColor={{ true: '#5C6BC0', false: C.surface3 }}
-                thumbColor="#fff"
+                trackColor={{ true: C.ride, false: C.surface3 }}
+                thumbColor={C.white}
               />
             </View>
 
@@ -527,7 +538,7 @@ export default function SettingsScreen() {
               <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
                 {COMMON_SPORTS.filter(s => !userSports.some(us => us.sport_name === s)).map(sport => (
                   <Pressable key={sport} style={styles.presetChip} onPress={() => addPlannerSport(sport)}>
-                    <Ionicons name="add" size={13} color="#FC4C02" />
+                    <Ionicons name="add" size={13} color={C.accent} />
                     <Text style={styles.presetChipText}>{sport}</Text>
                   </Pressable>
                 ))}
@@ -618,88 +629,113 @@ export default function SettingsScreen() {
           </>
         )}
         {/* ── Fueling ──────────────────────────────────────── */}
-        {activeTab === 'fueling' && (
-          <>
-            <Text style={styles.sectionHeader}>During-workout fueling</Text>
-            <Text style={styles.sectionNote}>
-              Stel per sport in wanneer je tijdens een training begint te eten en hoeveel koolhydraten je per interval wil innemen.
-            </Text>
+        {activeTab === 'fueling' && (() => {
+          const fuelingSports = [...new Set(activitySports.map(s => normalizeType(s)))].sort()
+          const activeEntries = Object.entries(fuelingConfigs)
 
-            {activitySports.length === 0 && (
-              <Text style={styles.sectionNote}>Sync eerst een training via Strava om sporten te zien.</Text>
-            )}
+          return (
+            <>
+              <Text style={styles.sectionHeader}>During-workout fueling</Text>
+              <Text style={styles.sectionNote}>
+                Stel per sport in wanneer je tijdens een training begint te eten en hoeveel koolhydraten je per interval wil innemen.
+              </Text>
 
-            {activitySports.map(sport => {
-              const draft = draftFueling[sport] ?? { threshold_min: 60, carbs_per_interval_g: 30, interval_min: 30 }
-              const saved = fuelingConfigs[sport]
-              const isDirtyFueling = JSON.stringify(draft) !== JSON.stringify(saved ?? { threshold_min: 60, carbs_per_interval_g: 30, interval_min: 30 })
-              const isSaving = savingFueling === sport
+              {/* Active overview */}
+              {activeEntries.length > 0 && (
+                <View style={styles.fuelingOverview}>
+                  <Text style={styles.fuelingOverviewTitle}>Actief</Text>
+                  {activeEntries.map(([sport, cfg]) => (
+                    <View key={sport} style={styles.fuelingOverviewRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.fuelingOverviewSport}>{sport}</Text>
+                        <Text style={styles.fuelingOverviewDetail}>
+                          {'>'}{cfg.threshold_min} min · {cfg.carbs_per_interval_g}g per {cfg.interval_min} min
+                        </Text>
+                      </View>
+                      <Pressable onPress={() => deleteFuelingConfig(sport)} hitSlop={8} style={styles.fuelingDeleteBtn}>
+                        <Ionicons name="close-circle" size={22} color={C.danger} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              )}
 
-              return (
-                <View key={sport} style={styles.fuelingCard}>
-                  <View style={styles.fuelingCardHeader}>
-                    <Text style={styles.sportName}>{sport}</Text>
-                    {saved && (
-                      <View style={styles.fuelingActiveBadge}>
-                        <Ionicons name="checkmark-circle" size={12} color={C.accent} />
-                        <Text style={styles.fuelingActiveBadgeText}>Active</Text>
+              {fuelingSports.length === 0 && (
+                <Text style={styles.sectionNote}>Sync eerst een training via Strava om sporten te zien.</Text>
+              )}
+
+              {fuelingSports.map(sport => {
+                const draft = draftFueling[sport] ?? { threshold_min: 60, carbs_per_interval_g: 30, interval_min: 30 }
+                const saved = fuelingConfigs[sport]
+                const isDirtyFueling = JSON.stringify(draft) !== JSON.stringify(saved ?? { threshold_min: 60, carbs_per_interval_g: 30, interval_min: 30 })
+                const isSaving = savingFueling === sport
+
+                return (
+                  <View key={sport} style={styles.fuelingCard}>
+                    <View style={styles.fuelingCardHeader}>
+                      <Text style={styles.sportName}>{sport}</Text>
+                      {saved && (
+                        <View style={styles.fuelingActiveBadge}>
+                          <Ionicons name="checkmark-circle" size={12} color={C.accent} />
+                          <Text style={styles.fuelingActiveBadgeText}>Actief</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <Text style={styles.fuelingFieldLabel}>Training langer dan (minuten)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={String(draft.threshold_min)}
+                      keyboardType="numeric"
+                      placeholderTextColor={C.text3}
+                      onChangeText={v => updateDraftFueling(sport, 'threshold_min', parseInt(v) || 0)}
+                    />
+
+                    <View style={styles.fuelingRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.fuelingFieldLabel}>Koolhydraten per interval (g)</Text>
+                        <TextInput
+                          style={[styles.input, { marginBottom: 0 }]}
+                          value={String(draft.carbs_per_interval_g)}
+                          keyboardType="numeric"
+                          placeholderTextColor={C.text3}
+                          onChangeText={v => updateDraftFueling(sport, 'carbs_per_interval_g', parseInt(v) || 0)}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.fuelingFieldLabel}>Interval (minuten)</Text>
+                        <TextInput
+                          style={[styles.input, { marginBottom: 0 }]}
+                          value={String(draft.interval_min)}
+                          keyboardType="numeric"
+                          placeholderTextColor={C.text3}
+                          onChangeText={v => updateDraftFueling(sport, 'interval_min', parseInt(v) || 0)}
+                        />
+                      </View>
+                    </View>
+
+                    {draft.threshold_min > 0 && draft.interval_min > 0 && (
+                      <View style={styles.fuelingPreview}>
+                        <Ionicons name="information-circle-outline" size={13} color={C.accent2} />
+                        <Text style={styles.fuelingPreviewText}>
+                          Bij trainingen langer dan {draft.threshold_min} min: elke {draft.interval_min} min {draft.carbs_per_interval_g}g koolhydraten.
+                        </Text>
                       </View>
                     )}
+
+                    <Pressable
+                      style={[styles.saveBtn, (!isDirtyFueling || isSaving) && styles.saveBtnDisabled]}
+                      onPress={() => saveFuelingConfig(sport)}
+                      disabled={!isDirtyFueling || isSaving}
+                    >
+                      <Text style={styles.saveBtnText}>{isSaving ? 'Opslaan…' : 'Opslaan'}</Text>
+                    </Pressable>
                   </View>
-
-                  <Text style={styles.fuelingFieldLabel}>Training langer dan (minuten)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={String(draft.threshold_min)}
-                    keyboardType="numeric"
-                    placeholderTextColor={C.text3}
-                    onChangeText={v => updateDraftFueling(sport, 'threshold_min', parseInt(v) || 0)}
-                  />
-
-                  <View style={styles.fuelingRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.fuelingFieldLabel}>Koolhydraten per interval (g)</Text>
-                      <TextInput
-                        style={[styles.input, { marginBottom: 0 }]}
-                        value={String(draft.carbs_per_interval_g)}
-                        keyboardType="numeric"
-                        placeholderTextColor={C.text3}
-                        onChangeText={v => updateDraftFueling(sport, 'carbs_per_interval_g', parseInt(v) || 0)}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.fuelingFieldLabel}>Interval (minuten)</Text>
-                      <TextInput
-                        style={[styles.input, { marginBottom: 0 }]}
-                        value={String(draft.interval_min)}
-                        keyboardType="numeric"
-                        placeholderTextColor={C.text3}
-                        onChangeText={v => updateDraftFueling(sport, 'interval_min', parseInt(v) || 0)}
-                      />
-                    </View>
-                  </View>
-
-                  {draft.threshold_min > 0 && draft.interval_min > 0 && (
-                    <View style={styles.fuelingPreview}>
-                      <Ionicons name="information-circle-outline" size={13} color={C.accent2} />
-                      <Text style={styles.fuelingPreviewText}>
-                        Bij trainingen langer dan {draft.threshold_min} min: elke {draft.interval_min} min {draft.carbs_per_interval_g}g koolhydraten.
-                      </Text>
-                    </View>
-                  )}
-
-                  <Pressable
-                    style={[styles.saveBtn, (!isDirtyFueling || isSaving) && styles.saveBtnDisabled]}
-                    onPress={() => saveFuelingConfig(sport)}
-                    disabled={!isDirtyFueling || isSaving}
-                  >
-                    <Text style={styles.saveBtnText}>{isSaving ? 'Opslaan…' : 'Opslaan'}</Text>
-                  </Pressable>
-                </View>
-              )
-            })}
-          </>
-        )}
+                )
+              })}
+            </>
+          )
+        })()}
 
       </ScrollView>
     </SafeAreaView>
@@ -786,12 +822,12 @@ const styles = StyleSheet.create({
   stravaLabel: { fontSize: 14, fontWeight: '700', color: C.text1 },
   stravaStatus: { fontSize: 13, color: C.text2, marginTop: 2 },
   stravaBtn: { backgroundColor: C.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
-  stravaBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  stravaBtnText: { color: C.white, fontWeight: '700', fontSize: 13 },
   fieldGroup: { marginTop: 14 },
   fieldLabel: { fontSize: 11, fontWeight: '700', color: C.text2, marginBottom: 5, textTransform: 'uppercase' },
   saveBtn: { backgroundColor: C.accent, padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 24 },
   saveBtnDisabled: { opacity: 0.35 },
-  saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  saveBtnText: { color: C.white, fontWeight: '700', fontSize: 15 },
   coachRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: C.surface, borderRadius: 14, padding: 14, marginTop: 8,
@@ -819,7 +855,7 @@ const styles = StyleSheet.create({
   zoneMeta: { fontSize: 13, color: C.text2, marginTop: 2 },
   editHint: { fontSize: 13, color: C.accent, fontWeight: '600' },
   zoneSaveBtn: { flex: 1, backgroundColor: C.accent, padding: 11, borderRadius: 8, alignItems: 'center', marginTop: 4 },
-  zoneSaveBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  zoneSaveBtnText: { color: C.white, fontWeight: '700', fontSize: 14 },
   zoneCancelBtn: { flex: 1, padding: 11, borderRadius: 8, alignItems: 'center', marginTop: 4 },
   zoneCancelBtnText: { color: C.text2, fontSize: 14 },
   inputRow: { flexDirection: 'row', gap: 10 },
@@ -844,7 +880,7 @@ const styles = StyleSheet.create({
   },
   modeBtnActive: { backgroundColor: C.accent, borderColor: C.accent },
   modeBtnText: { fontSize: 12, fontWeight: '600', color: C.text2 },
-  modeBtnTextActive: { color: '#fff' },
+  modeBtnTextActive: { color: C.white },
   editSchemaBtn: { backgroundColor: C.accentBg, borderRadius: 8, padding: 11, alignItems: 'center' },
   editSchemaBtnText: { color: C.accent, fontWeight: '700', fontSize: 13 },
   linkLabel: { fontSize: 11, fontWeight: '700', color: C.text3, marginBottom: 8, textTransform: 'uppercase' },
@@ -855,7 +891,7 @@ const styles = StyleSheet.create({
   },
   chipActive: { backgroundColor: C.accent, borderColor: C.accent },
   chipText: { fontSize: 13, fontWeight: '600', color: C.text2 },
-  chipTextActive: { color: '#fff' },
+  chipTextActive: { color: C.white },
   viewSchemaBtn: { paddingTop: 4 },
   viewSchemaBtnText: { color: C.accent, fontSize: 13, fontWeight: '600' },
 
@@ -876,7 +912,7 @@ const styles = StyleSheet.create({
   presetChipText: { fontSize: 13, fontWeight: '600', color: C.accent },
   addSportRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   addSportBtn: { backgroundColor: C.accent, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 8 },
-  addSportBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  addSportBtnText: { color: C.white, fontWeight: '700', fontSize: 14 },
 
   // Meal plan
   mealCountRow: {
@@ -915,4 +951,21 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface2, borderRadius: 10, padding: 10, marginBottom: 14,
   },
   fuelingPreviewText: { flex: 1, fontSize: 12, color: C.text2, lineHeight: 17 },
+
+  fuelingOverview: {
+    backgroundColor: C.surface2, borderRadius: 12,
+    padding: 12, marginBottom: 16,
+    borderWidth: 1, borderColor: C.border,
+  },
+  fuelingOverviewTitle: {
+    fontSize: 10, fontWeight: '700', color: C.text3,
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8,
+  },
+  fuelingOverviewRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.divider,
+  },
+  fuelingOverviewSport: { fontSize: 14, fontWeight: '700', color: C.text1, flex: 1 },
+  fuelingOverviewDetail: { fontSize: 12, color: C.text3, flex: 2, paddingRight: 8 },
+  fuelingDeleteBtn: { padding: 4 },
 })

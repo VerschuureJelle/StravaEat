@@ -215,7 +215,7 @@ export default function CoachHubScreen() {
 
             {myCoaches.length === 0 ? (
               <View style={st.emptyCard}>
-                <Ionicons name="people-outline" size={40} color="#e0e0e0" />
+                <Ionicons name="people-outline" size={40} color={C.border} />
                 <Text style={st.emptyText}>No coach connected yet</Text>
                 <Text style={st.emptyNote}>Generate an invite code and share it with your coach.</Text>
               </View>
@@ -247,7 +247,7 @@ export default function CoachHubScreen() {
                         value={c[field]}
                         onValueChange={v => updatePrivacy(c.coach_id, field, v)}
                         trackColor={{ true: C.accent, false: C.surface3 }}
-                        thumbColor="#fff"
+                        thumbColor={C.white}
                       />
                     </View>
                   ))}
@@ -265,7 +265,7 @@ export default function CoachHubScreen() {
                   <Text style={st.codeText}>{invite.code}</Text>
                   <Text style={st.codeExpiry}>{expiresLabel}</Text>
                   <Pressable style={st.shareBtn} onPress={shareInvite}>
-                    <Ionicons name="share-outline" size={16} color="#fff" />
+                    <Ionicons name="share-outline" size={16} color={C.white} />
                     <Text style={st.shareBtnText}>Share code</Text>
                   </Pressable>
                 </View>
@@ -276,7 +276,7 @@ export default function CoachHubScreen() {
                   disabled={loadingInvite}
                 >
                   {loadingInvite
-                    ? <ActivityIndicator color="#fff" size="small" />
+                    ? <ActivityIndicator color={C.white} size="small" />
                     : <Text style={st.actionBtnText}>Generate code</Text>
                   }
                 </Pressable>
@@ -306,7 +306,7 @@ export default function CoachHubScreen() {
                   disabled={!codeInput.trim() || loadingAccept}
                 >
                   {loadingAccept
-                    ? <ActivityIndicator color="#fff" size="small" />
+                    ? <ActivityIndicator color={C.white} size="small" />
                     : <Text style={st.goBtnText}>Connect</Text>
                   }
                 </Pressable>
@@ -315,7 +315,7 @@ export default function CoachHubScreen() {
 
             {myAthletes.length === 0 ? (
               <View style={st.emptyCard}>
-                <Ionicons name="fitness-outline" size={40} color="#e0e0e0" />
+                <Ionicons name="fitness-outline" size={40} color={C.border} />
                 <Text style={st.emptyText}>No athletes yet</Text>
               </View>
             ) : (
@@ -353,7 +353,7 @@ const st = StyleSheet.create({
   card: {
     backgroundColor: C.surface, borderRadius: 16, padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: C.border,
-    shadowColor: '#1E1B4B', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    shadowColor: C.accent, shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
   cardTitle: { fontSize: 15, fontWeight: '700', color: C.text1, marginBottom: 4 },
   cardNote: { fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 18 },
@@ -369,7 +369,7 @@ const st = StyleSheet.create({
   coachCard: {
     backgroundColor: C.surface, borderRadius: 16, padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: C.border,
-    shadowColor: '#1E1B4B', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    shadowColor: C.accent, shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
   coachCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
   coachAvatar: {
@@ -378,7 +378,7 @@ const st = StyleSheet.create({
   },
   coachName: { flex: 1, fontSize: 16, fontWeight: '700', color: C.text1 },
   revokeBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: 'rgba(239,83,80,0.1)' },
-  revokeBtnText: { fontSize: 12, fontWeight: '700', color: '#EF5350' },
+  revokeBtnText: { fontSize: 12, fontWeight: '700', color: C.danger },
 
   privacyLabel: { fontSize: 12, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
   privacyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6, borderTopWidth: 1, borderTopColor: C.divider },
@@ -392,14 +392,14 @@ const st = StyleSheet.create({
     backgroundColor: C.accent, borderRadius: 10,
     paddingHorizontal: 20, paddingVertical: 10, marginTop: 4,
   },
-  shareBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  shareBtnText: { color: C.white, fontWeight: '700', fontSize: 14 },
 
   actionBtn: {
     backgroundColor: C.accent, borderRadius: 10,
     paddingVertical: 12, alignItems: 'center',
   },
   actionBtnDisabled: { opacity: 0.5 },
-  actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  actionBtnText: { color: C.white, fontWeight: '700', fontSize: 15 },
 
   codeInputRow: { flexDirection: 'row', gap: 10 },
   codeInput: {
@@ -412,7 +412,7 @@ const st = StyleSheet.create({
     paddingHorizontal: 18, justifyContent: 'center',
   },
   goBtnDisabled: { opacity: 0.4 },
-  goBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  goBtnText: { color: C.white, fontWeight: '700', fontSize: 15 },
 
   athleteRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
