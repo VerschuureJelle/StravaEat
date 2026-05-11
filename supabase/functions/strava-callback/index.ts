@@ -9,7 +9,7 @@ Deno.serve(async (req) => {
   const url = new URL(req.url)
   const code = url.searchParams.get('code')
   const error = url.searchParams.get('error')
-  const state = url.searchParams.get('state') // existing user ID if linking from onboarding
+  const state = url.searchParams.get('state')
 
   const appScheme = 'stravaeat://auth'
 
@@ -45,24 +45,41 @@ Deno.serve(async (req) => {
     strava_access_token: tokens.access_token,
     strava_refresh_token: tokens.refresh_token,
     strava_token_expires_at: new Date(tokens.expires_at * 1000).toISOString(),
+    // Clear the used state token
+    pending_oauth_state: null,
+    pending_oauth_state_expires_at: null,
   }
 
-  // If state contains an existing user ID, link Strava to that account
+  // If state is present, validate it against the DB to find the user to link
   if (state) {
+    const { data: userRow } = await supabase
+      .from('users')
+      .select('id, pending_oauth_state_expires_at')
+      .eq('pending_oauth_state', state)
+      .maybeSingle()
+
+    if (!userRow) {
+      return Response.redirect(`${appScheme}?error=invalid_state`)
+    }
+
+    const expiresAt = new Date(userRow.pending_oauth_state_expires_at).getTime()
+    if (Date.now() > expiresAt) {
+      return Response.redirect(`${appScheme}?error=state_expired`)
+    }
+
     const { error: updateError } = await supabase
       .from('users')
       .update(stravaTokenData)
-      .eq('id', state)
+      .eq('id', userRow.id)
 
     if (updateError) {
       return Response.redirect(`${appScheme}?error=link_failed`)
     }
 
-    // Signal to app that linking succeeded (no new session needed)
     return Response.redirect(`${appScheme}?linked=true`)
   }
 
-  // No state — this is a fresh Strava-only sign-in, find or create user
+  // No state — fresh Strava-only sign-in: find or create user by strava_id
   const email = `strava_${athlete.id}@stravaeat.internal`
 
   const { data: existingProfile } = await supabase

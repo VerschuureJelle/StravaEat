@@ -140,11 +140,12 @@ export default function NutritionScreen() {
     const kcal = parseInt(foodKcal)
     if (!foodName.trim()) { Alert.alert('Missing name', 'Enter a food name.'); return }
     if (isNaN(kcal) || kcal <= 0) { Alert.alert('Invalid kcal', 'Enter a positive calorie amount.'); return }
+    if (kcal > 5000) { Alert.alert('Invalid kcal', 'Enter a value of 5000 kcal or less.'); return }
     if (!userId) return
     setAdding(true)
-    const protein = foodProtein ? parseFloat(foodProtein) : null
-    const fat = foodFat ? parseFloat(foodFat) : null
-    const carb = foodCarb ? parseFloat(foodCarb) : null
+    const protein = foodProtein ? Math.min(Math.max(parseFloat(foodProtein), 0), 500) : null
+    const fat = foodFat ? Math.min(Math.max(parseFloat(foodFat), 0), 500) : null
+    const carb = foodCarb ? Math.min(Math.max(parseFloat(foodCarb), 0), 500) : null
     const { error } = await supabase.from('food_logs').insert({
       user_id: userId, date: todayStr, name: foodName.trim(), kcal,
       protein_g: isNaN(protein as number) ? null : protein,

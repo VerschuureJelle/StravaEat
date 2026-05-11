@@ -2,16 +2,12 @@ import { useState, useEffect } from 'react'
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
-import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
+import { initiateStravaOAuth } from '../../lib/stravaAuth'
 import { C } from '../../lib/theme'
 import { generateZonesFromMaxHR } from '../../constants/zones'
 import type { SportHistory, Sex } from '../../types'
-
-const STRAVA_CLIENT_ID = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID!
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
-const CALLBACK_URL = `${SUPABASE_URL}/functions/v1/strava-callback`
 
 type OnboardingStep = 'strava' | 'profile'
 
@@ -73,22 +69,7 @@ export default function OnboardingScreen() {
     }
   }
 
-  const handleConnectStrava = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const params = new URLSearchParams({
-      client_id: STRAVA_CLIENT_ID,
-      redirect_uri: CALLBACK_URL,
-      response_type: 'code',
-      scope: 'activity:read_all',
-      approval_prompt: 'auto',
-      state: user.id,
-    })
-    await WebBrowser.openAuthSessionAsync(
-      `https://www.strava.com/oauth/authorize?${params}`,
-      'stravaeat://auth',
-    )
-  }
+  const handleConnectStrava = () => initiateStravaOAuth()
 
   const maxHRNum = parseInt(data.max_hr)
   const previewZones = maxHRNum > 0 ? generateZonesFromMaxHR(maxHRNum) : null

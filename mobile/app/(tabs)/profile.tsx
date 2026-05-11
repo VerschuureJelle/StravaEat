@@ -1,15 +1,11 @@
 import { useEffect, useState } from 'react'
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
+import { initiateStravaOAuth } from '../../lib/stravaAuth'
 import { C } from '../../lib/theme'
 import type { UserProfile } from '../../types'
-
-const STRAVA_CLIENT_ID = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID!
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
-const CALLBACK_URL = `${SUPABASE_URL}/functions/v1/strava-callback`
 
 export default function ProfileScreen() {
   const [profile, setProfile] = useState<Partial<UserProfile>>({})
@@ -38,22 +34,7 @@ export default function ProfileScreen() {
     }
   }
 
-  const handleConnectStrava = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const params = new URLSearchParams({
-      client_id: STRAVA_CLIENT_ID,
-      redirect_uri: CALLBACK_URL,
-      response_type: 'code',
-      scope: 'activity:read_all',
-      approval_prompt: 'force',
-      state: user.id,
-    })
-    await WebBrowser.openAuthSessionAsync(
-      `https://www.strava.com/oauth/authorize?${params}`,
-      'stravaeat://auth',
-    )
-  }
+  const handleConnectStrava = () => initiateStravaOAuth()
 
   async function save() {
     const { data: { user } } = await supabase.auth.getUser()

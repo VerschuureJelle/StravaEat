@@ -151,6 +151,12 @@ async function getValidStravaToken(
     }),
   })
 
+  if (!res.ok) {
+    const errText = await res.text()
+    console.error('Strava token refresh failed:', res.status, errText)
+    throw new Error('strava_auth_expired')
+  }
+
   const tokens = await res.json()
 
   await supabase.from('users').update({

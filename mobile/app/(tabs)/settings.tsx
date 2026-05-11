@@ -6,16 +6,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
-import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
+import { initiateStravaOAuth } from '../../lib/stravaAuth'
 import { useAppMode } from '../../contexts/AppModeContext'
 import { C } from '../../lib/theme'
 import type { UserProfile, HeartRateZone, MealTemplate, UserSport } from '../../types'
-
-const STRAVA_CLIENT_ID = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID!
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
-const CALLBACK_URL = `${SUPABASE_URL}/functions/v1/strava-callback`
 
 const COMMON_SPORTS = [
   'Run', 'Ride', 'Swim', 'Walk', 'Strength Training',
@@ -177,22 +173,7 @@ export default function SettingsScreen() {
     }
   }
 
-  async function handleConnectStrava() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const params = new URLSearchParams({
-      client_id: STRAVA_CLIENT_ID,
-      redirect_uri: CALLBACK_URL,
-      response_type: 'code',
-      scope: 'activity:read_all',
-      approval_prompt: 'force',
-      state: user.id,
-    })
-    await WebBrowser.openAuthSessionAsync(
-      `https://www.strava.com/oauth/authorize?${params}`,
-      'stravaeat://auth',
-    )
-  }
+  const handleConnectStrava = () => initiateStravaOAuth()
 
   async function saveProfile() {
     if (!userId || !isDirty) return
@@ -415,7 +396,12 @@ export default function SettingsScreen() {
               />
             </View>
 
-            <Pressable style={styles.signOutBtn} onPress={() => supabase.auth.signOut()}>
+            <Pressable style={styles.signOutBtn} onPress={async () => {
+              if (userId) {
+                await supabase.from('users').update({ push_token: null }).eq('id', userId)
+              }
+              await supabase.auth.signOut()
+            }}>
               <Text style={styles.signOutText}>Sign out</Text>
             </Pressable>
           </>
