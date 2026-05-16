@@ -15,7 +15,11 @@ export default function RootLayout() {
     // Check for an existing persisted session on app start
     supabase.auth.getSession().then(({ data: { session } }) => {
       redirect(session != null)
-      if (session) { registerForNotifications(); scheduleDailyMealNotificationsForUser(session.user.id) }
+      if (session) {
+        registerForNotifications()
+        scheduleDailyMealNotificationsForUser(session.user.id)
+        supabase.functions.invoke('sync-recent').catch(() => {})
+      }
       setReady(true)
     })
 

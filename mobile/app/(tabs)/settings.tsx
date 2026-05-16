@@ -11,7 +11,8 @@ import { supabase } from '../../lib/supabase'
 import { initiateStravaOAuth } from '../../lib/stravaAuth'
 import { useAppMode } from '../../contexts/AppModeContext'
 import { C } from '../../lib/theme'
-import type { UserProfile, HeartRateZone, MealTemplate, UserSport } from '../../types'
+import { SEVERITY_LABELS, SEVERITY_DESCRIPTIONS } from '../../lib/periodConfig'
+import type { UserProfile, HeartRateZone, MealTemplate, UserSport, PeriodSeverity } from '../../types'
 
 const COMMON_SPORTS = [
   'Run', 'Ride', 'Swim', 'Walk', 'Strength Training',
@@ -32,7 +33,7 @@ const MEAL_DEFAULTS: { name: string; time: string }[] = [
 type SettingsTab = 'profile' | 'zones' | 'meals' | 'fueling'
 type SportMode = 'standard' | 'custom' | 'linked'
 interface SportConfig { mode: SportMode; linkedTo: string | null }
-interface DraftMeal { meal_index: number; name: string; scheduled_time: string }
+interface DraftMeal { meal_index: number; name: string; scheduled_time: string; kcal: number | null }
 interface FuelingConfig { threshold_min: number; carbs_per_interval_g: number; interval_min: number }
 
 function normalizeType(type: string): string {
@@ -67,7 +68,7 @@ export default function SettingsScreen() {
 
   // Meal plan
   const [draftMeals, setDraftMeals] = useState<DraftMeal[]>([
-    { meal_index: 0, name: 'Breakfast', scheduled_time: '07:00' },
+    { meal_index: 0, name: 'Breakfast', scheduled_time: '07:00', kcal: null },
   ])
   const [savingMeals, setSavingMeals] = useState(false)
 
@@ -75,6 +76,13 @@ export default function SettingsScreen() {
   const [fuelingConfigs, setFuelingConfigs] = useState<Record<string, FuelingConfig>>({})
   const [draftFueling, setDraftFueling] = useState<Record<string, FuelingConfig>>({})
   const [savingFueling, setSavingFueling] = useState<string | null>(null)
+
+  // Period tracking
+  const [onPeriod, setOnPeriod] = useState(false)
+  const [periodSeverity, setPeriodSeverity] = useState<PeriodSeverity>('minor')
+
+  // Display preferences
+  const [hideCalories, setHideCalories] = useState(false)
 
   const isDirty = JSON.stringify(editedProfile) !== JSON.stringify(savedProfile)
 
@@ -102,6 +110,9 @@ export default function SettingsScreen() {
     if (profileRes.data) {
       setSavedProfile(profileRes.data)
       setEditedProfile(profileRes.data)
+      setOnPeriod(profileRes.data.on_period ?? false)
+      setPeriodSeverity(profileRes.data.period_severity ?? 'minor')
+      setHideCalories(profileRes.data.hide_calories ?? false)
     }
     setZones(zonesRes.data ?? [])
 
@@ -129,7 +140,7 @@ export default function SettingsScreen() {
     // Meal templates
     const meals = (mealRes.data ?? []) as MealTemplate[]
     if (meals.length > 0) {
-      setDraftMeals(meals.map(m => ({ meal_index: m.meal_index, name: m.name, scheduled_time: m.scheduled_time })))
+      setDraftMeals(meals.map(m => ({ meal_index: m.meal_index, name: m.name, scheduled_time: m.scheduled_time, kcal: m.kcal ?? null })))
     }
 
     // Planner sports — auto-populate from activities (normalized, no Virtual*) if empty
@@ -174,6 +185,14 @@ export default function SettingsScreen() {
   }
 
   const handleConnectStrava = () => initiateStravaOAuth()
+
+  async function savePeriodState(newOnPeriod: boolean, newSeverity: PeriodSeverity) {
+    if (!userId) return
+    await supabase.from('users').update({
+      on_period: newOnPeriod,
+      period_severity: newOnPeriod ? newSeverity : null,
+    }).eq('id', userId)
+  }
 
   async function saveProfile() {
     if (!userId || !isDirty) return
@@ -263,6 +282,7 @@ export default function SettingsScreen() {
       meal_index: i,
       name: m.name || `Meal ${i + 1}`,
       scheduled_time: m.scheduled_time || '12:00',
+      kcal: m.kcal ?? null,
     }))
     await supabase.from('meal_templates').delete().eq('user_id', userId).gte('meal_index', draftMeals.length)
     const { error } = await supabase.from('meal_templates').upsert(toSave, { onConflict: 'user_id,meal_index' })
@@ -275,7 +295,7 @@ export default function SettingsScreen() {
     if (draftMeals.length >= 8) return
     const i = draftMeals.length
     const def = MEAL_DEFAULTS[i] ?? { name: `Meal ${i + 1}`, time: '12:00' }
-    setDraftMeals(prev => [...prev, { meal_index: i, name: def.name, scheduled_time: def.time }])
+    setDraftMeals(prev => [...prev, { meal_index: i, name: def.name, scheduled_time: def.time, kcal: null }])
   }
 
   function removeMeal() {
@@ -285,6 +305,11 @@ export default function SettingsScreen() {
 
   function updateDraftMeal(index: number, field: 'name' | 'scheduled_time', value: string) {
     setDraftMeals(prev => prev.map((m, i) => i === index ? { ...m, [field]: value } : m))
+  }
+
+  function updateDraftMealKcal(index: number, value: string) {
+    const n = value ? parseInt(value) : null
+    setDraftMeals(prev => prev.map((m, i) => i === index ? { ...m, kcal: (n != null && !isNaN(n) && n > 0) ? n : null } : m))
   }
 
   const profileField = (label: string, key: keyof UserProfile, numeric?: boolean) => (
@@ -349,8 +374,40 @@ export default function SettingsScreen() {
             {profileField('Height (cm)', 'height_cm', true)}
             {profileField('Max Heart Rate (bpm)', 'max_hr', true)}
             {profileField('Resting Heart Rate (bpm)', 'resting_hr', true)}
-            {profileField('Daily calorie target (kcal)', 'daily_kcal_target', true)}
             {profileField('FTP (watts, cycling)', 'ftp_watts', true)}
+
+            <View style={[styles.fieldGroup, styles.prefRow]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>Hide calorie numbers</Text>
+                <Text style={styles.prefNote}>Show a progress bar instead of exact amounts on the home screen</Text>
+              </View>
+              <Switch
+                value={hideCalories}
+                onValueChange={async v => {
+                  setHideCalories(v)
+                  if (userId) await supabase.from('users').update({ hide_calories: v }).eq('id', userId)
+                }}
+                trackColor={{ true: C.accent, false: C.surface3 }}
+                thumbColor={C.white}
+              />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Sex</Text>
+              <View style={styles.sexRow}>
+                {(['male', 'female', 'other'] as const).map(s => (
+                  <Pressable
+                    key={s}
+                    style={[styles.sexBtn, editedProfile.sex === s && styles.sexBtnActive]}
+                    onPress={() => setEditedProfile(p => ({ ...p, sex: s }))}
+                  >
+                    <Text style={[styles.sexBtnText, editedProfile.sex === s && styles.sexBtnTextActive]}>
+                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
 
             <Pressable
               style={[styles.saveBtn, (!isDirty || savingProfile) && styles.saveBtnDisabled]}
@@ -395,6 +452,58 @@ export default function SettingsScreen() {
                 thumbColor={C.white}
               />
             </View>
+
+            {/* Period tracking — only visible for female users */}
+            {editedProfile.sex === 'female' && (
+              <View style={styles.periodCard}>
+                <View style={styles.periodToggleRow}>
+                  <View style={styles.periodToggleLeft}>
+                    <Ionicons name="rose-outline" size={20} color={C.run} />
+                    <View>
+                      <Text style={styles.periodToggleTitle}>On period</Text>
+                      <Text style={styles.periodToggleNote}>Adjusts training intensity automatically</Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={onPeriod}
+                    onValueChange={v => {
+                      setOnPeriod(v)
+                      savePeriodState(v, periodSeverity)
+                    }}
+                    trackColor={{ true: C.run, false: C.surface3 }}
+                    thumbColor={C.white}
+                  />
+                </View>
+
+                {onPeriod && (
+                  <View style={styles.periodSeveritySection}>
+                    <Text style={styles.periodSeverityLabel}>Symptom severity</Text>
+                    {(['minor', 'medium', 'severe'] as PeriodSeverity[]).map(level => (
+                      <Pressable
+                        key={level}
+                        style={[styles.periodSeverityBtn, periodSeverity === level && styles.periodSeverityBtnActive]}
+                        onPress={() => {
+                          setPeriodSeverity(level)
+                          savePeriodState(true, level)
+                        }}
+                      >
+                        <View style={styles.periodSeverityBtnInner}>
+                          <Text style={[styles.periodSeverityBtnTitle, periodSeverity === level && styles.periodSeverityBtnTitleActive]}>
+                            {SEVERITY_LABELS[level]}
+                          </Text>
+                          <Text style={[styles.periodSeverityBtnDesc, periodSeverity === level && styles.periodSeverityBtnDescActive]}>
+                            {SEVERITY_DESCRIPTIONS[level]}
+                          </Text>
+                        </View>
+                        {periodSeverity === level && (
+                          <Ionicons name="checkmark-circle" size={18} color={C.run} />
+                        )}
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
 
             <Pressable style={styles.signOutBtn} onPress={async () => {
               if (userId) {
@@ -594,12 +703,23 @@ export default function SettingsScreen() {
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>Time (HH:MM)</Text>
                   <TextInput
-                    style={[styles.input, { marginBottom: 0 }]}
+                    style={styles.input}
                     value={meal.scheduled_time}
                     onChangeText={v => updateDraftMeal(i, 'scheduled_time', v)}
                     placeholder={MEAL_DEFAULTS[i]?.time ?? '12:00'}
                     placeholderTextColor={C.text3}
                     keyboardType="numbers-and-punctuation"
+                  />
+                </View>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Default kcal (optional)</Text>
+                  <TextInput
+                    style={[styles.input, { marginBottom: 0 }]}
+                    value={meal.kcal != null ? String(meal.kcal) : ''}
+                    onChangeText={v => updateDraftMealKcal(i, v)}
+                    placeholder="e.g. 450"
+                    placeholderTextColor={C.text3}
+                    keyboardType="numeric"
                   />
                 </View>
               </View>
@@ -954,4 +1074,50 @@ const styles = StyleSheet.create({
   fuelingOverviewSport: { fontSize: 14, fontWeight: '700', color: C.text1, flex: 1 },
   fuelingOverviewDetail: { fontSize: 12, color: C.text3, flex: 2, paddingRight: 8 },
   fuelingDeleteBtn: { padding: 4 },
+
+  // Display preferences
+  prefRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  prefNote: { fontSize: 11, color: C.text3, marginTop: 2, lineHeight: 15 },
+
+  // Sex selector
+  sexRow: { flexDirection: 'row', gap: 8 },
+  sexBtn: {
+    flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center',
+    borderWidth: 1, borderColor: C.border, backgroundColor: C.surface,
+  },
+  sexBtnActive: { borderColor: C.accent, backgroundColor: C.accentBg },
+  sexBtnText: { fontSize: 14, fontWeight: '600', color: C.text2 },
+  sexBtnTextActive: { color: C.accent },
+
+  // Period tracking
+  periodCard: {
+    borderWidth: 1, borderColor: C.border, borderRadius: 16,
+    backgroundColor: C.surface, marginBottom: 12, overflow: 'hidden',
+  },
+  periodToggleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: 16,
+  },
+  periodToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  periodToggleTitle: { fontSize: 15, fontWeight: '700', color: C.text1 },
+  periodToggleNote: { fontSize: 12, color: C.text3, marginTop: 1 },
+  periodSeveritySection: {
+    borderTopWidth: 1, borderTopColor: C.border,
+    padding: 16, gap: 8,
+  },
+  periodSeverityLabel: {
+    fontSize: 10, fontWeight: '700', color: C.text3,
+    textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4,
+  },
+  periodSeverityBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderWidth: 1, borderColor: C.border, borderRadius: 12,
+    padding: 12, backgroundColor: C.surface2,
+  },
+  periodSeverityBtnActive: { borderColor: C.run, backgroundColor: 'rgba(129,140,248,0.08)' },
+  periodSeverityBtnInner: { flex: 1 },
+  periodSeverityBtnTitle: { fontSize: 14, fontWeight: '700', color: C.text1 },
+  periodSeverityBtnTitleActive: { color: C.run },
+  periodSeverityBtnDesc: { fontSize: 12, color: C.text3, marginTop: 2 },
+  periodSeverityBtnDescActive: { color: C.run },
 })

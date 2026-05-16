@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView, Modal,
   StyleSheet, Alert, ActivityIndicator,
@@ -8,9 +8,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { C } from '../../lib/theme'
+import { getZoneAdjustment, SEVERITY_LABELS } from '../../lib/periodConfig'
 import type {
   HeartRateZone, BurnSchemaPoint, SportEnergySetting, PlannedWorkout,
-  TrainingProgram, TrainingProgramSession, ProgramType,
+  TrainingProgram, TrainingProgramSession, ProgramType, PeriodSeverity,
 } from '../../types'
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -85,16 +86,7 @@ function interpolateKcalPerHour(hr: number, pts: BurnSchemaPoint[]): number {
 
 // ─── types ─────────────────────────────────────────────────────────────────
 
-type PlannerMode = 'kcal' | 'build' | 'ai' | 'programs'
-
-interface ZoneSuggestion {
-  zone: HeartRateZone
-  midHR: number
-  kcalPerHour: number
-  durationMin: number
-  distanceFormatted: string | null
-  paceFormatted: string | null
-}
+type PlannerMode = 'build' | 'ai' | 'programs'
 
 interface WorkoutSegment {
   id: string
@@ -201,12 +193,7 @@ export default function PlannerScreen() {
   const [todayPlans, setTodayPlans] = useState<PlannedWorkout[]>([])
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null)
 
-  const [mode, setMode] = useState<PlannerMode>('kcal')
-
-  // kcal mode
-  const [targetKcal, setTargetKcal] = useState('500')
-  const [suggestions, setSuggestions] = useState<ZoneSuggestion[]>([])
-  const [calculated, setCalculated] = useState(false)
+  const [mode, setMode] = useState<PlannerMode>('build')
 
   // build mode
   const [segments, setSegments] = useState<WorkoutSegment[]>([
@@ -252,6 +239,10 @@ export default function PlannerScreen() {
   const [saving, setSaving] = useState(false)
   const [sportDropdownOpen, setSportDropdownOpen] = useState(false)
 
+  // Period tracking
+  const [onPeriod, setOnPeriod] = useState(false)
+  const [periodSeverity, setPeriodSeverity] = useState<PeriodSeverity>('minor')
+
   useEffect(() => { load() }, [])
 
   async function load() {
@@ -262,7 +253,7 @@ export default function PlannerScreen() {
     const todayStr = localDate()
 
     const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes, userSportsRes, programRes] = await Promise.all([
-      supabase.from('users').select('weight_kg, ftp_watts').eq('id', user.id).single(),
+      supabase.from('users').select('weight_kg, ftp_watts, on_period, period_severity').eq('id', user.id).single(),
       supabase.from('activities').select('type, distance_m, duration_sec').eq('user_id', user.id),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
@@ -274,6 +265,8 @@ export default function PlannerScreen() {
 
     setWeightKg(profileRes.data?.weight_kg ?? null)
     setFtpWatts(profileRes.data?.ftp_watts ?? null)
+    setOnPeriod(profileRes.data?.on_period ?? false)
+    setPeriodSeverity(profileRes.data?.period_severity ?? 'minor')
     setZones(zonesRes.data ?? [])
     setBurnSchema(burnRes.data ?? [])
     setSportSettings(settingsRes.data ?? [])
@@ -340,66 +333,6 @@ export default function PlannerScreen() {
     await supabase.from('planned_workouts').delete().eq('id', id)
     setTodayPlans(prev => prev.filter(p => p.id !== id))
     setDeletingPlanId(null)
-  }
-
-  // ─── kcal mode ─────────────────────────────────────────────────────────────
-
-  const calculate = useCallback(() => {
-    const kcal = parseFloat(targetKcal)
-    if (isNaN(kcal) || kcal <= 0) { Alert.alert('Invalid', 'Enter a positive calorie target.'); return }
-    if (zones.length === 0) { Alert.alert('No zones', 'Set up your heart rate zones in Settings first.'); return }
-    if (!weightKg) { Alert.alert('No weight', 'Add your weight in Settings → Personal Info first.'); return }
-
-    const avgSpeed = avgSpeedBySport[selectedSport] ?? null
-    const results: ZoneSuggestion[] = zones.map(zone => {
-      const midHR = Math.round((zone.min_bpm + zone.max_bpm) / 2)
-      const kcalPerHour = getKcalPerHour(zone)
-      const durationHours = kcal / kcalPerHour
-      const durationMin = Math.round(durationHours * 60)
-      const durationSec = durationHours * 3600
-
-      let distanceFormatted: string | null = null
-      let paceFormatted: string | null = null
-
-      if (avgSpeed && avgSpeed > 0) {
-        const distM = avgSpeed * durationSec
-        if (/swim/i.test(selectedSport)) {
-          distanceFormatted = `${Math.round(distM)} m`
-          const s = 100 / avgSpeed
-          paceFormatted = `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')} /100m`
-        } else if (/run|jog|walk/i.test(selectedSport)) {
-          distanceFormatted = `${(distM / 1000).toFixed(1)} km`
-          const s = 1000 / avgSpeed
-          paceFormatted = `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')} /km`
-        } else {
-          distanceFormatted = `${(distM / 1000).toFixed(1)} km`
-          paceFormatted = `${(avgSpeed * 3.6).toFixed(1)} km/h`
-        }
-      }
-
-      return { zone, midHR, kcalPerHour: Math.round(kcalPerHour), durationMin, distanceFormatted, paceFormatted }
-    })
-
-    setSuggestions(results)
-    setCalculated(true)
-  }, [targetKcal, selectedSport, zones, burnSchema, sportSettings, weightKg, avgSpeedBySport])
-
-  async function planFromKcalMode(suggestion: ZoneSuggestion) {
-    if (!userId) return
-    setSaving(true)
-    const { error } = await supabase.from('planned_workouts').insert({
-      user_id: userId,
-      sport_type: selectedSport,
-      target_kcal: Math.round(parseFloat(targetKcal)),
-      zone_id: suggestion.zone.id,
-      target_duration_min: suggestion.durationMin,
-      target_hr: suggestion.midHR,
-      planned_for: localDate(),
-    })
-    setSaving(false)
-    if (error) { Alert.alert('Error', error.message); return }
-    Alert.alert('Planned!', `${selectedSport} in ${suggestion.zone.name} added to today.`)
-    load()
   }
 
   // ─── build mode ─────────────────────────────────────────────────────────────
@@ -504,7 +437,11 @@ export default function PlannerScreen() {
         aiNotes.trim() ? `Additional instructions: ${aiNotes.trim()}` : null,
       ].filter(Boolean).join('\n\n')
       const res = await supabase.functions.invoke('ai-coach', {
-        body: { message, sport: selectedSport || undefined },
+        body: {
+          message,
+          sport: selectedSport || undefined,
+          period_severity: onPeriod ? periodSeverity : null,
+        },
       })
       if (res.error) {
         const body = await res.error.context?.json?.().catch(() => null)
@@ -631,6 +568,7 @@ export default function PlannerScreen() {
           starting_pace_sec_km: paceSecTotal ?? 0,
           calibration_notes: calibrationNotes.trim() || null,
           subtype_config: buildSubtypeConfig(),
+          period_severity: onPeriod ? periodSeverity : null,
         }),
       })
       const json = await res.json()
@@ -790,10 +728,9 @@ export default function PlannerScreen() {
           </View>
         )}
 
-        {/* Mode selector — 2×2 grid */}
+        {/* Mode selector */}
         <View style={st.modeGrid}>
           {([
-            { key: 'kcal',     label: 'Target kcal',  icon: 'flame-outline'      as const },
             { key: 'build',    label: 'Build workout', icon: 'list-outline'       as const },
             { key: 'ai',       label: 'AI Coach',      icon: 'sparkles-outline'   as const },
             { key: 'programs', label: 'Programs',      icon: 'trophy-outline'     as const },
@@ -809,7 +746,7 @@ export default function PlannerScreen() {
           ))}
         </View>
 
-        {/* Sport selector — shown for kcal/build/ai modes */}
+        {/* Sport selector — shown for build/ai modes */}
         {mode !== 'programs' && (
           <>
             <Text style={st.label}>Sport</Text>
@@ -836,7 +773,6 @@ export default function PlannerScreen() {
                     onPress={() => {
                       setSelectedSport(sport)
                       setSportDropdownOpen(false)
-                      setCalculated(false)
                       setSegResult(null)
                     }}
                   >
@@ -849,83 +785,6 @@ export default function PlannerScreen() {
             </Pressable>
           </Pressable>
         </Modal>
-
-        {/* ─── KCAL MODE ────────────────────────────────────────────────────── */}
-        {mode === 'kcal' && (
-          <>
-            <Text style={st.label}>Target (kcal)</Text>
-            <View style={st.kcalRow}>
-              {[300, 400, 500, 600, 750, 1000].map(v => (
-                <Pressable
-                  key={v}
-                  style={[st.kcalPreset, targetKcal === String(v) && { backgroundColor: sportColor, borderColor: sportColor }]}
-                  onPress={() => { setTargetKcal(String(v)); setCalculated(false) }}
-                >
-                  <Text style={[st.kcalPresetText, targetKcal === String(v) && st.kcalPresetTextActive]}>{v}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <View style={st.kcalInputRow}>
-              <TextInput
-                style={st.kcalInput}
-                value={targetKcal}
-                onChangeText={v => { setTargetKcal(v); setCalculated(false) }}
-                keyboardType="numeric"
-                placeholder="Other amount"
-                placeholderTextColor={C.text3}
-              />
-              <Text style={st.kcalUnit}>kcal</Text>
-            </View>
-
-            <Pressable style={[st.calcBtn, { backgroundColor: sportColor }]} onPress={calculate}>
-              <Ionicons name="calculator-outline" size={18} color={C.white} />
-              <Text style={st.calcBtnText}>Calculate</Text>
-            </Pressable>
-
-            {calculated && suggestions.map(s => (
-              <View key={s.zone.id} style={[st.suggestionCard, { borderLeftColor: sportColor }]}>
-                <View style={st.suggestionTop}>
-                  <View>
-                    <Text style={st.zoneName}>{s.zone.name}</Text>
-                    <Text style={st.zoneHR}>{s.zone.min_bpm}–{s.zone.max_bpm} bpm · ~{s.midHR} bpm avg</Text>
-                  </View>
-                  <Text style={[st.duration, { color: sportColor }]}>{formatDuration(s.durationMin)}</Text>
-                </View>
-                <View style={st.suggestionMeta}>
-                  <View style={st.metaItem}>
-                    <Ionicons name="flame-outline" size={13} color={C.text3} />
-                    <Text style={st.metaText}>{s.kcalPerHour} kcal/hr</Text>
-                  </View>
-                  {s.distanceFormatted && (
-                    <View style={st.metaItem}>
-                      <Ionicons name="navigate-outline" size={13} color={C.text3} />
-                      <Text style={st.metaText}>{s.distanceFormatted}</Text>
-                    </View>
-                  )}
-                  {s.paceFormatted && (
-                    <View style={st.metaItem}>
-                      <Ionicons name="speedometer-outline" size={13} color={C.text3} />
-                      <Text style={st.metaText}>{s.paceFormatted}</Text>
-                    </View>
-                  )}
-                </View>
-                <Pressable
-                  style={[st.planBtn, saving && st.planBtnDisabled]}
-                  onPress={() => planFromKcalMode(s)}
-                  disabled={saving}
-                >
-                  {saving ? <ActivityIndicator size="small" color={C.accent} /> : <Text style={st.planBtnText}>Plan for today →</Text>}
-                </Pressable>
-              </View>
-            ))}
-
-            {calculated && suggestions.length === 0 && (
-              <View style={st.emptyBox}>
-                <Text style={st.emptyText}>No zones configured. Add HR zones in Settings first.</Text>
-              </View>
-            )}
-          </>
-        )}
 
         {/* ─── BUILD MODE ───────────────────────────────────────────────────── */}
         {mode === 'build' && (
@@ -1741,20 +1600,6 @@ const st = StyleSheet.create({
   },
   sportSheetRowText: { fontSize: 16, color: C.text1, flex: 1 },
 
-  kcalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  kcalPreset: {
-    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10,
-    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface2,
-  },
-  kcalPresetText: { fontSize: 14, fontWeight: '600', color: C.text2 },
-  kcalPresetTextActive: { color: C.white },
-  kcalInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 24 },
-  kcalInput: {
-    flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 10,
-    padding: 12, fontSize: 16, backgroundColor: C.surface2, color: C.text1,
-  },
-  kcalUnit: { fontSize: 14, color: C.text3, fontWeight: '600' },
-
   calcBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, padding: 15, borderRadius: 12, marginBottom: 24,
@@ -1806,16 +1651,6 @@ const st = StyleSheet.create({
   segBreakLabel: { fontSize: 13, fontWeight: '600', color: C.text1, marginBottom: 1 },
   segBreakMeta: { fontSize: 12, color: C.text3 },
 
-  // Suggestions (kcal mode)
-  suggestionCard: {
-    borderLeftWidth: 4, borderRadius: 12, backgroundColor: C.surface2,
-    padding: 16, marginBottom: 12,
-  },
-  suggestionTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  zoneName: { fontSize: 16, fontWeight: '700', color: C.text1, marginBottom: 2 },
-  zoneHR: { fontSize: 12, color: C.text3 },
-  duration: { fontSize: 26, fontWeight: '800' },
-  suggestionMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 14 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 13, color: C.text2 },
 
@@ -2023,4 +1858,5 @@ const st = StyleSheet.create({
   },
   aiGoalLabel: { fontSize: 14, fontWeight: '700', color: C.text1 },
   aiGoalNote: { fontSize: 11, color: C.text3 },
+
 })

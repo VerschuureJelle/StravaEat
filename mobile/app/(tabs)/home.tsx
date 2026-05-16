@@ -201,11 +201,15 @@ export default function HomeScreen() {
   const [connectedApp, setConnectedApp] = useState<TrainingApp>(null)
   const [fuelingSettings, setFuelingSettings] = useState<FuelingSetting[]>([])
   const [zoneMap, setZoneMap] = useState<Record<string, number>>({})
+  const [hideCalories, setHideCalories] = useState(false)
+  const [consumedKcal, setConsumedKcal] = useState(0)
+  const [onPeriod, setOnPeriod] = useState(false)
+  const [periodSeverity, setPeriodSeverity] = useState<'minor' | 'medium' | 'severe' | null>(null)
 
   const burnedToday = todayActivities.reduce((s, a) => s + a.total_kcal, 0)
   const plannedKcalToday = plannedWorkouts.reduce((s, p) => s + p.target_kcal, 0)
-  const totalTarget = dailyTarget != null ? dailyTarget + Math.round(burnedToday) : null
-  const projectedTotal = totalTarget != null ? totalTarget + plannedKcalToday : null
+  const totalTarget = dailyTarget != null ? Math.round(dailyTarget + burnedToday) : null
+  const projectedTotal = totalTarget != null ? Math.round(totalTarget + plannedKcalToday) : null
 
   useEffect(() => { loadWeather() }, [])
   useFocusEffect(useCallback(() => { loadProfileAndActivities() }, []))
@@ -215,8 +219,8 @@ export default function HomeScreen() {
     if (!user) return
     const todayDate = localDate()
     const todayISOStart = `${todayDate}T00:00:00`
-    const [profileRes, actsRes, plannedRes, zonesRes, fuelingRes] = await Promise.all([
-      supabase.from('users').select('name, daily_kcal_target').eq('id', user.id).single(),
+    const [profileRes, actsRes, plannedRes, zonesRes, fuelingRes, foodRes] = await Promise.all([
+      supabase.from('users').select('name, daily_kcal_target, hide_calories, on_period, period_severity').eq('id', user.id).single(),
       supabase.from('activities').select('id, name, type, total_kcal').eq('user_id', user.id)
         .gte('date', todayISOStart).not('total_kcal', 'is', null),
       supabase.from('planned_workouts')
@@ -224,9 +228,14 @@ export default function HomeScreen() {
         .eq('user_id', user.id).eq('planned_for', todayDate),
       supabase.from('heart_rate_zones').select('id, zone_number').eq('user_id', user.id),
       supabase.from('fueling_settings').select('sport_type, threshold_min, carbs_per_interval_g, interval_min').eq('user_id', user.id),
+      supabase.from('food_logs').select('kcal').eq('user_id', user.id).eq('date', todayDate),
     ])
     setUserName(profileRes.data?.name ?? null)
     setDailyTarget(profileRes.data?.daily_kcal_target ?? null)
+    setHideCalories(profileRes.data?.hide_calories ?? false)
+    setOnPeriod(profileRes.data?.on_period ?? false)
+    setPeriodSeverity(profileRes.data?.period_severity ?? null)
+    setConsumedKcal((foodRes.data ?? []).reduce((s: number, l: any) => s + (l.kcal ?? 0), 0))
     setTodayActivities(actsRes.data ?? [])
 
     // Bouw zone_id → zone_number map
@@ -314,20 +323,52 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Big kcal number */}
-          <Pressable onPress={() => setCalorieModalOpen(true)} style={st.heroKcalBlock}>
-            {displayKcal != null ? (
-              <>
-                <Text style={st.heroKcalNum}>{displayKcal.toLocaleString()}</Text>
-                <Text style={st.heroKcalLabel}>kcal today</Text>
-              </>
-            ) : (
-              <Text style={st.heroKcalEmpty}>Set a calorie target in Settings</Text>
-            )}
-          </Pressable>
+          {/* Big kcal number or progress bar */}
+          {hideCalories ? (
+            <View style={st.heroKcalBlock}>
+              {displayKcal != null ? (
+                <>
+                  <View style={st.heroProgressTrack}>
+                    <View style={[st.heroProgressFill, {
+                      width: `${Math.round(Math.min(consumedKcal / Math.max(displayKcal, 1), 1) * 100)}%` as any,
+                    }]} />
+                  </View>
+                  <Text style={[st.heroKcalLabel, { marginTop: 10 }]}>kcal today</Text>
+                </>
+              ) : (
+                <Text style={st.heroKcalEmpty}>Set a calorie target in Settings</Text>
+              )}
+            </View>
+          ) : (
+            <Pressable onPress={() => setCalorieModalOpen(true)} style={st.heroKcalBlock}>
+              {displayKcal != null ? (
+                <>
+                  <Text style={st.heroKcalNum}>{displayKcal.toLocaleString()}</Text>
+                  <Text style={st.heroKcalLabel}>kcal target today</Text>
+                  {(() => {
+                    const remaining = displayKcal - consumedKcal
+                    const isOver = remaining < 0
+                    return (
+                      <View style={st.heroKcalSubRow}>
+                        <Text style={st.heroKcalSub}>{consumedKcal.toLocaleString()} eaten</Text>
+                        <Text style={st.heroKcalSubDot}>·</Text>
+                        <Text style={[st.heroKcalSub, isOver && st.heroKcalSubOver]}>
+                          {isOver
+                            ? `${Math.abs(remaining).toLocaleString()} over`
+                            : `${remaining.toLocaleString()} remaining`}
+                        </Text>
+                      </View>
+                    )
+                  })()}
+                </>
+              ) : (
+                <Text style={st.heroKcalEmpty}>Set a calorie target in Settings</Text>
+              )}
+            </Pressable>
+          )}
 
-          {/* Stat chips */}
-          {dailyTarget != null && (
+          {/* Stat chips — hidden when hiding calories */}
+          {!hideCalories && dailyTarget != null && (
             <View style={st.heroChips}>
               <View style={st.heroChip}>
                 <Text style={st.heroChipNum}>{dailyTarget.toLocaleString()}</Text>
@@ -396,7 +437,12 @@ export default function HomeScreen() {
           <View style={st.card}>
             <Text style={st.cardTitle}>Today's workout</Text>
             {plannedWorkouts.length > 0 ? (
-              <PlannedWorkoutList workouts={plannedWorkouts} fuelingSettings={fuelingSettings} />
+              <PlannedWorkoutList
+                workouts={plannedWorkouts}
+                fuelingSettings={fuelingSettings}
+                onPeriod={onPeriod}
+                periodSeverity={periodSeverity}
+              />
             ) : connectedApp === null ? (
               <>
                 <Text style={st.connectNote}>
@@ -427,6 +473,7 @@ export default function HomeScreen() {
         activities={todayActivities}
         planned={plannedWorkouts}
         totalTarget={projectedTotal ?? totalTarget}
+        consumedKcal={consumedKcal}
         onClose={() => setCalorieModalOpen(false)}
       />
     </SafeAreaView>
@@ -524,16 +571,52 @@ function WeekForecast({ daily }: { daily: DailyPoint[] }) {
 
 // ─── Planned workout list ──────────────────────────────────────────────────
 
-function PlannedWorkoutList({ workouts, fuelingSettings }: { workouts: PlannedWorkoutItem[]; fuelingSettings: FuelingSetting[] }) {
+const PERIOD_ADVICE: Record<string, { intensityReduction: number; restRecommended: boolean; note: string }> = {
+  minor: {
+    intensityReduction: 0.20, restRecommended: false,
+    note: 'Minor symptoms: Z2 −20%, Z3 −30%, Z4 −40%. Keep the structure, lower the load.',
+  },
+  medium: {
+    intensityReduction: 0.40, restRecommended: false,
+    note: 'Moderate symptoms: Z2 −40%, Z3 −50%, replace all Z4/Z5 with Z3. No intervals or threshold work.',
+  },
+  severe: {
+    intensityReduction: 1.0, restRecommended: true,
+    note: 'Severe symptoms: rest or gentle movement only — stretching, walking, yoga. Skip today\'s training.',
+  },
+}
+
+function PlannedWorkoutList({ workouts, fuelingSettings, onPeriod, periodSeverity }: {
+  workouts: PlannedWorkoutItem[]
+  fuelingSettings: FuelingSetting[]
+  onPeriod: boolean
+  periodSeverity: 'minor' | 'medium' | 'severe' | null
+}) {
+  const periodAdj = onPeriod && periodSeverity ? PERIOD_ADVICE[periodSeverity] : null
+
   return (
     <View style={{ gap: 10, marginTop: 10 }}>
+      {periodAdj && (
+        <View style={pw.periodBanner}>
+          <Ionicons name="rose-outline" size={15} color={C.run} style={{ marginTop: 1 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={pw.periodBannerTitle}>Period adjustment active</Text>
+            <Text style={pw.periodBannerNote}>{periodAdj.note}</Text>
+          </View>
+        </View>
+      )}
       {workouts.map(w => {
         const color = getSportColor(w.sport_type)
         const icon = getSportIcon(w.sport_type)
         const isAI = Boolean(w.workout_description)
-        const fuel = w.zone_number != null ? calcWorkoutFuel(w.target_kcal, w.zone_number) : null
+        const restRecommended = periodAdj?.restRecommended ?? false
+        const adjustedKcal = periodAdj && !restRecommended ? Math.round(w.target_kcal * (1 - periodAdj.intensityReduction)) : w.target_kcal
+        const adjustedDuration = periodAdj && !restRecommended && w.target_duration_min
+          ? Math.round(w.target_duration_min * (1 - periodAdj.intensityReduction))
+          : w.target_duration_min
+        const fuel = w.zone_number != null && !restRecommended ? calcWorkoutFuel(adjustedKcal, w.zone_number) : null
         const fuelSetting = fuelingSettings.find(f => f.sport_type.toLowerCase() === w.sport_type.toLowerCase())
-        const rec = calcFuelingRec(w.target_duration_min, fuelSetting)
+        const rec = calcFuelingRec(adjustedDuration, fuelSetting)
 
         return (
           <View key={w.id} style={[pw.card, { borderLeftColor: isAI ? C.accent2 : color }]}>
@@ -548,20 +631,47 @@ function PlannedWorkoutList({ workouts, fuelingSettings }: { workouts: PlannedWo
                   <Text style={[pw.aiBadgeText, { color: C.accent2 }]}>AI Coach</Text>
                 </View>
               )}
+              {periodAdj && (
+                <View style={pw.periodBadge}>
+                  <Ionicons name="rose-outline" size={10} color={C.run} />
+                  <Text style={pw.periodBadgeText}>Adjusted</Text>
+                </View>
+              )}
             </View>
 
-            {w.workout_description ? (
-              <Text style={pw.description} numberOfLines={4}>{w.workout_description}</Text>
+            {restRecommended ? (
+              <View style={pw.restBox}>
+                <Ionicons name="bed-outline" size={15} color={C.run} style={{ marginTop: 1 }} />
+                <Text style={pw.restText}>
+                  Rest recommended — gentle stretching, walking or yoga only. Original plan: {w.target_kcal} kcal
+                  {w.target_duration_min ? `, ${w.target_duration_min} min` : ''}.
+                </Text>
+              </View>
+            ) : w.workout_description ? (
+              <>
+                <Text style={pw.description} numberOfLines={4}>{w.workout_description}</Text>
+                {periodAdj && (
+                  <Text style={pw.periodDescNote}>
+                    ↓ Z2 −{Math.round(periodAdj.intensityReduction * 100)}%, Z3 −{Math.round(periodAdj.intensityReduction * 100 + 10)}%, Z4 −{Math.round(periodAdj.intensityReduction * 100 + 20)}% for today
+                  </Text>
+                )}
+              </>
             ) : (
               <View style={pw.chips}>
                 <View style={[pw.chip, { backgroundColor: color + '18' }]}>
                   <Ionicons name="flame-outline" size={11} color={color} />
-                  <Text style={[pw.chipText, { color }]}>{w.target_kcal} kcal</Text>
+                  <Text style={[pw.chipText, { color }]}>
+                    {adjustedKcal} kcal
+                    {periodAdj ? ` (was ${w.target_kcal})` : ''}
+                  </Text>
                 </View>
-                {w.target_duration_min !== null && (
+                {adjustedDuration !== null && (
                   <View style={[pw.chip, { backgroundColor: C.surface2 }]}>
                     <Ionicons name="time-outline" size={11} color={C.text2} />
-                    <Text style={[pw.chipText, { color: C.text2 }]}>{w.target_duration_min} min</Text>
+                    <Text style={[pw.chipText, { color: C.text2 }]}>
+                      {adjustedDuration} min
+                      {periodAdj && w.target_duration_min ? ` (was ${w.target_duration_min})` : ''}
+                    </Text>
                   </View>
                 )}
                 {w.target_hr !== null && (
@@ -609,12 +719,13 @@ function PlannedWorkoutList({ workouts, fuelingSettings }: { workouts: PlannedWo
 
 // ─── Calorie modal ─────────────────────────────────────────────────────────
 
-function CalorieModal({ visible, baseline, activities, planned, totalTarget, onClose }: {
+function CalorieModal({ visible, baseline, activities, planned, totalTarget, consumedKcal, onClose }: {
   visible: boolean; baseline: number | null; activities: TodayActivity[]
-  planned: PlannedWorkoutItem[]; totalTarget: number | null; onClose: () => void
+  planned: PlannedWorkoutItem[]; totalTarget: number | null; consumedKcal: number; onClose: () => void
 }) {
   const burned = activities.reduce((s, a) => s + a.total_kcal, 0)
   const plannedKcal = planned.reduce((s, p) => s + p.target_kcal, 0)
+  const remaining = totalTarget != null ? totalTarget - consumedKcal : null
   return (
     <Modal visible={visible} transparent animationType="slide">
       <Pressable style={mo.overlay} onPress={onClose}>
@@ -655,6 +766,26 @@ function CalorieModal({ visible, baseline, activities, planned, totalTarget, onC
                 <Text style={mo.totalLabel}>Total target</Text>
                 <Text style={mo.totalValue}>{(totalTarget ?? 0).toLocaleString()} kcal</Text>
               </View>
+
+              {/* Consumed + remaining row */}
+              <View style={mo.consumedRow}>
+                <View style={mo.consumedItem}>
+                  <Text style={mo.consumedLabel}>Eaten so far</Text>
+                  <Text style={mo.consumedValue}>{consumedKcal.toLocaleString()} kcal</Text>
+                </View>
+                <View style={mo.consumedDivider} />
+                <View style={mo.consumedItem}>
+                  <Text style={mo.consumedLabel}>
+                    {remaining != null && remaining < 0 ? 'Over target' : 'Still to eat'}
+                  </Text>
+                  <Text style={[mo.consumedValue, remaining != null && remaining < 0 && { color: C.danger }]}>
+                    {remaining != null
+                      ? `${Math.abs(remaining).toLocaleString()} kcal`
+                      : '—'}
+                  </Text>
+                </View>
+              </View>
+
               {burned > 0 && (
                 <View style={mo.infoBox}>
                   <Ionicons name="flame-outline" size={15} color={C.accent} style={{ marginTop: 1 }} />
@@ -734,10 +865,18 @@ const st = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 6,
   },
   heroWeatherTemp: { fontSize: 14, fontWeight: '700', color: C.white },
-  heroKcalBlock: { marginBottom: 20 },
+  heroKcalBlock: { marginBottom: 20, width: '100%' },
+  heroProgressTrack: {
+    height: 12, backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 6, overflow: 'hidden',
+  },
+  heroProgressFill: { height: 12, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 6 },
   heroKcalNum: { fontSize: 52, fontWeight: '800', color: C.white, lineHeight: 54 },
   heroKcalLabel: { fontSize: 15, color: 'rgba(255,255,255,0.8)', fontWeight: '500', marginTop: 2 },
   heroKcalEmpty: { fontSize: 15, color: 'rgba(255,255,255,0.7)', fontStyle: 'italic' },
+  heroKcalSubRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  heroKcalSub: { fontSize: 13, color: 'rgba(255,255,255,0.75)', fontWeight: '500' },
+  heroKcalSubDot: { fontSize: 13, color: 'rgba(255,255,255,0.4)' },
+  heroKcalSubOver: { color: '#FF8A80', fontWeight: '700' },
   heroChips: { flexDirection: 'row', gap: 10 },
   heroChip: {
     backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 12,
@@ -825,9 +964,17 @@ const mo = StyleSheet.create({
   noTarget: { backgroundColor: C.surface2, borderRadius: 12, padding: 16, marginBottom: 8 },
   noTargetText: { fontSize: 14, color: C.text2, lineHeight: 20 },
   divider: { height: 1, backgroundColor: C.divider, marginVertical: 14 },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   totalLabel: { fontSize: 16, fontWeight: '700', color: C.text1 },
   totalValue: { fontSize: 24, fontWeight: '800', color: C.text1 },
+  consumedRow: {
+    flexDirection: 'row', backgroundColor: C.surface2, borderRadius: 12,
+    padding: 14, marginBottom: 12, borderWidth: 1, borderColor: C.border,
+  },
+  consumedItem: { flex: 1, alignItems: 'center' },
+  consumedDivider: { width: 1, backgroundColor: C.border, marginHorizontal: 8 },
+  consumedLabel: { fontSize: 11, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  consumedValue: { fontSize: 17, fontWeight: '800', color: C.text1 },
   infoBox: {
     flexDirection: 'row', gap: 8, backgroundColor: C.accentBg,
     borderRadius: 12, padding: 12, marginBottom: 10,
@@ -865,6 +1012,28 @@ const pw = StyleSheet.create({
     padding: 10, marginTop: 8,
   },
   recText: { flex: 1, fontSize: 12, lineHeight: 17 },
+
+  // Period adjustments
+  periodBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: 'rgba(239,83,80,0.08)', borderRadius: 12,
+    padding: 12, borderWidth: 1, borderColor: 'rgba(239,83,80,0.2)',
+  },
+  periodBannerTitle: { fontSize: 12, fontWeight: '800', color: C.run, marginBottom: 2 },
+  periodBannerNote: { fontSize: 12, color: C.run, lineHeight: 17, opacity: 0.85 },
+  periodBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: 'rgba(239,83,80,0.1)', borderRadius: 8,
+    paddingHorizontal: 7, paddingVertical: 2,
+  },
+  periodBadgeText: { fontSize: 10, fontWeight: '700', color: C.run },
+  periodDescNote: { fontSize: 11, color: C.run, fontStyle: 'italic', marginTop: 6, opacity: 0.85 },
+  restBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 7,
+    backgroundColor: 'rgba(239,83,80,0.08)', borderRadius: 10,
+    padding: 10, marginTop: 4,
+  },
+  restText: { flex: 1, fontSize: 12, color: C.run, lineHeight: 18 },
 })
 
 const wst = StyleSheet.create({

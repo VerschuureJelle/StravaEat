@@ -1,5 +1,6 @@
 export type SportHistory = 'beginner' | 'intermediate' | 'advanced'
 export type Sex = 'male' | 'female' | 'other'
+export type PeriodSeverity = 'minor' | 'medium' | 'severe'
 
 export interface UserProfile {
   id: string
@@ -19,6 +20,9 @@ export interface UserProfile {
   daily_kcal_target: number | null
   ftp_watts: number | null
   push_token: string | null
+  on_period: boolean
+  period_severity: PeriodSeverity | null
+  hide_calories: boolean
 }
 
 export interface FoodLog {
@@ -31,6 +35,7 @@ export interface FoodLog {
   fat_g: number | null
   carb_g: number | null
   meal_name: string | null
+  meal_index: number | null
   logged_at: string
 }
 
@@ -40,6 +45,7 @@ export interface MealTemplate {
   meal_index: number
   name: string
   scheduled_time: string  // HH:MM
+  kcal: number | null
 }
 
 export interface HeartRateZone {

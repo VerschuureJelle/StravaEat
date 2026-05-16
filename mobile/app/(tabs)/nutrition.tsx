@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView,
-  StyleSheet, Alert, ActivityIndicator,
+  StyleSheet, Alert, ActivityIndicator, Modal,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect } from 'expo-router'
@@ -12,7 +12,16 @@ import { scheduleMealNotifications, cancelMealNotification } from '../../lib/not
 import { C } from '../../lib/theme'
 import type { FoodLog, MealTemplate } from '../../types'
 
-type SubTab = 'nutrition' | 'meals'
+interface CustomFood {
+  id: string
+  name: string
+  kcal: number
+  protein_g: number | null
+  fat_g: number | null
+  carb_g: number | null
+}
+
+type SubTab = 'nutrition' | 'meals' | 'estimate'
 
 function localDate(): string {
   const d = new Date()
@@ -45,8 +54,83 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
+const ACTIVITY_LEVELS = [
+  {
+    key: 'sedentary', label: 'Sedentary', detail: 'Desk job, little movement', factor: 1.2,
+    info: 'You have a desk job or study and don\'t exercise regularly. You walk to the car, around the office, but your body is largely still for most of the day.',
+  },
+  {
+    key: 'light', label: 'Light', detail: '1–3 workouts/week', factor: 1.375,
+    info: 'You exercise 1–3 times per week at a casual pace — a few walks, a gym session, a weekend ride. Outside of those sessions your daily life is mostly sedentary.',
+  },
+  {
+    key: 'moderate', label: 'Moderate', detail: '3–5 workouts/week', factor: 1.55,
+    info: 'You train consistently 3–5 days per week at a real intensity. Your workouts are planned and regular. This fits most recreational athletes who exercise but have a desk job otherwise.',
+  },
+  {
+    key: 'active', label: 'Active', detail: '6–7 hard sessions/week', factor: 1.725,
+    info: 'You train hard 6–7 days per week, or combine regular intense training with a job that keeps you on your feet. Think a competitive club runner or cyclist doing daily rides.',
+  },
+  {
+    key: 'very_active', label: 'Very active', detail: 'Athlete + physical job', factor: 1.9,
+    info: 'You combine high-volume, high-intensity daily training with a physically demanding job — construction worker who trains, professional athlete in a build phase, or military personnel.',
+  },
+] as const
+
+type ActivityLevel = typeof ACTIVITY_LEVELS[number]['key']
+
+const QUIZ_QUESTIONS = [
+  {
+    id: 'q1',
+    question: 'How many days per week do you exercise?',
+    options: [
+      { label: '0–1 days',  score: 0 },
+      { label: '2–3 days',  score: 1 },
+      { label: '4–5 days',  score: 2 },
+      { label: '6–7 days',  score: 3 },
+    ],
+  },
+  {
+    id: 'q2',
+    question: 'What is your daily life like outside of exercise?',
+    options: [
+      { label: 'Mostly sitting — desk job, studying, driving', score: 0 },
+      { label: 'Mix of sitting and moving around',             score: 1 },
+      { label: 'On my feet most of the day',                  score: 2 },
+      { label: 'Physical labor — construction, nursing, etc.', score: 3 },
+    ],
+  },
+  {
+    id: 'q3',
+    question: 'How intense are your typical workouts?',
+    options: [
+      { label: 'Light — easy walks, gentle yoga',           score: 0 },
+      { label: 'Moderate — I sweat and breathe harder',     score: 1 },
+      { label: 'Hard — intervals, racing, pushing limits',  score: 2 },
+    ],
+  },
+] as const
+
+function scoreToLevel(score: number): ActivityLevel {
+  if (score <= 1) return 'sedentary'
+  if (score <= 3) return 'light'
+  if (score <= 5) return 'moderate'
+  if (score <= 7) return 'active'
+  return 'very_active'
+}
+
+function calcMifflinTDEE(
+  weight_kg: number, height_cm: number, age: number,
+  sex: 'male' | 'female' | 'other', factor: number,
+): { bmr: number; tdee: number } {
+  const base = 10 * weight_kg + 6.25 * height_cm - 5 * age
+  const offset = sex === 'female' ? -161 : sex === 'male' ? 5 : -78
+  const bmr = Math.round(base + offset)
+  return { bmr, tdee: Math.round(bmr * factor) }
+}
+
 interface TodayActivity { id: string; name: string; type: string; total_kcal: number }
-interface MealItem { meal_index: number; name: string; scheduled_time: string; checked: boolean }
+interface MealItem { meal_index: number; name: string; scheduled_time: string; checked: boolean; kcal: number | null }
 
 export default function NutritionScreen() {
   const [subTab, setSubTab] = useState<SubTab>('nutrition')
@@ -54,6 +138,8 @@ export default function NutritionScreen() {
 
   // ── Nutrition state ──────────────────────────────────────────────────────────
   const [baseline, setBaseline] = useState<number | null>(null)
+  const [editingTarget, setEditingTarget] = useState(false)
+  const [targetInput, setTargetInput] = useState('')
   const [burnedKcal, setBurnedKcal] = useState(0)
   const [plannedKcal, setPlannedKcal] = useState(0)
   const [activities, setActivities] = useState<TodayActivity[]>([])
@@ -65,11 +151,23 @@ export default function NutritionScreen() {
   const [foodFat, setFoodFat] = useState('')
   const [foodCarb, setFoodCarb] = useState('')
   const [adding, setAdding] = useState(false)
+  const [customFoods, setCustomFoods] = useState<CustomFood[]>([])
+  const [customFoodsModalVisible, setCustomFoodsModalVisible] = useState(false)
 
   // ── Meal plan state ──────────────────────────────────────────────────────────
   const [meals, setMeals] = useState<MealItem[]>([])
   const [mealsLoading, setMealsLoading] = useState(true)
   const [checking, setChecking] = useState<number | null>(null)
+  const [mealKcalInputs, setMealKcalInputs] = useState<Record<number, string>>({})
+
+  // ── Estimate tab state ───────────────────────────────────────────────────────
+  const [profileWeight, setProfileWeight] = useState<number | null>(null)
+  const [profileHeight, setProfileHeight] = useState<number | null>(null)
+  const [profileAge, setProfileAge] = useState<number | null>(null)
+  const [profileSex, setProfileSex] = useState<'male' | 'female' | 'other' | null>(null)
+  const [activityLevel, setActivityLevel] = useState<ActivityLevel>('moderate')
+  const [showActivityQuiz, setShowActivityQuiz] = useState(false)
+  const [showActivityInfo, setShowActivityInfo] = useState(false)
 
   const todayStr = localDate()
 
@@ -94,20 +192,26 @@ export default function NutritionScreen() {
 
   async function loadNutrition(uid: string) {
     setNutritionLoading(true)
-    const [profileRes, actsRes, plannedRes, logsRes] = await Promise.all([
-      supabase.from('users').select('daily_kcal_target').eq('id', uid).single(),
+    const [profileRes, actsRes, plannedRes, logsRes, customFoodsRes] = await Promise.all([
+      supabase.from('users').select('daily_kcal_target, weight_kg, height_cm, age, sex').eq('id', uid).single(),
       supabase.from('activities').select('id, name, type, total_kcal')
         .eq('user_id', uid).gte('date', todayStr).not('total_kcal', 'is', null),
       supabase.from('planned_workouts').select('target_kcal')
         .eq('user_id', uid).eq('planned_for', todayStr),
       supabase.from('food_logs').select('*')
         .eq('user_id', uid).eq('date', todayStr).order('logged_at'),
+      supabase.from('custom_foods').select('*').eq('user_id', uid).order('name'),
     ])
     setBaseline(profileRes.data?.daily_kcal_target ?? null)
+    setProfileWeight(profileRes.data?.weight_kg ?? null)
+    setProfileHeight(profileRes.data?.height_cm ?? null)
+    setProfileAge(profileRes.data?.age ?? null)
+    setProfileSex(profileRes.data?.sex ?? null)
     setActivities(actsRes.data ?? [])
-    setBurnedKcal((actsRes.data ?? []).reduce((s: number, a: any) => s + (a.total_kcal ?? 0), 0))
-    setPlannedKcal((plannedRes.data ?? []).reduce((s: number, p: any) => s + p.target_kcal, 0))
+    setBurnedKcal(Math.round((actsRes.data ?? []).reduce((s: number, a: any) => s + (a.total_kcal ?? 0), 0)))
+    setPlannedKcal(Math.round((plannedRes.data ?? []).reduce((s: number, p: any) => s + p.target_kcal, 0)))
     setLogs(logsRes.data ?? [])
+    setCustomFoods(customFoodsRes.data ?? [])
     setNutritionLoading(false)
   }
 
@@ -124,8 +228,14 @@ export default function NutritionScreen() {
       name: t.name,
       scheduled_time: t.scheduled_time,
       checked: checkedSet.has(t.meal_index),
+      kcal: (t as any).kcal ?? null,
     }))
     setMeals(items)
+    const inputs: Record<number, string> = {}
+    for (const item of items) {
+      inputs[item.meal_index] = item.kcal != null ? String(item.kcal) : ''
+    }
+    setMealKcalInputs(inputs)
     setMealsLoading(false)
     await scheduleMealNotifications(items.map(m => ({
       meal_index: m.meal_index,
@@ -134,6 +244,16 @@ export default function NutritionScreen() {
       date: todayStr,
       checked: m.checked,
     })))
+  }
+
+  async function saveTarget() {
+    const val = parseInt(targetInput)
+    if (isNaN(val) || val <= 0 || val > 10000) { Alert.alert('Invalid value', 'Enter a calorie target between 1 and 10 000.'); return }
+    if (!userId) return
+    await supabase.from('users').update({ daily_kcal_target: val }).eq('id', userId)
+    setBaseline(val)
+    setEditingTarget(false)
+    setTargetInput('')
   }
 
   async function addEntry() {
@@ -163,28 +283,88 @@ export default function NutritionScreen() {
     setLogs(prev => prev.filter(l => l.id !== id))
   }
 
-  async function toggleMeal(meal: MealItem) {
+  async function addFromCustomFood(food: CustomFood) {
+    if (!userId) return
+    const { error } = await supabase.from('food_logs').insert({
+      user_id: userId, date: todayStr, name: food.name, kcal: food.kcal,
+      protein_g: food.protein_g, fat_g: food.fat_g, carb_g: food.carb_g,
+    })
+    if (error) { Alert.alert('Error', error.message); return }
+    setCustomFoodsModalVisible(false)
+    loadNutrition(userId)
+  }
+
+  async function saveAsCustomFood() {
+    const kcal = parseInt(foodKcal)
+    if (!foodName.trim()) { Alert.alert('Missing name', 'Enter a food name first.'); return }
+    if (isNaN(kcal) || kcal <= 0) { Alert.alert('Missing kcal', 'Enter the calorie amount first.'); return }
+    if (!userId) return
+    const protein = foodProtein ? parseFloat(foodProtein) : null
+    const fat = foodFat ? parseFloat(foodFat) : null
+    const carb = foodCarb ? parseFloat(foodCarb) : null
+    const { error } = await supabase.from('custom_foods').insert({
+      user_id: userId, name: foodName.trim(), kcal,
+      protein_g: isNaN(protein as number) ? null : protein,
+      fat_g: isNaN(fat as number) ? null : fat,
+      carb_g: isNaN(carb as number) ? null : carb,
+    })
+    if (error) { Alert.alert('Error', error.message); return }
+    const { data } = await supabase.from('custom_foods').select('*').eq('user_id', userId).order('name')
+    setCustomFoods(data ?? [])
+    Alert.alert('Saved', `"${foodName.trim()}" added to My Foods.`)
+  }
+
+  async function deleteCustomFood(id: string) {
+    await supabase.from('custom_foods').delete().eq('id', id)
+    setCustomFoods(prev => prev.filter(f => f.id !== id))
+  }
+
+  function handleMealTap(meal: MealItem) {
+    if (meal.checked) {
+      uncheckMeal(meal)
+    } else {
+      confirmMealLog(meal)
+    }
+  }
+
+  async function uncheckMeal(meal: MealItem) {
     if (!userId) return
     setChecking(meal.meal_index)
-    if (meal.checked) {
-      await supabase.from('meal_checks').delete()
-        .eq('user_id', userId).eq('meal_index', meal.meal_index).eq('date', todayStr)
-      const [hh, mm] = meal.scheduled_time.split(':').map(Number)
-      const [y, mo, d] = todayStr.split('-').map(Number)
-      if (new Date(y, mo - 1, d, hh + 1, mm, 0, 0).getTime() > Date.now()) {
-        await scheduleMealNotifications([{ ...meal, date: todayStr, checked: false }])
-      }
-    } else {
-      await supabase.from('meal_checks').upsert(
-        { user_id: userId, meal_index: meal.meal_index, date: todayStr },
-        { onConflict: 'user_id,meal_index,date' },
-      )
-      await cancelMealNotification(meal.meal_index)
+    await Promise.all([
+      supabase.from('meal_checks').delete()
+        .eq('user_id', userId).eq('meal_index', meal.meal_index).eq('date', todayStr),
+      supabase.from('food_logs').delete()
+        .eq('user_id', userId).eq('meal_index', meal.meal_index).eq('date', todayStr),
+    ])
+    const [hh, mm] = meal.scheduled_time.split(':').map(Number)
+    const [y, mo, d] = todayStr.split('-').map(Number)
+    if (new Date(y, mo - 1, d, hh + 1, mm, 0, 0).getTime() > Date.now()) {
+      await scheduleMealNotifications([{ ...meal, date: todayStr, checked: false }])
     }
-    setMeals(prev => prev.map(m =>
-      m.meal_index === meal.meal_index ? { ...m, checked: !m.checked } : m,
-    ))
+    setMeals(prev => prev.map(m => m.meal_index === meal.meal_index ? { ...m, checked: false } : m))
     setChecking(null)
+    loadNutrition(userId)
+  }
+
+  async function confirmMealLog(meal: MealItem) {
+    if (!userId) return
+    setChecking(meal.meal_index)
+    const kcalStr = mealKcalInputs[meal.meal_index] ?? ''
+    const kcal = kcalStr ? parseInt(kcalStr) : null
+    await supabase.from('meal_checks').upsert(
+      { user_id: userId, meal_index: meal.meal_index, date: todayStr },
+      { onConflict: 'user_id,meal_index,date' },
+    )
+    await cancelMealNotification(meal.meal_index)
+    if (kcal && kcal > 0 && kcal <= 5000) {
+      await supabase.from('food_logs').insert({
+        user_id: userId, date: todayStr, name: meal.name, kcal,
+        meal_index: meal.meal_index,
+      })
+    }
+    setMeals(prev => prev.map(m => m.meal_index === meal.meal_index ? { ...m, checked: true } : m))
+    setChecking(null)
+    loadNutrition(userId)
   }
 
   return (
@@ -194,6 +374,7 @@ export default function NutritionScreen() {
         {([
           { key: 'nutrition', label: "Today's log" },
           { key: 'meals', label: 'Meal Plan' },
+          { key: 'estimate', label: 'Estimate' },
         ] as const).map(tab => (
           <Pressable
             key={tab.key}
@@ -204,6 +385,20 @@ export default function NutritionScreen() {
           </Pressable>
         ))}
       </View>
+
+      <CustomFoodsModal
+        visible={customFoodsModalVisible}
+        foods={customFoods}
+        onAdd={addFromCustomFood}
+        onDelete={deleteCustomFood}
+        onClose={() => setCustomFoodsModalVisible(false)}
+      />
+
+      <CalorieQuizModal
+        visible={showActivityQuiz}
+        onApply={level => { setActivityLevel(level); setShowActivityQuiz(false); setShowActivityInfo(false) }}
+        onClose={() => setShowActivityQuiz(false)}
+      />
 
       <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
         <Text style={st.screenTitle}>Nutrition</Text>
@@ -224,15 +419,44 @@ export default function NutritionScreen() {
                 </View>
               )}
               <View style={st.progressMeta}>
-                {remaining != null && (
+                {remaining != null && !editingTarget && (
                   <Text style={[st.remainingText, remaining < 0 && st.overText]}>
                     {remaining < 0
                       ? `${Math.abs(remaining).toLocaleString()} kcal over target`
                       : `${remaining.toLocaleString()} kcal remaining`}
                   </Text>
                 )}
-                {target == null && (
-                  <Text style={st.noTargetNote}>Set a daily calorie target in Settings → Profile</Text>
+                {editingTarget ? (
+                  <View style={st.targetEditRow}>
+                    <TextInput
+                      style={st.targetEditInput}
+                      value={targetInput}
+                      onChangeText={setTargetInput}
+                      placeholder={baseline != null ? String(baseline) : 'e.g. 2200'}
+                      placeholderTextColor={C.text3}
+                      keyboardType="numeric"
+                      autoFocus
+                      returnKeyType="done"
+                      onSubmitEditing={saveTarget}
+                    />
+                    <Text style={st.targetEditUnit}>kcal / day</Text>
+                    <Pressable style={st.targetSaveBtn} onPress={saveTarget}>
+                      <Text style={st.targetSaveBtnText}>Save</Text>
+                    </Pressable>
+                    <Pressable onPress={() => { setEditingTarget(false); setTargetInput('') }}>
+                      <Ionicons name="close-outline" size={20} color={C.text3} />
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Pressable
+                    style={st.targetEditTrigger}
+                    onPress={() => { setTargetInput(baseline != null ? String(baseline) : ''); setEditingTarget(true) }}
+                  >
+                    <Ionicons name="pencil-outline" size={12} color={C.text3} />
+                    <Text style={st.targetEditTriggerText}>
+                      {baseline == null ? 'Set daily calorie target' : 'Edit target'}
+                    </Text>
+                  </Pressable>
                 )}
               </View>
               {target != null && (
@@ -273,7 +497,13 @@ export default function NutritionScreen() {
 
             {/* Log food */}
             <View style={st.card}>
-              <Text style={st.cardLabel}>Log food</Text>
+              <View style={st.cardLabelRow}>
+                <Text style={st.cardLabel}>Log food</Text>
+                <Pressable onPress={() => setCustomFoodsModalVisible(true)} style={st.myFoodsBtn}>
+                  <Ionicons name="bookmark-outline" size={13} color={C.accent} />
+                  <Text style={st.myFoodsBtnText}>My Foods</Text>
+                </Pressable>
+              </View>
               <TextInput
                 style={st.input}
                 value={foodName}
@@ -335,7 +565,13 @@ export default function NutritionScreen() {
                     keyboardType="decimal-pad"
                   />
                 </View>
-                <View style={{ width: 46 }} />
+                <Pressable
+                  style={[st.addBtn, st.saveTemplateBtn]}
+                  onPress={saveAsCustomFood}
+                  hitSlop={4}
+                >
+                  <Ionicons name="bookmark-outline" size={20} color={C.text2} />
+                </Pressable>
               </View>
             </View>
 
@@ -428,20 +664,22 @@ export default function NutritionScreen() {
               const overdue = !meal.checked && isOverdue(meal.scheduled_time)
               const isChecking = checking === meal.meal_index
               return (
-                <Pressable
+                <View
                   key={meal.meal_index}
                   style={[st.mealCard, meal.checked && st.mealCardChecked, overdue && st.mealCardOverdue]}
-                  onPress={() => toggleMeal(meal)}
-                  disabled={isChecking}
                 >
-                  <View style={[st.checkbox, meal.checked && st.checkboxChecked]}>
+                  <Pressable
+                    style={[st.checkbox, meal.checked && st.checkboxChecked]}
+                    onPress={() => handleMealTap(meal)}
+                    disabled={isChecking}
+                  >
                     {isChecking
                       ? <ActivityIndicator size="small" color={meal.checked ? C.white : C.accent} />
                       : meal.checked
                         ? <Ionicons name="checkmark" size={16} color={C.white} />
                         : null
                     }
-                  </View>
+                  </Pressable>
                   <View style={st.mealInfo}>
                     <Text style={[st.mealName, meal.checked && st.mealNameChecked]}>{meal.name}</Text>
                     <View style={st.mealMetaRow}>
@@ -455,15 +693,328 @@ export default function NutritionScreen() {
                       {meal.checked && <Text style={st.checkedLabel}>done</Text>}
                     </View>
                   </View>
-                </Pressable>
+                  {!meal.checked ? (
+                    <TextInput
+                      style={st.mealKcalInput}
+                      value={mealKcalInputs[meal.meal_index] ?? ''}
+                      onChangeText={v => setMealKcalInputs(prev => ({ ...prev, [meal.meal_index]: v }))}
+                      placeholder={meal.kcal != null ? String(meal.kcal) : 'kcal'}
+                      placeholderTextColor={C.text3}
+                      keyboardType="numeric"
+                    />
+                  ) : (
+                    <Text style={st.mealKcalBadge}>
+                      {mealKcalInputs[meal.meal_index] ? `${mealKcalInputs[meal.meal_index]} kcal` : ''}
+                    </Text>
+                  )}
+                </View>
               )
             })}
           </>
         )}
+
+        {/* ── CALORIC INTAKE ESTIMATE ──────────────────────────────────────── */}
+        {subTab === 'estimate' && (() => {
+          const w = profileWeight
+          const h = profileHeight
+          const a = profileAge
+          const s = profileSex
+          const hasData = w && h && a && s
+          const selectedLevel = ACTIVITY_LEVELS.find(l => l.key === activityLevel)!
+          const result = hasData ? calcMifflinTDEE(w!, h!, a!, s!, selectedLevel.factor) : null
+
+          return (
+            <>
+              <Text style={st.estimateTitle}>Caloric intake estimate</Text>
+              <Text style={st.estimateNote}>
+                Uses the Mifflin-St Jeor formula to estimate your daily energy needs based on your body measurements and activity level.
+              </Text>
+
+              {!hasData && (
+                <View style={st.estimateWarning}>
+                  <Ionicons name="information-circle-outline" size={18} color={C.accent2} />
+                  <Text style={st.estimateWarningText}>
+                    Fill in your weight, height, age and sex in Settings → Profile to see your estimate.
+                  </Text>
+                </View>
+              )}
+
+              {hasData && (
+                <View style={st.calcCard}>
+                  {/* Activity level */}
+                  <View style={st.calcActivityHeader}>
+                    <Text style={st.calcActivityLabel}>Activity level</Text>
+                    <Pressable
+                      onPress={() => setShowActivityInfo(v => !v)}
+                      style={st.infoBtn}
+                      hitSlop={10}
+                    >
+                      <Text style={st.infoBtnText}>i</Text>
+                    </Pressable>
+                  </View>
+
+                  {showActivityInfo && (
+                    <View style={st.infoPopup}>
+                      <Text style={st.infoPopupTitle}>{selectedLevel.label}</Text>
+                      <Text style={st.infoPopupText}>{selectedLevel.info}</Text>
+                    </View>
+                  )}
+
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 6 }}
+                    contentContainerStyle={{ gap: 6, paddingRight: 4 }}>
+                    {ACTIVITY_LEVELS.map(level => (
+                      <Pressable
+                        key={level.key}
+                        style={[st.activityChip, activityLevel === level.key && st.activityChipActive]}
+                        onPress={() => { setActivityLevel(level.key); setShowActivityInfo(false) }}
+                      >
+                        <Text style={[st.activityChipLabel, activityLevel === level.key && st.activityChipLabelActive]}>
+                          {level.label}
+                        </Text>
+                        <Text style={st.activityChipDetail}>{level.detail}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+
+                  <Pressable onPress={() => setShowActivityQuiz(true)} style={st.helpBtn}>
+                    <Ionicons name="help-circle-outline" size={13} color={C.accent} />
+                    <Text style={st.helpBtnText}>Help me choose</Text>
+                  </Pressable>
+
+                  <View style={st.calcBreakdown}>
+                    <View style={st.calcBreakdownRow}>
+                      <Text style={st.calcBreakdownLabel}>Basal metabolic rate (at rest)</Text>
+                      <Text style={st.calcBreakdownValue}>{result!.bmr.toLocaleString()} kcal</Text>
+                    </View>
+                    <View style={st.calcBreakdownRow}>
+                      <Text style={st.calcBreakdownLabel}>Activity multiplier</Text>
+                      <Text style={st.calcBreakdownValue}>× {selectedLevel.factor}</Text>
+                    </View>
+                    <View style={[st.calcBreakdownRow, st.calcBreakdownTotal]}>
+                      <Text style={st.calcTotalLabel}>Daily target</Text>
+                      <Text style={st.calcTotalValue}>{result!.tdee.toLocaleString()} kcal</Text>
+                    </View>
+                  </View>
+
+                  <Pressable
+                    style={st.useTargetBtn}
+                    onPress={async () => {
+                      if (!userId) return
+                      await supabase.from('users').update({ daily_kcal_target: result!.tdee }).eq('id', userId)
+                      setBaseline(result!.tdee)
+                      Alert.alert('Target updated', `Daily target set to ${result!.tdee.toLocaleString()} kcal.`)
+                    }}
+                  >
+                    <Ionicons name="checkmark-circle-outline" size={16} color={C.white} />
+                    <Text style={st.useTargetBtnText}>Use {result!.tdee.toLocaleString()} kcal as target</Text>
+                  </Pressable>
+                </View>
+              )}
+            </>
+          )
+        })()}
       </ScrollView>
     </SafeAreaView>
   )
 }
+
+function CalorieQuizModal({
+  visible, onApply, onClose,
+}: {
+  visible: boolean
+  onApply: (level: ActivityLevel) => void
+  onClose: () => void
+}) {
+  const [answers, setAnswers] = useState<(number | null)[]>([null, null, null])
+
+  useEffect(() => {
+    if (visible) setAnswers([null, null, null])
+  }, [visible])
+
+  const allAnswered = answers.every(a => a !== null)
+  const totalScore = allAnswered ? (answers as number[]).reduce((s, a) => s + a, 0) : 0
+  const recommended = allAnswered ? ACTIVITY_LEVELS.find(l => l.key === scoreToLevel(totalScore))! : null
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <Pressable style={qz.overlay} onPress={onClose}>
+        <Pressable style={qz.sheet} onPress={e => e.stopPropagation()}>
+          <View style={qz.handle} />
+          <Text style={qz.title}>Find your activity level</Text>
+          <Text style={qz.subtitle}>Answer 3 questions — takes about 30 seconds</Text>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={qz.scrollContent}>
+            {QUIZ_QUESTIONS.map((q, qi) => (
+              <View key={q.id} style={qz.questionBlock}>
+                <Text style={qz.questionNum}>Question {qi + 1} of {QUIZ_QUESTIONS.length}</Text>
+                <Text style={qz.questionText}>{q.question}</Text>
+                {q.options.map(opt => {
+                  const selected = answers[qi] === opt.score
+                  return (
+                    <Pressable
+                      key={opt.score}
+                      style={[qz.optionBtn, selected && qz.optionBtnActive]}
+                      onPress={() => setAnswers(prev => {
+                        const next = [...prev]
+                        next[qi] = opt.score
+                        return next
+                      })}
+                    >
+                      <View style={[qz.dot, selected && qz.dotActive]} />
+                      <Text style={[qz.optionText, selected && qz.optionTextActive]}>{opt.label}</Text>
+                    </Pressable>
+                  )
+                })}
+              </View>
+            ))}
+
+            {recommended && (
+              <View style={qz.resultBox}>
+                <Text style={qz.resultPre}>Recommended activity level</Text>
+                <Text style={qz.resultLevel}>{recommended.label}</Text>
+                <Text style={qz.resultFactor}>× {recommended.factor} multiplier</Text>
+                <Text style={qz.resultInfo}>{recommended.info}</Text>
+                <Pressable style={qz.applyBtn} onPress={() => onApply(recommended.key)}>
+                  <Ionicons name="checkmark-circle-outline" size={16} color={C.white} />
+                  <Text style={qz.applyBtnText}>Apply — {recommended.label}</Text>
+                </Pressable>
+              </View>
+            )}
+          </ScrollView>
+
+          <Pressable onPress={onClose} style={qz.cancelBtn}>
+            <Text style={qz.cancelBtnText}>Cancel</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  )
+}
+
+function CustomFoodsModal({ visible, foods, onAdd, onDelete, onClose }: {
+  visible: boolean
+  foods: CustomFood[]
+  onAdd: (food: CustomFood) => void
+  onDelete: (id: string) => void
+  onClose: () => void
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <Pressable style={cf.overlay} onPress={onClose}>
+        <Pressable style={cf.sheet} onPress={e => e.stopPropagation()}>
+          <View style={cf.handle} />
+          <Text style={cf.title}>My Foods</Text>
+          <Text style={cf.subtitle}>Tap a food to add it to today's log.</Text>
+
+          {foods.length === 0 ? (
+            <View style={cf.empty}>
+              <Ionicons name="bookmark-outline" size={44} color={C.text3} />
+              <Text style={cf.emptyText}>
+                No saved foods yet. Fill in a food below and tap the bookmark icon to save it here.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView style={cf.list} showsVerticalScrollIndicator={false}>
+              {foods.map(food => (
+                <View key={food.id} style={cf.item}>
+                  <Pressable style={cf.itemMain} onPress={() => onAdd(food)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={cf.itemName}>{food.name}</Text>
+                      <Text style={cf.itemMeta}>
+                        {food.kcal} kcal
+                        {food.protein_g != null ? ` · P ${food.protein_g}g` : ''}
+                        {food.fat_g != null ? ` · F ${food.fat_g}g` : ''}
+                        {food.carb_g != null ? ` · C ${food.carb_g}g` : ''}
+                      </Text>
+                    </View>
+                    <Ionicons name="add-circle-outline" size={24} color={C.accent} />
+                  </Pressable>
+                  <Pressable onPress={() => onDelete(food.id)} hitSlop={8} style={cf.deleteBtn}>
+                    <Ionicons name="trash-outline" size={16} color={C.text3} />
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          <Pressable style={cf.closeBtn} onPress={onClose}>
+            <Text style={cf.closeBtnText}>Done</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  )
+}
+
+const qz = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 24, paddingTop: 12, paddingBottom: 8,
+    maxHeight: '90%',
+  },
+  handle: { width: 36, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  title: { fontSize: 20, fontWeight: '800', color: C.text1, marginBottom: 4 },
+  subtitle: { fontSize: 13, color: C.text2, marginBottom: 20 },
+  scrollContent: { paddingBottom: 8 },
+  questionBlock: { marginBottom: 24 },
+  questionNum: { fontSize: 10, fontWeight: '700', color: C.accent, textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 6 },
+  questionText: { fontSize: 15, fontWeight: '700', color: C.text1, lineHeight: 21, marginBottom: 12 },
+  optionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 12, borderRadius: 10, borderWidth: 1.5, borderColor: C.border,
+    backgroundColor: C.surface2, marginBottom: 6,
+  },
+  optionBtnActive: { borderColor: C.accent, backgroundColor: C.accentBg },
+  dot: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: C.border, backgroundColor: C.surface },
+  dotActive: { borderColor: C.accent, backgroundColor: C.accent },
+  optionText: { fontSize: 14, color: C.text2, flex: 1, lineHeight: 19 },
+  optionTextActive: { color: C.accent, fontWeight: '600' },
+  resultBox: {
+    backgroundColor: C.accentBg, borderRadius: 14, padding: 16,
+    borderWidth: 1.5, borderColor: C.accent + '44', marginBottom: 12,
+  },
+  resultPre: { fontSize: 10, fontWeight: '700', color: C.accent, textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 4 },
+  resultLevel: { fontSize: 22, fontWeight: '800', color: C.text1, marginBottom: 2 },
+  resultFactor: { fontSize: 13, fontWeight: '600', color: C.accent, marginBottom: 10 },
+  resultInfo: { fontSize: 13, color: C.text2, lineHeight: 19, marginBottom: 14 },
+  applyBtn: {
+    backgroundColor: C.accent, borderRadius: 10, padding: 13,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  applyBtnText: { color: C.white, fontWeight: '800', fontSize: 14 },
+  cancelBtn: { padding: 14, alignItems: 'center' },
+  cancelBtnText: { fontSize: 14, color: C.text3 },
+})
+
+const cf = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12,
+    maxHeight: '80%',
+    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20, shadowOffset: { width: 0, height: -4 },
+  },
+  handle: { width: 36, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  title: { fontSize: 20, fontWeight: '800', color: C.text1, marginBottom: 4 },
+  subtitle: { fontSize: 13, color: C.text2, marginBottom: 16 },
+  empty: { alignItems: 'center', paddingVertical: 32, gap: 12 },
+  emptyText: { fontSize: 14, color: C.text3, textAlign: 'center', lineHeight: 20 },
+  list: { maxHeight: 320 },
+  item: {
+    flexDirection: 'row', alignItems: 'center',
+    borderBottomWidth: 1, borderBottomColor: C.divider,
+  },
+  itemMain: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    gap: 12, paddingVertical: 14,
+  },
+  itemName: { fontSize: 15, fontWeight: '600', color: C.text1, marginBottom: 2 },
+  itemMeta: { fontSize: 12, color: C.text2 },
+  deleteBtn: { padding: 8 },
+  closeBtn: { backgroundColor: C.accent, borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 16 },
+  closeBtnText: { color: C.white, fontWeight: '800', fontSize: 16 },
+})
 
 const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
@@ -500,6 +1051,17 @@ const st = StyleSheet.create({
   remainingText: { fontSize: 13, color: C.text2, fontWeight: '500' },
   overText: { color: C.danger, fontWeight: '700' },
   noTargetNote: { fontSize: 13, color: C.text3, fontStyle: 'italic' },
+  targetEditRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  targetEditInput: {
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 6, fontSize: 15,
+    backgroundColor: C.surface2, color: C.text1, minWidth: 80,
+  },
+  targetEditUnit: { fontSize: 13, color: C.text3 },
+  targetSaveBtn: { backgroundColor: C.accent, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  targetSaveBtnText: { fontSize: 13, fontWeight: '700', color: C.white },
+  targetEditTrigger: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  targetEditTriggerText: { fontSize: 12, color: C.text3 },
   breakdownRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   breakdownChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.surface2, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: C.border },
   breakdownText: { fontSize: 12, color: C.text2 },
@@ -519,6 +1081,14 @@ const st = StyleSheet.create({
     backgroundColor: C.accent, borderRadius: 10, width: 46, height: 46,
     alignItems: 'center', justifyContent: 'center',
   },
+
+  cardLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  myFoodsBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: C.accentBg, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10,
+  },
+  myFoodsBtnText: { fontSize: 12, fontWeight: '700', color: C.accent },
+  saveTemplateBtn: { backgroundColor: C.surface2, borderWidth: 1.5, borderColor: C.border },
 
   emptyNote: { fontSize: 14, color: C.text3, textAlign: 'center', paddingVertical: 16, fontStyle: 'italic' },
   logRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10 },
@@ -569,4 +1139,65 @@ const st = StyleSheet.create({
   checkedLabel: { fontSize: 11, fontWeight: '600', color: C.success, marginLeft: 2 },
   mealEmptyBox: { alignItems: 'center', paddingVertical: 48, gap: 12 },
   mealEmptyTitle: { fontSize: 16, fontWeight: '700', color: C.text2 },
+
+  // Inline meal kcal input
+  mealKcalInput: {
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 8, width: 68,
+    fontSize: 14, backgroundColor: C.surface2, color: C.text1,
+    textAlign: 'center',
+  },
+  mealKcalBadge: { fontSize: 12, fontWeight: '600', color: C.text2, minWidth: 68, textAlign: 'right' },
+
+  // Estimate tab
+  estimateTitle: { fontSize: 22, fontWeight: '800', color: C.text1, marginBottom: 4 },
+  estimateNote: { fontSize: 13, color: C.text2, lineHeight: 19, marginBottom: 16 },
+  estimateWarning: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: C.surface2, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: C.border,
+  },
+  estimateWarningText: { flex: 1, fontSize: 13, color: C.text2, lineHeight: 19 },
+
+  calcCard: {
+    borderRadius: 16, padding: 16,
+    backgroundColor: C.accentBg, borderWidth: 1, borderColor: C.accent + '33',
+  },
+  calcActivityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  calcActivityLabel: { fontSize: 11, fontWeight: '700', color: C.text2, textTransform: 'uppercase', letterSpacing: 0.6 },
+  infoBtn: {
+    width: 20, height: 20, borderRadius: 10,
+    borderWidth: 1.5, borderColor: C.accent,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  infoBtnText: { fontSize: 11, fontWeight: '800', color: C.accent, lineHeight: 14 },
+  infoPopup: {
+    backgroundColor: C.surface, borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: C.border, marginBottom: 10,
+  },
+  infoPopupTitle: { fontSize: 13, fontWeight: '800', color: C.text1, marginBottom: 4 },
+  infoPopupText: { fontSize: 12, color: C.text2, lineHeight: 18 },
+  activityChip: {
+    paddingHorizontal: 11, paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface,
+    minWidth: 90, alignItems: 'center',
+  },
+  activityChipActive: { borderColor: C.accent, backgroundColor: C.surface },
+  activityChipLabel: { fontSize: 12, fontWeight: '700', color: C.text2, textAlign: 'center' },
+  activityChipLabelActive: { color: C.accent },
+  activityChipDetail: { fontSize: 9, color: C.text3, marginTop: 2, textAlign: 'center' },
+  helpBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', marginTop: 4, marginBottom: 14 },
+  helpBtnText: { fontSize: 12, fontWeight: '600', color: C.accent },
+  calcBreakdown: { backgroundColor: C.surface, borderRadius: 10, padding: 12, marginBottom: 12, gap: 8 },
+  calcBreakdownRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  calcBreakdownTotal: { borderTopWidth: 1, borderTopColor: C.border, paddingTop: 8, marginTop: 2 },
+  calcBreakdownLabel: { fontSize: 12, color: C.text2 },
+  calcBreakdownValue: { fontSize: 12, fontWeight: '600', color: C.text1 },
+  calcTotalLabel: { fontSize: 14, fontWeight: '800', color: C.text1 },
+  calcTotalValue: { fontSize: 18, fontWeight: '800', color: C.accent },
+  useTargetBtn: {
+    backgroundColor: C.accent, borderRadius: 10, padding: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  useTargetBtnText: { color: C.white, fontWeight: '800', fontSize: 14 },
 })
