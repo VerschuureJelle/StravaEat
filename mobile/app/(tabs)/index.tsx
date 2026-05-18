@@ -49,6 +49,15 @@ function getSportIcon(type: string): string {
   return 'lightning-bolt'
 }
 
+const SPORT_ORDER: Record<string, number> = { Run: 0, Ride: 1, Swim: 2 }
+function sortSportEntries<T>(entries: [string, T][]): [string, T][] {
+  return [...entries].sort(([a], [b]) => {
+    const oa = SPORT_ORDER[a] ?? 99, ob = SPORT_ORDER[b] ?? 99
+    if (oa !== ob) return oa - ob
+    return a.localeCompare(b)
+  })
+}
+
 // ─── date helpers ──────────────────────────────────────────────────────────
 
 function startOf(period: Exclude<Period, 'total' | 'custom'>, anchor: Date): Date {
@@ -149,7 +158,7 @@ function SummaryCard({ activities }: { activities: Activity[] }) {
   }
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={sumSt.row}>
-      {Object.entries(byType).map(([type, s]) => {
+      {sortSportEntries(Object.entries(byType)).map(([type, s]) => {
         const color = getSportColor(type)
         const icon = getSportIcon(type)
         return (

@@ -98,13 +98,15 @@ function calcFuelingRec(durationMin: number | null, setting: FuelingSetting | un
 
 function parseHourly(data: any): HourlyPoint[] {
   const todayStr = new Date().toISOString().slice(0, 10)
-  const currentHour = new Date().getHours()
+  const now = new Date()
+  const currentHour = now.getHours()
+  const currentMinute = now.getMinutes()
   const result: HourlyPoint[] = []
   for (let i = 0; i < (data.hourly?.time?.length ?? 0); i++) {
     const timeStr: string = data.hourly.time[i]
     if (!timeStr.startsWith(todayStr)) continue
     const hour = parseInt(timeStr.split('T')[1])
-    if (hour < currentHour) continue
+    if (hour < currentHour || (hour === currentHour && currentMinute >= 30)) continue
     result.push({
       time: `${String(hour).padStart(2, '0')}:00`,
       temp: Math.round(data.hourly.temperature_2m[i]),

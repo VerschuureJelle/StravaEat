@@ -398,10 +398,10 @@ export default function SettingsScreen() {
                 {(['male', 'female', 'other'] as const).map(s => (
                   <Pressable
                     key={s}
-                    style={[styles.sexBtn, editedProfile.sex === s && styles.sexBtnActive]}
+                    style={[styles.sexBtn, savedProfile.sex === s && styles.sexBtnActive]}
                     onPress={() => setEditedProfile(p => ({ ...p, sex: s }))}
                   >
-                    <Text style={[styles.sexBtnText, editedProfile.sex === s && styles.sexBtnTextActive]}>
+                    <Text style={[styles.sexBtnText, savedProfile.sex === s && styles.sexBtnTextActive]}>
                       {s.charAt(0).toUpperCase() + s.slice(1)}
                     </Text>
                   </Pressable>
@@ -454,7 +454,7 @@ export default function SettingsScreen() {
             </View>
 
             {/* Period tracking — only visible for female users */}
-            {editedProfile.sex === 'female' && (
+            {savedProfile.sex === 'female' && (
               <View style={styles.periodCard}>
                 <View style={styles.periodToggleRow}>
                   <View style={styles.periodToggleLeft}>

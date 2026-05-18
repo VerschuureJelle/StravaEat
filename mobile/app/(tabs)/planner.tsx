@@ -43,6 +43,15 @@ function getSportIcon(type: string): string {
   return 'lightning-bolt'
 }
 
+const SPORT_ORDER: Record<string, number> = { Run: 0, Ride: 1, Swim: 2 }
+function sortSports(sports: string[]): string[] {
+  return [...sports].sort((a, b) => {
+    const oa = SPORT_ORDER[a] ?? 99, ob = SPORT_ORDER[b] ?? 99
+    if (oa !== ob) return oa - ob
+    return a.localeCompare(b)
+  })
+}
+
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60), m = Math.round(min % 60)
   return h > 0 ? `${h}h ${m}m` : `${m}m`
@@ -275,12 +284,12 @@ export default function PlannerScreen() {
     const userSportNames: string[] = (userSportsRes.data ?? []).map((s: any) => s.sport_name)
     let sportList: string[]
     if (userSportNames.length > 0) {
-      sportList = userSportNames
+      sportList = sortSports(userSportNames)
     } else {
       const normalized = (activitiesRes.data ?? [])
         .map((a: any) => normalizeType(a.type))
         .filter((t: string) => t.length > 0 && !t.startsWith('Virtual'))
-      sportList = [...new Set<string>(normalized)].sort()
+      sportList = sortSports([...new Set<string>(normalized)])
     }
     setSports(sportList)
     setSelectedSport(prev => (sportList.includes(prev) ? prev : (sportList[0] ?? '')))
@@ -737,7 +746,7 @@ export default function PlannerScreen() {
           ] as const).map(m => (
             <Pressable
               key={m.key}
-              style={[st.modeBtn, mode === m.key && { backgroundColor: sportColor, borderColor: sportColor }]}
+              style={[st.modeBtn, mode === m.key && { backgroundColor: C.accent, borderColor: C.accent }]}
               onPress={() => setMode(m.key)}
             >
               <Ionicons name={m.icon} size={14} color={mode === m.key ? C.white : C.text3} />
@@ -807,13 +816,13 @@ export default function PlannerScreen() {
 
                   <View style={st.segToggleRow}>
                     <Pressable
-                      style={[st.segToggleBtn, seg.inputType === 'distance' && { backgroundColor: sportColor, borderColor: sportColor }]}
+                      style={[st.segToggleBtn, seg.inputType === 'distance' && { backgroundColor: C.accent, borderColor: C.accent }]}
                       onPress={() => updateSegment(seg.id, { inputType: 'distance', value: '' })}
                     >
                       <Text style={[st.segToggleText, seg.inputType === 'distance' && { color: C.white }]}>Distance</Text>
                     </Pressable>
                     <Pressable
-                      style={[st.segToggleBtn, seg.inputType === 'time' && { backgroundColor: sportColor, borderColor: sportColor }]}
+                      style={[st.segToggleBtn, seg.inputType === 'time' && { backgroundColor: C.accent, borderColor: C.accent }]}
                       onPress={() => updateSegment(seg.id, { inputType: 'time', value: '' })}
                     >
                       <Text style={[st.segToggleText, seg.inputType === 'time' && { color: C.white }]}>Time</Text>
@@ -849,7 +858,7 @@ export default function PlannerScreen() {
                     {zones.map(z => (
                       <Pressable
                         key={z.id}
-                        style={[st.segZoneBtn, seg.zoneId === z.id && { backgroundColor: sportColor, borderColor: sportColor }]}
+                        style={[st.segZoneBtn, seg.zoneId === z.id && { backgroundColor: C.accent, borderColor: C.accent }]}
                         onPress={() => updateSegment(seg.id, { zoneId: z.id })}
                       >
                         <Text style={[st.segZoneBtnNum, seg.zoneId === z.id && { color: C.white }]}>Z{z.zone_number}</Text>
@@ -864,26 +873,26 @@ export default function PlannerScreen() {
             })}
 
             <Pressable style={st.addSegBtn} onPress={addSegment}>
-              <Ionicons name="add-circle-outline" size={18} color={sportColor} />
-              <Text style={[st.addSegBtnText, { color: sportColor }]}>Add segment</Text>
+              <Ionicons name="add-circle-outline" size={18} color={C.accent} />
+              <Text style={[st.addSegBtnText, { color: C.accent }]}>Add segment</Text>
             </Pressable>
 
-            <Pressable style={[st.calcBtn, { backgroundColor: sportColor }]} onPress={calculateSegments}>
+            <Pressable style={[st.calcBtn, { backgroundColor: C.accent }]} onPress={calculateSegments}>
               <Ionicons name="stats-chart-outline" size={18} color={C.white} />
               <Text style={st.calcBtnText}>Calculate workout</Text>
             </Pressable>
 
             {segResult && (
-              <View style={[st.segResultCard, { borderLeftColor: sportColor }]}>
+              <View style={[st.segResultCard, { borderLeftColor: C.accent }]}>
                 {/* Totals */}
                 <View style={st.segResultTotals}>
                   <View style={st.segResultStat}>
-                    <Text style={[st.segResultValue, { color: sportColor }]}>{segResult.totalKcal}</Text>
+                    <Text style={[st.segResultValue, { color: C.accent }]}>{segResult.totalKcal}</Text>
                     <Text style={st.segResultLabel}>kcal</Text>
                   </View>
                   <View style={st.divider} />
                   <View style={st.segResultStat}>
-                    <Text style={[st.segResultValue, { color: sportColor }]}>{formatDuration(segResult.totalDurationMin)}</Text>
+                    <Text style={[st.segResultValue, { color: C.accent }]}>{formatDuration(segResult.totalDurationMin)}</Text>
                     <Text style={st.segResultLabel}>total</Text>
                   </View>
                 </View>

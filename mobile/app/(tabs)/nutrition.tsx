@@ -129,6 +129,94 @@ function calcMifflinTDEE(
   return { bmr, tdee: Math.round(bmr * factor) }
 }
 
+interface CommonFood { name: string; kcal: number; protein_g?: number; fat_g?: number; carb_g?: number }
+const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[] = [
+  {
+    category: 'Fruit',
+    items: [
+      { name: 'Apple (medium)', kcal: 72, carb_g: 19 },
+      { name: 'Banana (medium)', kcal: 89, carb_g: 23, protein_g: 1 },
+      { name: 'Orange (medium)', kcal: 62, carb_g: 15 },
+      { name: 'Raspberries (100g)', kcal: 52, carb_g: 12, protein_g: 1 },
+      { name: 'Blueberries (100g)', kcal: 57, carb_g: 14, protein_g: 1 },
+      { name: 'Strawberries (100g)', kcal: 32, carb_g: 8 },
+      { name: 'Mango (100g)', kcal: 60, carb_g: 15 },
+      { name: 'Grapes (100g)', kcal: 69, carb_g: 18 },
+    ],
+  },
+  {
+    category: 'Drinks',
+    items: [
+      { name: 'Cup of coffee (black)', kcal: 2 },
+      { name: 'Coffee with milk', kcal: 30, protein_g: 2, fat_g: 1 },
+      { name: 'Latte (250ml)', kcal: 120, protein_g: 6, fat_g: 5, carb_g: 10 },
+      { name: 'Cup of tea (black)', kcal: 1 },
+      { name: 'Tea with milk', kcal: 20, protein_g: 1 },
+      { name: 'Coke (330ml)', kcal: 139, carb_g: 35 },
+      { name: 'Diet Coke (330ml)', kcal: 1 },
+      { name: 'Orange juice (250ml)', kcal: 112, carb_g: 26 },
+      { name: 'Whole milk (250ml)', kcal: 152, protein_g: 8, fat_g: 8, carb_g: 12 },
+      { name: 'Oat milk (250ml)', kcal: 130, protein_g: 3, fat_g: 5, carb_g: 17 },
+      { name: 'Sports drink (500ml)', kcal: 150, carb_g: 36 },
+      { name: 'Protein shake (scoop)', kcal: 120, protein_g: 25, carb_g: 4, fat_g: 2 },
+    ],
+  },
+  {
+    category: 'Bread & Grains',
+    items: [
+      { name: 'Slice of bread (white)', kcal: 79, carb_g: 15, protein_g: 3, fat_g: 1 },
+      { name: 'Slice of bread (whole wheat)', kcal: 69, carb_g: 12, protein_g: 4, fat_g: 1 },
+      { name: 'Bagel (plain)', kcal: 270, carb_g: 53, protein_g: 10, fat_g: 2 },
+      { name: 'Croissant', kcal: 231, carb_g: 26, protein_g: 5, fat_g: 12 },
+      { name: 'Oatmeal (50g dry)', kcal: 188, protein_g: 6, fat_g: 3, carb_g: 33 },
+      { name: 'White rice (100g cooked)', kcal: 130, protein_g: 3, carb_g: 28 },
+      { name: 'Pasta (100g cooked)', kcal: 158, protein_g: 6, carb_g: 31 },
+      { name: 'Wrap / tortilla', kcal: 210, carb_g: 36, protein_g: 5, fat_g: 5 },
+    ],
+  },
+  {
+    category: 'Dairy & Eggs',
+    items: [
+      { name: 'Egg (large)', kcal: 72, protein_g: 6, fat_g: 5 },
+      { name: 'Greek yogurt (150g)', kcal: 133, protein_g: 15, fat_g: 5, carb_g: 6 },
+      { name: 'Cottage cheese (100g)', kcal: 98, protein_g: 11, fat_g: 4, carb_g: 3 },
+      { name: 'Cheddar cheese (30g)', kcal: 120, protein_g: 7, fat_g: 10 },
+      { name: 'Skyr (150g)', kcal: 90, protein_g: 15, fat_g: 0, carb_g: 6 },
+    ],
+  },
+  {
+    category: 'Protein',
+    items: [
+      { name: 'Chicken breast (100g)', kcal: 165, protein_g: 31, fat_g: 4 },
+      { name: 'Salmon (100g)', kcal: 208, protein_g: 20, fat_g: 13 },
+      { name: 'Tuna in water (100g)', kcal: 116, protein_g: 26, fat_g: 1 },
+      { name: 'Beef mince 5% fat (100g)', kcal: 137, protein_g: 21, fat_g: 5 },
+      { name: 'Tofu (100g)', kcal: 76, protein_g: 8, fat_g: 5, carb_g: 2 },
+      { name: 'Energy bar (avg)', kcal: 220, protein_g: 8, carb_g: 30, fat_g: 7 },
+    ],
+  },
+  {
+    category: 'Nuts & Spreads',
+    items: [
+      { name: 'Almonds (30g)', kcal: 174, protein_g: 6, fat_g: 15, carb_g: 6 },
+      { name: 'Peanut butter (1 tbsp)', kcal: 94, protein_g: 4, fat_g: 8, carb_g: 3 },
+      { name: 'Almond butter (1 tbsp)', kcal: 98, protein_g: 3, fat_g: 9, carb_g: 3 },
+      { name: 'Avocado (half)', kcal: 120, fat_g: 11, carb_g: 6, protein_g: 2 },
+      { name: 'Hummus (2 tbsp)', kcal: 70, protein_g: 3, fat_g: 5, carb_g: 5 },
+    ],
+  },
+  {
+    category: 'Snacks & Sweets',
+    items: [
+      { name: 'Banana bread (slice)', kcal: 196, carb_g: 33, protein_g: 3, fat_g: 6 },
+      { name: 'Dark chocolate (30g)', kcal: 170, fat_g: 12, carb_g: 13, protein_g: 2 },
+      { name: 'Rice cake (plain)', kcal: 35, carb_g: 7 },
+      { name: 'Granola bar', kcal: 193, carb_g: 29, protein_g: 4, fat_g: 7 },
+      { name: 'Medjool date (1 piece)', kcal: 66, carb_g: 18 },
+    ],
+  },
+]
+
 interface TodayActivity { id: string; name: string; type: string; total_kcal: number }
 interface MealItem { meal_index: number; name: string; scheduled_time: string; checked: boolean; kcal: number | null }
 
@@ -159,6 +247,9 @@ export default function NutritionScreen() {
   const [mealsLoading, setMealsLoading] = useState(true)
   const [checking, setChecking] = useState<number | null>(null)
   const [mealKcalInputs, setMealKcalInputs] = useState<Record<number, string>>({})
+
+  // ── Quick add state ──────────────────────────────────────────────────────────
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
 
   // ── Estimate tab state ───────────────────────────────────────────────────────
   const [profileWeight, setProfileWeight] = useState<number | null>(null)
@@ -573,6 +664,46 @@ export default function NutritionScreen() {
                   <Ionicons name="bookmark-outline" size={20} color={C.text2} />
                 </Pressable>
               </View>
+            </View>
+
+            {/* Common foods quick-add */}
+            <View style={st.card}>
+              <Text style={st.cardLabel}>Quick add</Text>
+              <Text style={st.quickAddNote}>Tap any item to pre-fill the form above</Text>
+              {COMMON_FOOD_CATEGORIES.map(cat => {
+                const isOpen = expandedCategories.has(cat.category)
+                return (
+                  <View key={cat.category} style={st.quickAddCategory}>
+                    <Pressable
+                      style={st.quickAddCategoryHeader}
+                      onPress={() => setExpandedCategories(prev => {
+                        const next = new Set(prev)
+                        isOpen ? next.delete(cat.category) : next.add(cat.category)
+                        return next
+                      })}
+                    >
+                      <Text style={st.quickAddCategoryLabel}>{cat.category}</Text>
+                      <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={14} color={C.text3} />
+                    </Pressable>
+                    {isOpen && cat.items.map((food, i) => (
+                      <Pressable
+                        key={food.name}
+                        style={[st.quickAddRow, i < cat.items.length - 1 && st.quickAddRowBorder]}
+                        onPress={() => {
+                          setFoodName(food.name)
+                          setFoodKcal(String(food.kcal))
+                          setFoodProtein(food.protein_g != null ? String(food.protein_g) : '')
+                          setFoodFat(food.fat_g != null ? String(food.fat_g) : '')
+                          setFoodCarb(food.carb_g != null ? String(food.carb_g) : '')
+                        }}
+                      >
+                        <Text style={st.quickAddRowName}>{food.name}</Text>
+                        <Text style={st.quickAddRowKcal}>{food.kcal} kcal</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )
+              })}
             </View>
 
             {/* Food log list */}
@@ -1090,6 +1221,20 @@ const st = StyleSheet.create({
   myFoodsBtnText: { fontSize: 12, fontWeight: '700', color: C.accent },
   saveTemplateBtn: { backgroundColor: C.surface2, borderWidth: 1.5, borderColor: C.border },
 
+  quickAddNote: { fontSize: 12, color: C.text3, marginBottom: 8 },
+  quickAddCategory: { borderTopWidth: 1, borderTopColor: C.divider },
+  quickAddCategoryHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 11,
+  },
+  quickAddCategoryLabel: { fontSize: 13, fontWeight: '700', color: C.text2 },
+  quickAddRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 10, paddingLeft: 10,
+  },
+  quickAddRowBorder: { borderBottomWidth: 1, borderBottomColor: C.divider },
+  quickAddRowName: { fontSize: 13, color: C.text1, flex: 1 },
+  quickAddRowKcal: { fontSize: 12, color: C.text3, fontWeight: '600', marginLeft: 8 },
   emptyNote: { fontSize: 14, color: C.text3, textAlign: 'center', paddingVertical: 16, fontStyle: 'italic' },
   logRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10 },
   logRowBorder: { borderBottomWidth: 1, borderBottomColor: C.divider },

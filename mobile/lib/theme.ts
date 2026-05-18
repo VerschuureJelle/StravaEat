@@ -45,8 +45,8 @@ export const C = {
 
   // Sport colors — huisstijl palet
   swim:    '#38BDF8',      // Icy Sky Blue
-  run:     '#818CF8',      // Lavender-Violet
+  run:     '#6366F1',      // Medium Indigo
   walk:    '#94A3B8',      // Slate Blue-Gray
-  ride:    '#6366F1',      // Medium Indigo
+  ride:    '#818CF8',      // Lavender-Violet
   sport:   '#94A3B8',      // Slate Blue-Gray
 } as const
