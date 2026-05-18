@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { CameraView, useCameraPermissions } from 'expo-camera'
 import {
   View, Text, TextInput, Pressable, ScrollView,
   StyleSheet, Alert, ActivityIndicator, Modal,
@@ -10,6 +11,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { scheduleMealNotifications, cancelMealNotification } from '../../lib/notifications'
 import { C } from '../../lib/theme'
+import { ACTIVITY_LEVELS } from '../../lib/activityLevels'
+import type { ActivityLevelKey as ActivityLevel } from '../../lib/activityLevels'
 import type { FoodLog, MealTemplate } from '../../types'
 
 interface CustomFood {
@@ -21,11 +24,98 @@ interface CustomFood {
   carb_g: number | null
 }
 
-type SubTab = 'nutrition' | 'meals' | 'estimate'
+interface DayData {
+  dateStr: string
+  dayLabel: string
+  fullDate: string
+  isToday: boolean
+  isFuture: boolean
+  consumed: number
+  burned: number
+  target: number | null
+}
+
+type SubTab = 'nutrition' | 'meals' | 'week' | 'estimate'
+type NutriPeriod = 'total' | 'week' | 'month' | 'year' | 'custom'
+
+const NUTRI_PERIOD_OPTIONS: { label: string; value: NutriPeriod }[] = [
+  { label: 'All history', value: 'total' },
+  { label: 'Week', value: 'week' },
+  { label: 'Month', value: 'month' },
+  { label: 'Year', value: 'year' },
+  { label: 'Custom range…', value: 'custom' },
+]
 
 function localDate(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function nStartOf(period: Exclude<NutriPeriod, 'total' | 'custom'>, anchor: Date): Date {
+  const d = new Date(anchor)
+  switch (period) {
+    case 'week': { const dow = d.getDay(); d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1)); d.setHours(0, 0, 0, 0); return d }
+    case 'month': d.setDate(1); d.setHours(0, 0, 0, 0); return d
+    case 'year': d.setMonth(0, 1); d.setHours(0, 0, 0, 0); return d
+  }
+}
+function nEndOf(period: Exclude<NutriPeriod, 'total' | 'custom'>, start: Date): Date {
+  const d = new Date(start)
+  switch (period) {
+    case 'week': d.setDate(d.getDate() + 6); d.setHours(23, 59, 59, 999); return d
+    case 'month': d.setMonth(d.getMonth() + 1, 0); d.setHours(23, 59, 59, 999); return d
+    case 'year': d.setMonth(11, 31); d.setHours(23, 59, 59, 999); return d
+  }
+}
+function nAdvance(period: Exclude<NutriPeriod, 'total' | 'custom'>, anchor: Date, delta: number): Date {
+  const d = new Date(anchor)
+  switch (period) {
+    case 'week': d.setDate(d.getDate() + delta * 7); break
+    case 'month': d.setMonth(d.getMonth() + delta); break
+    case 'year': d.setFullYear(d.getFullYear() + delta); break
+  }
+  return d
+}
+function nNavLabel(period: Exclude<NutriPeriod, 'total' | 'custom'>, anchor: Date): string {
+  const start = nStartOf(period, anchor), end = nEndOf(period, start)
+  const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString(undefined, o)
+  switch (period) {
+    case 'week': return `${fmt(start, { day: 'numeric', month: 'short' })} – ${fmt(end, { day: 'numeric', month: 'short', year: 'numeric' })}`
+    case 'month': return fmt(start, { month: 'long', year: 'numeric' })
+    case 'year': return String(start.getFullYear())
+  }
+}
+function parseDDMMYYYYNutri(s: string): string | null {
+  const m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/)
+  if (!m) return null
+  const [, d, mo, y] = m
+  const date = new Date(Number(y), Number(mo) - 1, Number(d))
+  if (isNaN(date.getTime())) return null
+  return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`
+}
+function generateDays(startStr: string, endStr: string): DayData[] {
+  const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const todayStr = localDate()
+  const result: DayData[] = []
+  const cur = new Date(startStr + 'T12:00:00')
+  const end = new Date(endStr + 'T12:00:00')
+  while (cur <= end) {
+    const dateStr = toDateStr(cur)
+    result.push({
+      dateStr,
+      dayLabel: SHORT_DAYS[cur.getDay()],
+      fullDate: cur.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
+      isToday: dateStr === todayStr,
+      isFuture: dateStr > todayStr,
+      consumed: 0, burned: 0, target: null,
+    })
+    cur.setDate(cur.getDate() + 1)
+  }
+  return result
 }
 
 function isOverdue(scheduledTime: string): boolean {
@@ -54,30 +144,6 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
-const ACTIVITY_LEVELS = [
-  {
-    key: 'sedentary', label: 'Sedentary', detail: 'Desk job, little movement', factor: 1.2,
-    info: 'You have a desk job or study and don\'t exercise regularly. You walk to the car, around the office, but your body is largely still for most of the day.',
-  },
-  {
-    key: 'light', label: 'Light', detail: '1–3 workouts/week', factor: 1.375,
-    info: 'You exercise 1–3 times per week at a casual pace — a few walks, a gym session, a weekend ride. Outside of those sessions your daily life is mostly sedentary.',
-  },
-  {
-    key: 'moderate', label: 'Moderate', detail: '3–5 workouts/week', factor: 1.55,
-    info: 'You train consistently 3–5 days per week at a real intensity. Your workouts are planned and regular. This fits most recreational athletes who exercise but have a desk job otherwise.',
-  },
-  {
-    key: 'active', label: 'Active', detail: '6–7 hard sessions/week', factor: 1.725,
-    info: 'You train hard 6–7 days per week, or combine regular intense training with a job that keeps you on your feet. Think a competitive club runner or cyclist doing daily rides.',
-  },
-  {
-    key: 'very_active', label: 'Very active', detail: 'Athlete + physical job', factor: 1.9,
-    info: 'You combine high-volume, high-intensity daily training with a physically demanding job — construction worker who trains, professional athlete in a build phase, or military personnel.',
-  },
-] as const
-
-type ActivityLevel = typeof ACTIVITY_LEVELS[number]['key']
 
 const QUIZ_QUESTIONS = [
   {
@@ -168,9 +234,9 @@ const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[] = [
       { name: 'Slice of bread (whole wheat)', kcal: 69, carb_g: 12, protein_g: 4, fat_g: 1 },
       { name: 'Bagel (plain)', kcal: 270, carb_g: 53, protein_g: 10, fat_g: 2 },
       { name: 'Croissant', kcal: 231, carb_g: 26, protein_g: 5, fat_g: 12 },
-      { name: 'Oatmeal (50g dry)', kcal: 188, protein_g: 6, fat_g: 3, carb_g: 33 },
-      { name: 'White rice (100g cooked)', kcal: 130, protein_g: 3, carb_g: 28 },
-      { name: 'Pasta (100g cooked)', kcal: 158, protein_g: 6, carb_g: 31 },
+      { name: 'Oats (50g uncooked)', kcal: 188, protein_g: 6, fat_g: 3, carb_g: 33 },
+      { name: 'White rice (100g uncooked)', kcal: 365, protein_g: 7, fat_g: 1, carb_g: 79 },
+      { name: 'Pasta (100g uncooked)', kcal: 371, protein_g: 13, fat_g: 2, carb_g: 74 },
       { name: 'Wrap / tortilla', kcal: 210, carb_g: 36, protein_g: 5, fat_g: 5 },
     ],
   },
@@ -251,6 +317,19 @@ export default function NutritionScreen() {
   // ── Quick add state ──────────────────────────────────────────────────────────
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
 
+  // ── Barcode scanner state ────────────────────────────────────────────────────
+  const [scannerVisible, setScannerVisible] = useState(false)
+  const [scanLoading, setScanLoading] = useState(false)
+  const [scanResult, setScanResult] = useState<{ name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null } | null>(null)
+  const lastScannedRef = useRef<string | null>(null)
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions()
+
+  // ── Macro goals state ────────────────────────────────────────────────────────
+  const [goalProtein, setGoalProtein] = useState<number | null>(null)
+  const [goalFat, setGoalFat] = useState<number | null>(null)
+  const [goalCarb, setGoalCarb] = useState<number | null>(null)
+
+
   // ── Estimate tab state ───────────────────────────────────────────────────────
   const [profileWeight, setProfileWeight] = useState<number | null>(null)
   const [profileHeight, setProfileHeight] = useState<number | null>(null)
@@ -266,6 +345,9 @@ export default function NutritionScreen() {
   const consumed = logs.reduce((s, l) => s + l.kcal, 0)
   const remaining = target != null ? target - consumed : null
   const progress = target != null && target > 0 ? Math.min(consumed / target, 1) : 0
+  const effectiveProteinGoal = goalProtein ?? (baseline ? Math.round(baseline * 0.2 / 4) : null)
+  const effectiveFatGoal = goalFat ?? (baseline ? Math.round(baseline * 0.3 / 9) : null)
+  const effectiveCarbGoal = goalCarb ?? (baseline ? Math.round(baseline * 0.5 / 4) : null)
   const checkedCount = meals.filter(m => m.checked).length
   const allMealsDone = meals.length > 0 && checkedCount === meals.length
   const barColor = remaining != null && remaining < 0 ? C.danger : C.accent
@@ -273,6 +355,52 @@ export default function NutritionScreen() {
   useFocusEffect(useCallback(() => {
     loadAll()
   }, []))
+
+  async function openScanner() {
+    if (!cameraPermission?.granted) {
+      const result = await requestCameraPermission()
+      if (!result.granted) return
+    }
+    lastScannedRef.current = null
+    setScanResult(null)
+    setScannerVisible(true)
+  }
+
+  async function handleBarcodeScan({ data }: { data: string }) {
+    if (lastScannedRef.current === data) return
+    lastScannedRef.current = data
+    setScanLoading(true)
+    try {
+      const res = await fetch(`https://world.openfoodfacts.org/api/v3/product/${data}.json`)
+      const json = await res.json()
+      const p = json.product
+      if (!p) { setScanLoading(false); setScanResult(null); Alert.alert('Not found', 'Product not found in Open Food Facts. Try entering it manually.'); return }
+      const kcalPer100 = p.nutriments?.['energy-kcal_100g'] ?? p.nutriments?.['energy-kcal'] ?? null
+      if (!kcalPer100) { setScanLoading(false); Alert.alert('No calorie data', 'This product has no calorie data. Enter it manually.'); return }
+      setScanResult({
+        name: p.product_name ?? p.abbreviated_product_name ?? 'Unknown product',
+        kcal: Math.round(kcalPer100),
+        protein_g: p.nutriments?.proteins_100g != null ? Math.round(p.nutriments.proteins_100g * 10) / 10 : null,
+        fat_g: p.nutriments?.fat_100g != null ? Math.round(p.nutriments.fat_100g * 10) / 10 : null,
+        carb_g: p.nutriments?.carbohydrates_100g != null ? Math.round(p.nutriments.carbohydrates_100g * 10) / 10 : null,
+      })
+    } catch {
+      Alert.alert('Error', 'Could not fetch product data.')
+    } finally {
+      setScanLoading(false)
+    }
+  }
+
+  function applyScanResult() {
+    if (!scanResult) return
+    setFoodName(scanResult.name)
+    setFoodKcal(String(scanResult.kcal))
+    setFoodProtein(scanResult.protein_g != null ? String(scanResult.protein_g) : '')
+    setFoodFat(scanResult.fat_g != null ? String(scanResult.fat_g) : '')
+    setFoodCarb(scanResult.carb_g != null ? String(scanResult.carb_g) : '')
+    setScannerVisible(false)
+    setScanResult(null)
+  }
 
   async function loadAll() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -284,7 +412,7 @@ export default function NutritionScreen() {
   async function loadNutrition(uid: string) {
     setNutritionLoading(true)
     const [profileRes, actsRes, plannedRes, logsRes, customFoodsRes] = await Promise.all([
-      supabase.from('users').select('daily_kcal_target, weight_kg, height_cm, age, sex').eq('id', uid).single(),
+      supabase.from('users').select('daily_kcal_target, weight_kg, height_cm, age, sex, goal_protein_g, goal_fat_g, goal_carb_g').eq('id', uid).single(),
       supabase.from('activities').select('id, name, type, total_kcal')
         .eq('user_id', uid).gte('date', todayStr).not('total_kcal', 'is', null),
       supabase.from('planned_workouts').select('target_kcal')
@@ -294,6 +422,9 @@ export default function NutritionScreen() {
       supabase.from('custom_foods').select('*').eq('user_id', uid).order('name'),
     ])
     setBaseline(profileRes.data?.daily_kcal_target ?? null)
+    setGoalProtein(profileRes.data?.goal_protein_g ?? null)
+    setGoalFat(profileRes.data?.goal_fat_g ?? null)
+    setGoalCarb(profileRes.data?.goal_carb_g ?? null)
     setProfileWeight(profileRes.data?.weight_kg ?? null)
     setProfileHeight(profileRes.data?.height_cm ?? null)
     setProfileAge(profileRes.data?.age ?? null)
@@ -463,8 +594,9 @@ export default function NutritionScreen() {
       {/* Sub-tab selector */}
       <View style={st.segRow}>
         {([
-          { key: 'nutrition', label: "Today's log" },
-          { key: 'meals', label: 'Meal Plan' },
+          { key: 'nutrition', label: 'Today' },
+          { key: 'meals', label: 'Meals' },
+          { key: 'week', label: 'Week' },
           { key: 'estimate', label: 'Estimate' },
         ] as const).map(tab => (
           <Pressable
@@ -476,6 +608,16 @@ export default function NutritionScreen() {
           </Pressable>
         ))}
       </View>
+
+      <BarcodeScannerModal
+        visible={scannerVisible}
+        loading={scanLoading}
+        result={scanResult}
+        onBarcodeScanned={handleBarcodeScan}
+        onApply={applyScanResult}
+        onRetry={() => { lastScannedRef.current = null; setScanResult(null) }}
+        onClose={() => { setScannerVisible(false); setScanResult(null) }}
+      />
 
       <CustomFoodsModal
         visible={customFoodsModalVisible}
@@ -590,10 +732,16 @@ export default function NutritionScreen() {
             <View style={st.card}>
               <View style={st.cardLabelRow}>
                 <Text style={st.cardLabel}>Log food</Text>
-                <Pressable onPress={() => setCustomFoodsModalVisible(true)} style={st.myFoodsBtn}>
-                  <Ionicons name="bookmark-outline" size={13} color={C.accent} />
-                  <Text style={st.myFoodsBtnText}>My Foods</Text>
-                </Pressable>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable onPress={openScanner} style={[st.myFoodsBtn, { backgroundColor: 'rgba(126,87,194,0.12)' }]}>
+                    <Ionicons name="barcode-outline" size={13} color="#7E57C2" />
+                    <Text style={[st.myFoodsBtnText, { color: '#7E57C2' }]}>Scan</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setCustomFoodsModalVisible(true)} style={st.myFoodsBtn}>
+                    <Ionicons name="bookmark-outline" size={13} color={C.accent} />
+                    <Text style={st.myFoodsBtnText}>My Foods</Text>
+                  </Pressable>
+                </View>
               </View>
               <TextInput
                 style={st.input}
@@ -734,14 +882,33 @@ export default function NutritionScreen() {
                 const totalP = logs.reduce((s, l) => s + (l.protein_g ?? 0), 0)
                 const totalF = logs.reduce((s, l) => s + (l.fat_g ?? 0), 0)
                 const totalC = logs.reduce((s, l) => s + (l.carb_g ?? 0), 0)
-                const hasMacros = totalP > 0 || totalF > 0 || totalC > 0
+                const macros = [
+                  { label: 'Protein', color: C.accent, consumed: totalP, goal: effectiveProteinGoal },
+                  { label: 'Fat', color: C.walk, consumed: totalF, goal: effectiveFatGoal },
+                  { label: 'Carbs', color: C.accent2, consumed: totalC, goal: effectiveCarbGoal },
+                ].filter(m => m.consumed > 0 || m.goal != null)
                 return (
                   <>
-                    {hasMacros && (
-                      <View style={st.macroTotalsRow}>
-                        {totalP > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: C.accent }]}>P {Math.round(totalP)}g</Text></View>}
-                        {totalF > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: C.walk }]}>F {Math.round(totalF)}g</Text></View>}
-                        {totalC > 0 && <View style={st.macroChip}><Text style={[st.macroChipText, { color: C.accent2 }]}>C {Math.round(totalC)}g</Text></View>}
+                    {macros.length > 0 && (
+                      <View style={st.macroProgressSection}>
+                        {macros.map(m => (
+                          <View key={m.label} style={st.macroProgressRow}>
+                            <Text style={[st.macroProgressLabel, { color: m.color }]}>{m.label}</Text>
+                            {m.goal != null ? (
+                              <View style={st.macroProgressBarTrack}>
+                                <View style={[st.macroProgressBarFill, {
+                                  width: `${Math.min((m.consumed / m.goal) * 100, 100)}%` as any,
+                                  backgroundColor: m.color,
+                                }]} />
+                              </View>
+                            ) : (
+                              <View style={{ flex: 1 }} />
+                            )}
+                            <Text style={[st.macroProgressValue, m.goal != null && m.consumed > m.goal && { color: C.danger }]}>
+                              {Math.round(m.consumed)}g{m.goal != null ? ` / ${m.goal}g` : ''}
+                            </Text>
+                          </View>
+                        ))}
                       </View>
                     )}
                     <View style={st.totalRow}>
@@ -795,22 +962,20 @@ export default function NutritionScreen() {
               const overdue = !meal.checked && isOverdue(meal.scheduled_time)
               const isChecking = checking === meal.meal_index
               return (
-                <View
+                <Pressable
                   key={meal.meal_index}
                   style={[st.mealCard, meal.checked && st.mealCardChecked, overdue && st.mealCardOverdue]}
+                  onPress={() => handleMealTap(meal)}
+                  disabled={isChecking}
                 >
-                  <Pressable
-                    style={[st.checkbox, meal.checked && st.checkboxChecked]}
-                    onPress={() => handleMealTap(meal)}
-                    disabled={isChecking}
-                  >
+                  <View style={[st.checkbox, meal.checked && st.checkboxChecked]}>
                     {isChecking
                       ? <ActivityIndicator size="small" color={meal.checked ? C.white : C.accent} />
                       : meal.checked
                         ? <Ionicons name="checkmark" size={16} color={C.white} />
                         : null
                     }
-                  </Pressable>
+                  </View>
                   <View style={st.mealInfo}>
                     <Text style={[st.mealName, meal.checked && st.mealNameChecked]}>{meal.name}</Text>
                     <View style={st.mealMetaRow}>
@@ -838,10 +1003,15 @@ export default function NutritionScreen() {
                       {mealKcalInputs[meal.meal_index] ? `${mealKcalInputs[meal.meal_index]} kcal` : ''}
                     </Text>
                   )}
-                </View>
+                </Pressable>
               )
             })}
           </>
+        )}
+
+        {/* ── HISTORY ──────────────────────────────────────────────────────── */}
+        {subTab === 'week' && (
+          <HistoryView userId={userId} />
         )}
 
         {/* ── CALORIC INTAKE ESTIMATE ──────────────────────────────────────── */}
@@ -948,6 +1118,473 @@ export default function NutritionScreen() {
     </SafeAreaView>
   )
 }
+
+// ─── History view ──────────────────────────────────────────────────────────
+
+function DayRow({ day, last }: { day: DayData; last: boolean }) {
+  const ratio = day.target && day.consumed > 0 ? day.consumed / day.target : 0
+  const isMet = ratio >= 0.9 && ratio <= 1.15
+  const isOver = ratio > 1.15
+  const isUnder = !day.isFuture && day.consumed > 0 && ratio < 0.9
+  const barColor = day.isFuture ? C.surface3
+    : day.isToday ? C.accent
+    : isMet ? C.success
+    : isOver ? C.danger
+    : isUnder ? C.warning
+    : C.surface3
+  const fillPct = day.isFuture ? 0 : Math.min(ratio, 1) * 100
+  return (
+    <View style={[hv.dayRow, !last && { borderBottomWidth: 1, borderBottomColor: C.divider }]}>
+      <View style={hv.dayLabelCol}>
+        <Text style={[hv.dayName, day.isToday && { color: C.accent, fontWeight: '800' }]}>{day.dayLabel}</Text>
+        <Text style={hv.dayDate}>{day.fullDate}</Text>
+      </View>
+      <View style={hv.dayBarCol}>
+        <View style={hv.barTrack}>
+          <View style={[hv.barFill, { width: `${fillPct}%` as any, backgroundColor: barColor }]} />
+          {isOver && <View style={[hv.barOverflow, { backgroundColor: C.danger }]} />}
+        </View>
+        <View style={hv.dayNumbers}>
+          <Text style={[hv.dayConsumed, (day.isFuture || day.consumed === 0) && { color: C.text3 }]}>
+            {day.isFuture || day.consumed === 0 ? '—' : day.consumed.toLocaleString()}
+          </Text>
+          {day.target != null && <Text style={hv.dayTarget}>/ {day.target.toLocaleString()} kcal</Text>}
+        </View>
+      </View>
+      <View style={hv.statusCol}>
+        {day.isToday && <View style={[hv.statusDot, { backgroundColor: C.accent }]} />}
+        {!day.isToday && isMet && day.consumed > 0 && <Ionicons name="checkmark-circle" size={18} color={C.success} />}
+        {!day.isToday && isOver && <Ionicons name="arrow-up-circle" size={18} color={C.danger} />}
+        {!day.isToday && isUnder && <Ionicons name="remove-circle" size={18} color={C.warning} />}
+        {!day.isToday && !isMet && !isOver && !isUnder && <Ionicons name="ellipse-outline" size={18} color={C.text3} />}
+      </View>
+    </View>
+  )
+}
+
+function HistoryView({ userId }: { userId: string | null }) {
+  const [period, setPeriod] = useState<NutriPeriod>('week')
+  const [anchor, setAnchor] = useState(new Date())
+  const [monthsBack, setMonthsBack] = useState(3)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [customStartText, setCustomStartText] = useState('')
+  const [customEndText, setCustomEndText] = useState('')
+  const [customStart, setCustomStart] = useState<string | null>(null)
+  const [customEnd, setCustomEnd] = useState<string | null>(null)
+  const [days, setDays] = useState<DayData[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!userId) return
+    load()
+  }, [userId, period, anchor, monthsBack, customStart, customEnd])
+
+  async function load() {
+    setLoading(true)
+    const todayStr = localDate()
+    let startStr: string, endStr: string
+    if (period === 'total') {
+      const s = new Date(); s.setMonth(s.getMonth() - monthsBack); s.setDate(1)
+      startStr = toDateStr(s); endStr = todayStr
+    } else if (period === 'custom') {
+      if (!customStart || !customEnd) { setDays([]); setLoading(false); return }
+      startStr = customStart; endStr = customEnd
+    } else {
+      const s = nStartOf(period, anchor)
+      startStr = toDateStr(s); endStr = toDateStr(nEndOf(period, s))
+    }
+    const [profileRes, foodRes, actsRes] = await Promise.all([
+      supabase.from('users').select('daily_kcal_target').eq('id', userId!).single(),
+      supabase.from('food_logs').select('date, kcal').eq('user_id', userId!)
+        .gte('date', startStr).lte('date', endStr),
+      supabase.from('activities').select('date, total_kcal').eq('user_id', userId!)
+        .gte('date', `${startStr}T00:00:00`).lte('date', `${endStr}T23:59:59`)
+        .not('total_kcal', 'is', null),
+    ])
+    const baseline: number | null = profileRes.data?.daily_kcal_target ?? null
+    const foodByDate: Record<string, number> = {}
+    for (const row of (foodRes.data ?? [])) foodByDate[row.date] = (foodByDate[row.date] ?? 0) + row.kcal
+    const burnedByDate: Record<string, number> = {}
+    for (const row of (actsRes.data ?? [])) {
+      const d = (row.date as string).slice(0, 10)
+      burnedByDate[d] = (burnedByDate[d] ?? 0) + (row.total_kcal ?? 0)
+    }
+    const result = generateDays(startStr, endStr).map(day => {
+      const burned = Math.round(burnedByDate[day.dateStr] ?? 0)
+      return { ...day, consumed: Math.round(foodByDate[day.dateStr] ?? 0), burned, target: baseline != null ? baseline + burned : null }
+    })
+    setDays(result)
+    setLoading(false)
+  }
+
+  function selectPeriod(p: NutriPeriod) {
+    setPeriod(p); setAnchor(new Date())
+    if (p !== 'custom') { setCustomStart(null); setCustomEnd(null) }
+    setDropdownOpen(false)
+  }
+
+  function applyCustom() {
+    const s = parseDDMMYYYYNutri(customStartText), e = parseDDMMYYYYNutri(customEndText)
+    if (s && e && s <= e) { setCustomStart(s); setCustomEnd(e) }
+  }
+
+  function periodLabel(): string {
+    if (period === 'total') return 'All history'
+    if (period === 'custom') {
+      if (customStart && customEnd) {
+        const fmt = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+        return `${fmt(customStart)} – ${fmt(customEnd)}`
+      }
+      return 'Custom range'
+    }
+    return nNavLabel(period, anchor)
+  }
+
+  const isFixed = period !== 'total' && period !== 'custom'
+  const past = days.filter(d => !d.isFuture && !d.isToday)
+  const daysWithData = days.filter(d => !d.isFuture && d.consumed > 0)
+  const metCount = daysWithData.filter(d => {
+    if (!d.target) return false
+    const r = d.consumed / d.target
+    return r >= 0.9 && r <= 1.15
+  }).length
+  const avgConsumed = daysWithData.length > 0
+    ? Math.round(daysWithData.reduce((s, d) => s + d.consumed, 0) / daysWithData.length)
+    : null
+
+  // Group by month for total / custom views
+  const monthGroups: { key: string; label: string; days: DayData[] }[] = []
+  if (period === 'total' || period === 'custom') {
+    const map = new Map<string, DayData[]>()
+    for (const d of days) {
+      const mk = d.dateStr.slice(0, 7)
+      if (!map.has(mk)) map.set(mk, [])
+      map.get(mk)!.push(d)
+    }
+    for (const [mk, mDays] of map) {
+      const [y, mo] = mk.split('-').map(Number)
+      monthGroups.push({
+        key: mk,
+        label: new Date(y, mo - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+        days: mDays,
+      })
+    }
+  }
+
+  return (
+    <View style={{ gap: 12 }}>
+      {/* Period selector */}
+      <Pressable style={hv.selectorBtn} onPress={() => setDropdownOpen(true)}>
+        <Text style={hv.selectorText} numberOfLines={1}>{periodLabel()}</Text>
+        <Ionicons name="chevron-down" size={14} color={C.text2} style={{ marginLeft: 6 }} />
+      </Pressable>
+
+      {/* Custom range inputs */}
+      {period === 'custom' && (
+        <View style={hv.customRange}>
+          <View style={hv.customField}>
+            <Text style={hv.customLabel}>FROM</Text>
+            <TextInput style={hv.customInput} placeholder="DD-MM-YYYY" placeholderTextColor={C.text3}
+              value={customStartText} onChangeText={setCustomStartText} onBlur={applyCustom} keyboardType="numbers-and-punctuation" />
+          </View>
+          <Text style={hv.customSep}>–</Text>
+          <View style={hv.customField}>
+            <Text style={hv.customLabel}>TO</Text>
+            <TextInput style={hv.customInput} placeholder="DD-MM-YYYY" placeholderTextColor={C.text3}
+              value={customEndText} onChangeText={setCustomEndText} onBlur={applyCustom} keyboardType="numbers-and-punctuation" />
+          </View>
+          <Pressable style={hv.applyBtn} onPress={applyCustom}><Text style={hv.applyBtnText}>Go</Text></Pressable>
+        </View>
+      )}
+
+      {/* Nav arrows */}
+      {isFixed && (
+        <View style={hv.navRow}>
+          <Pressable style={hv.navBtn} onPress={() => setAnchor(a => nAdvance(period, a, -1))}>
+            <Text style={hv.navArrow}>‹</Text>
+          </Pressable>
+          <Pressable style={hv.navBtn} onPress={() => setAnchor(a => nAdvance(period, a, 1))}>
+            <Text style={hv.navArrow}>›</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {loading && <ActivityIndicator color={C.accent} style={{ marginVertical: 24 }} />}
+
+      {!loading && (
+        <>
+          {/* Summary */}
+          {daysWithData.length > 0 && (
+            <View style={hv.summaryCard}>
+              <View style={hv.summaryItem}>
+                <Text style={hv.summaryNum}>{metCount}/{daysWithData.length}</Text>
+                <Text style={hv.summaryLabel}>days on target</Text>
+              </View>
+              <View style={hv.summaryDivider} />
+              <View style={hv.summaryItem}>
+                <Text style={hv.summaryNum}>{avgConsumed?.toLocaleString() ?? '—'}</Text>
+                <Text style={hv.summaryLabel}>avg kcal/day</Text>
+              </View>
+              <View style={hv.summaryDivider} />
+              <View style={hv.summaryItem}>
+                <Text style={hv.summaryNum}>{daysWithData.length}</Text>
+                <Text style={hv.summaryLabel}>days logged</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Day rows — flat for week/month/year, grouped by month for total/custom */}
+          {isFixed && days.length > 0 && (
+            <View style={hv.daysCard}>
+              {days.map((d, i) => <DayRow key={d.dateStr} day={d} last={i === days.length - 1} />)}
+            </View>
+          )}
+          {!isFixed && monthGroups.map(g => (
+            <View key={g.key}>
+              <Text style={hv.monthHeader}>{g.label}</Text>
+              <View style={hv.daysCard}>
+                {g.days.map((d, i) => <DayRow key={d.dateStr} day={d} last={i === g.days.length - 1} />)}
+              </View>
+            </View>
+          ))}
+
+          {/* Load more */}
+          {period === 'total' && (
+            <Pressable style={hv.loadMoreBtn} onPress={() => setMonthsBack(n => n + 3)}>
+              <Text style={hv.loadMoreText}>Load earlier months</Text>
+            </Pressable>
+          )}
+
+          {/* Legend */}
+          {(days.length > 0 || past.length > 0) && (
+            <View style={hv.legend}>
+              <View style={hv.legendItem}><Ionicons name="checkmark-circle" size={13} color={C.success} /><Text style={hv.legendText}>On target (90–115%)</Text></View>
+              <View style={hv.legendItem}><Ionicons name="remove-circle" size={13} color={C.warning} /><Text style={hv.legendText}>Under (&lt;90%)</Text></View>
+              <View style={hv.legendItem}><Ionicons name="arrow-up-circle" size={13} color={C.danger} /><Text style={hv.legendText}>Over (&gt;115%)</Text></View>
+            </View>
+          )}
+
+          {period === 'custom' && !customStart && (
+            <Text style={hv.emptyNote}>Enter a date range above.</Text>
+          )}
+        </>
+      )}
+
+      {/* Period dropdown */}
+      <Modal visible={dropdownOpen} transparent animationType="fade">
+        <Pressable style={hv.modalOverlay} onPress={() => setDropdownOpen(false)}>
+          <Pressable style={hv.dropdownSheet} onPress={e => e.stopPropagation()}>
+            <Text style={hv.dropdownTitle}>View period</Text>
+            {NUTRI_PERIOD_OPTIONS.map(opt => (
+              <Pressable key={opt.value} style={hv.dropdownRow} onPress={() => selectPeriod(opt.value)}>
+                <Text style={[hv.dropdownRowText, period === opt.value && hv.dropdownRowActive]}>{opt.label}</Text>
+                {period === opt.value && <Ionicons name="checkmark" size={16} color={C.accent} />}
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  )
+}
+
+const hv = StyleSheet.create({
+  selectorBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: C.surface2, borderRadius: 10, borderWidth: 1, borderColor: C.border,
+  },
+  selectorText: { fontSize: 15, fontWeight: '700', color: C.text1, flex: 1 },
+  customRange: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  customField: { flex: 1 },
+  customLabel: { fontSize: 10, fontWeight: '700', color: C.text3, marginBottom: 4, textTransform: 'uppercase' },
+  customInput: { borderWidth: 1, borderColor: C.border, borderRadius: 8, padding: 9, fontSize: 13, backgroundColor: C.surface2, color: C.text1 },
+  customSep: { fontSize: 18, color: C.text3, marginBottom: 10 },
+  applyBtn: { backgroundColor: C.accent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 1 },
+  applyBtnText: { color: C.white, fontWeight: '700', fontSize: 13 },
+  navRow: { flexDirection: 'row', gap: 4 },
+  navBtn: { padding: 6 },
+  navArrow: { fontSize: 26, color: C.text2, lineHeight: 30 },
+  summaryCard: {
+    flexDirection: 'row', backgroundColor: C.surface, borderRadius: 18,
+    padding: 18, borderWidth: 1, borderColor: C.border,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  },
+  summaryItem: { flex: 1, alignItems: 'center' },
+  summaryDivider: { width: 1, backgroundColor: C.border, marginHorizontal: 8 },
+  summaryNum: { fontSize: 22, fontWeight: '800', color: C.text1, marginBottom: 2 },
+  summaryLabel: { fontSize: 11, color: C.text3, textAlign: 'center' },
+  monthHeader: { fontSize: 16, fontWeight: '800', color: C.text1, paddingVertical: 4 },
+  daysCard: {
+    backgroundColor: C.surface, borderRadius: 18, paddingHorizontal: 18,
+    borderWidth: 1, borderColor: C.border,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  },
+  dayRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 10 },
+  dayLabelCol: { width: 40 },
+  dayName: { fontSize: 13, fontWeight: '700', color: C.text1 },
+  dayDate: { fontSize: 11, color: C.text3, marginTop: 1 },
+  dayBarCol: { flex: 1 },
+  barTrack: { height: 7, backgroundColor: C.surface3, borderRadius: 4, overflow: 'hidden', marginBottom: 5 },
+  barFill: { height: 7, borderRadius: 4 },
+  barOverflow: { position: 'absolute', right: 0, top: 0, width: 4, height: 7, borderRadius: 2 },
+  dayNumbers: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
+  dayConsumed: { fontSize: 13, fontWeight: '700', color: C.text1 },
+  dayTarget: { fontSize: 11, color: C.text3 },
+  statusCol: { width: 22, alignItems: 'center' },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  loadMoreBtn: { padding: 14, borderRadius: 10, backgroundColor: C.surface2, alignItems: 'center', borderWidth: 1, borderColor: C.border },
+  loadMoreText: { fontSize: 14, color: C.text2, fontWeight: '600' },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 4 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendText: { fontSize: 11, color: C.text3 },
+  emptyNote: { fontSize: 13, color: C.text3, textAlign: 'center', paddingVertical: 24, fontStyle: 'italic' },
+  modalOverlay: { flex: 1, backgroundColor: C.overlay, justifyContent: 'flex-end' },
+  dropdownSheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    borderTopWidth: 1, borderTopColor: C.border, paddingTop: 8, paddingBottom: 40,
+  },
+  dropdownTitle: { fontSize: 12, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: 20, paddingVertical: 12 },
+  dropdownRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, borderTopWidth: 1, borderTopColor: C.divider },
+  dropdownRowText: { fontSize: 16, color: C.text1 },
+  dropdownRowActive: { color: C.accent, fontWeight: '700' },
+})
+
+// ─── Barcode scanner modal ─────────────────────────────────────────────────
+
+function BarcodeScannerModal({ visible, loading, result, onBarcodeScanned, onApply, onRetry, onClose }: {
+  visible: boolean
+  loading: boolean
+  result: { name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null } | null
+  onBarcodeScanned: (scan: { data: string }) => void
+  onApply: () => void
+  onRetry: () => void
+  onClose: () => void
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" statusBarTranslucent>
+      <View style={bs.container}>
+        <CameraView
+          style={bs.camera}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'qr'] }}
+          onBarcodeScanned={!loading && !result ? onBarcodeScanned : undefined}
+        />
+
+        {/* Overlay */}
+        <View style={bs.overlay} pointerEvents="none">
+          <View style={bs.scanFrame} />
+        </View>
+
+        {/* Close button */}
+        <Pressable style={bs.closeBtn} onPress={onClose}>
+          <Ionicons name="close" size={24} color="#fff" />
+        </Pressable>
+
+        {/* Bottom sheet */}
+        <View style={bs.sheet}>
+          {loading && (
+            <View style={bs.sheetContent}>
+              <ActivityIndicator color={C.accent} size="large" />
+              <Text style={bs.sheetHint}>Looking up product…</Text>
+            </View>
+          )}
+          {!loading && !result && (
+            <View style={bs.sheetContent}>
+              <Ionicons name="barcode-outline" size={32} color={C.text3} />
+              <Text style={bs.sheetHint}>Point the camera at a barcode</Text>
+            </View>
+          )}
+          {!loading && result && (
+            <View style={bs.resultContent}>
+              <Text style={bs.resultName} numberOfLines={2}>{result.name}</Text>
+              <Text style={bs.resultPer}>per 100g</Text>
+              <View style={bs.resultMacros}>
+                <View style={bs.macroPill}>
+                  <Text style={[bs.macroNum, { color: C.accent }]}>{result.kcal}</Text>
+                  <Text style={bs.macroLabel}>kcal</Text>
+                </View>
+                {result.protein_g != null && (
+                  <View style={bs.macroPill}>
+                    <Text style={[bs.macroNum, { color: '#29B6F6' }]}>{result.protein_g}g</Text>
+                    <Text style={bs.macroLabel}>protein</Text>
+                  </View>
+                )}
+                {result.fat_g != null && (
+                  <View style={bs.macroPill}>
+                    <Text style={[bs.macroNum, { color: C.warning }]}>{result.fat_g}g</Text>
+                    <Text style={bs.macroLabel}>fat</Text>
+                  </View>
+                )}
+                {result.carb_g != null && (
+                  <View style={bs.macroPill}>
+                    <Text style={[bs.macroNum, { color: C.accent2 }]}>{result.carb_g}g</Text>
+                    <Text style={bs.macroLabel}>carbs</Text>
+                  </View>
+                )}
+              </View>
+              <View style={bs.resultBtns}>
+                <Pressable style={bs.retryBtn} onPress={onRetry}>
+                  <Ionicons name="refresh-outline" size={16} color={C.text2} />
+                  <Text style={bs.retryText}>Scan again</Text>
+                </Pressable>
+                <Pressable style={bs.applyBtn} onPress={onApply}>
+                  <Ionicons name="add-circle-outline" size={16} color={C.white} />
+                  <Text style={bs.applyText}>Add to log</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+  )
+}
+
+const bs = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#000' },
+  camera: { flex: 1 },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanFrame: {
+    width: 240, height: 160, borderRadius: 16,
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.8)',
+    shadowColor: '#fff', shadowOpacity: 0.3, shadowRadius: 8,
+  },
+  closeBtn: {
+    position: 'absolute', top: 56, right: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, padding: 8,
+  },
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: 24, paddingTop: 16, paddingBottom: 48, minHeight: 140,
+  },
+  sheetContent: { alignItems: 'center', gap: 12, paddingVertical: 16 },
+  sheetHint: { fontSize: 15, color: C.text2, textAlign: 'center' },
+  resultContent: { gap: 8 },
+  resultName: { fontSize: 17, fontWeight: '800', color: C.text1, lineHeight: 22 },
+  resultPer: { fontSize: 11, color: C.text3, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  resultMacros: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginVertical: 4 },
+  macroPill: { backgroundColor: C.surface2, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center', minWidth: 64 },
+  macroNum: { fontSize: 16, fontWeight: '800' },
+  macroLabel: { fontSize: 10, color: C.text3, marginTop: 1 },
+  resultBtns: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  retryBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingVertical: 12,
+    backgroundColor: C.surface2,
+  },
+  retryText: { fontSize: 14, fontWeight: '700', color: C.text2 },
+  applyBtn: {
+    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: C.accent, borderRadius: 12, paddingVertical: 12,
+  },
+  applyText: { fontSize: 14, fontWeight: '800', color: C.white },
+})
 
 function CalorieQuizModal({
   visible, onApply, onClose,
@@ -1249,6 +1886,12 @@ const st = StyleSheet.create({
   macroTotalsRow: { flexDirection: 'row', gap: 8, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.divider },
   macroChip: { backgroundColor: C.surface2, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   macroChipText: { fontSize: 12, fontWeight: '700' },
+  macroProgressSection: { paddingTop: 10, borderTopWidth: 1, borderTopColor: C.divider, gap: 8 },
+  macroProgressRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  macroProgressLabel: { fontSize: 12, fontWeight: '700', width: 54 },
+  macroProgressBarTrack: { flex: 1, height: 6, backgroundColor: C.surface3, borderRadius: 3, overflow: 'hidden' },
+  macroProgressBarFill: { height: 6, borderRadius: 3 },
+  macroProgressValue: { fontSize: 12, fontWeight: '600', color: C.text2, minWidth: 76, textAlign: 'right' },
 
   // Meal plan sub-tab
   mealProgressLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },

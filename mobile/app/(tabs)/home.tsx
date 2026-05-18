@@ -187,6 +187,37 @@ function getSportIcon(type: string): string {
   return 'lightning-bolt'
 }
 
+// ─── training load helpers ────────────────────────────────────────────────
+
+function computeTSS(duration_sec: number, avg_hr: number, max_hr: number): number {
+  const threshold_hr = max_hr * 0.88
+  const if_value = Math.min(avg_hr / threshold_hr, 1.2)
+  return Math.min((duration_sec / 3600) * if_value * if_value * 100, 300)
+}
+
+function computeTrainingLoad(
+  activities: { date: string; tss: number }[]
+): { ctl: number; atl: number; tsb: number } {
+  const tssMap: Record<string, number> = {}
+  for (const a of activities) {
+    const d = (a.date as string).slice(0, 10)
+    tssMap[d] = (tssMap[d] ?? 0) + a.tss
+  }
+  let ctl = 0, atl = 0
+  const today = new Date()
+  for (let i = 60; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(today.getDate() - i)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    const tss = tssMap[`${y}-${m}-${day}`] ?? 0
+    ctl += (tss - ctl) / 42
+    atl += (tss - atl) / 7
+  }
+  return { ctl: Math.round(ctl), atl: Math.round(atl), tsb: Math.round(ctl - atl) }
+}
+
 // ─── screen ────────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
@@ -207,6 +238,8 @@ export default function HomeScreen() {
   const [consumedKcal, setConsumedKcal] = useState(0)
   const [onPeriod, setOnPeriod] = useState(false)
   const [periodSeverity, setPeriodSeverity] = useState<'minor' | 'medium' | 'severe' | null>(null)
+  const [trainingLoad, setTrainingLoad] = useState<{ ctl: number; atl: number; tsb: number } | null>(null)
+  const [userMaxHr, setUserMaxHr] = useState<number | null>(null)
 
   const burnedToday = todayActivities.reduce((s, a) => s + a.total_kcal, 0)
   const plannedKcalToday = plannedWorkouts.reduce((s, p) => s + p.target_kcal, 0)
@@ -221,8 +254,12 @@ export default function HomeScreen() {
     if (!user) return
     const todayDate = localDate()
     const todayISOStart = `${todayDate}T00:00:00`
-    const [profileRes, actsRes, plannedRes, zonesRes, fuelingRes, foodRes] = await Promise.all([
-      supabase.from('users').select('name, daily_kcal_target, hide_calories, on_period, period_severity').eq('id', user.id).single(),
+    const sixtyDaysAgo = new Date()
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60)
+    const sixtyDaysAgoStr = `${sixtyDaysAgo.getFullYear()}-${String(sixtyDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(sixtyDaysAgo.getDate()).padStart(2, '0')}`
+
+    const [profileRes, actsRes, plannedRes, zonesRes, fuelingRes, foodRes, histActsRes] = await Promise.all([
+      supabase.from('users').select('name, daily_kcal_target, hide_calories, on_period, period_severity, max_hr').eq('id', user.id).single(),
       supabase.from('activities').select('id, name, type, total_kcal').eq('user_id', user.id)
         .gte('date', todayISOStart).not('total_kcal', 'is', null),
       supabase.from('planned_workouts')
@@ -231,6 +268,8 @@ export default function HomeScreen() {
       supabase.from('heart_rate_zones').select('id, zone_number').eq('user_id', user.id),
       supabase.from('fueling_settings').select('sport_type, threshold_min, carbs_per_interval_g, interval_min').eq('user_id', user.id),
       supabase.from('food_logs').select('kcal').eq('user_id', user.id).eq('date', todayDate),
+      supabase.from('activities').select('date, duration_sec, avg_hr').eq('user_id', user.id)
+        .gte('date', `${sixtyDaysAgoStr}T00:00:00`).not('avg_hr', 'is', null),
     ])
     setUserName(profileRes.data?.name ?? null)
     setDailyTarget(profileRes.data?.daily_kcal_target ?? null)
@@ -252,6 +291,14 @@ export default function HomeScreen() {
     }))
     setPlannedWorkouts(planned)
     setFuelingSettings(fuelingRes.data ?? [])
+
+    const maxHr = profileRes.data?.max_hr ?? 180
+    setUserMaxHr(maxHr)
+    const tssActivities = (histActsRes.data ?? []).map((a: any) => ({
+      date: a.date as string,
+      tss: a.avg_hr ? computeTSS(a.duration_sec ?? 0, a.avg_hr, maxHr) : 0,
+    }))
+    setTrainingLoad(computeTrainingLoad(tssActivities))
   }
 
   async function loadWeather() {
@@ -290,9 +337,9 @@ export default function HomeScreen() {
     }
   }
 
-  const displayKcal = projectedTotal ?? totalTarget
   const burned = Math.round(burnedToday)
   const planned = plannedKcalToday
+  const displayKcal = projectedTotal ?? totalTarget
 
   return (
     <SafeAreaView style={st.safeArea} edges={['top']}>
@@ -314,10 +361,10 @@ export default function HomeScreen() {
             </View>
             <View style={st.heroTopRight}>
               {weather && (
-                <View style={st.heroWeatherBadge}>
+                <Pressable style={st.heroWeatherBadge} onPress={() => setWeatherView('today')}>
                   <Ionicons name={wmo(weather.code).icon} size={16} color="rgba(255,255,255,0.9)" />
                   <Text style={st.heroWeatherTemp}>{weather.temp}°</Text>
-                </View>
+                </Pressable>
               )}
               <Pressable style={st.heroSettingsBtn} onPress={() => router.push('/settings')}>
                 <Ionicons name="settings-outline" size={18} color="rgba(255,255,255,0.9)" />
@@ -344,25 +391,27 @@ export default function HomeScreen() {
           ) : (
             <Pressable onPress={() => setCalorieModalOpen(true)} style={st.heroKcalBlock}>
               {displayKcal != null ? (
-                <>
-                  <Text style={st.heroKcalNum}>{displayKcal.toLocaleString()}</Text>
-                  <Text style={st.heroKcalLabel}>kcal target today</Text>
-                  {(() => {
-                    const remaining = displayKcal - consumedKcal
-                    const isOver = remaining < 0
-                    return (
+                (() => {
+                  const remaining = displayKcal - consumedKcal
+                  const isOver = remaining < 0
+                  return (
+                    <>
+                      <Text style={[st.heroKcalNum, isOver && { color: '#FF8A80' }]}>
+                        {isOver
+                          ? `−${Math.abs(remaining).toLocaleString()}`
+                          : remaining.toLocaleString()}
+                      </Text>
+                      <Text style={st.heroKcalLabel}>
+                        {isOver ? 'kcal over target' : 'kcal remaining today'}
+                      </Text>
                       <View style={st.heroKcalSubRow}>
                         <Text style={st.heroKcalSub}>{consumedKcal.toLocaleString()} eaten</Text>
                         <Text style={st.heroKcalSubDot}>·</Text>
-                        <Text style={[st.heroKcalSub, isOver && st.heroKcalSubOver]}>
-                          {isOver
-                            ? `${Math.abs(remaining).toLocaleString()} over`
-                            : `${remaining.toLocaleString()} remaining`}
-                        </Text>
+                        <Text style={st.heroKcalSub}>{displayKcal.toLocaleString()} target</Text>
                       </View>
-                    )
-                  })()}
-                </>
+                    </>
+                  )
+                })()
               ) : (
                 <Text style={st.heroKcalEmpty}>Set a calorie target in Settings</Text>
               )}
@@ -394,6 +443,11 @@ export default function HomeScreen() {
 
         {/* ── Cards that sit below the hero ─────────────────── */}
         <View style={st.cardsArea}>
+
+          {/* Training load card */}
+          {trainingLoad != null && trainingLoad.ctl > 0 && (
+            <TrainingLoadCard load={trainingLoad} />
+          )}
 
           {/* Weather card */}
           <View style={st.card}>
@@ -482,6 +536,51 @@ export default function HomeScreen() {
   )
 }
 
+// ─── Training load card ────────────────────────────────────────────────────
+
+function tsbStatus(tsb: number): { label: string; color: string; icon: string } {
+  if (tsb > 15)  return { label: 'Peaking — good time for a race or hard effort', color: '#66BB6A', icon: 'trending-up-outline' }
+  if (tsb > 5)   return { label: 'Fresh — ready for quality training', color: '#29B6F6', icon: 'checkmark-circle-outline' }
+  if (tsb > -5)  return { label: 'Neutral — balanced load', color: '#90A4AE', icon: 'remove-circle-outline' }
+  if (tsb > -15) return { label: 'Building — productive training load', color: '#7E57C2', icon: 'barbell-outline' }
+  return { label: 'Fatigued — consider an easier session', color: '#EF5350', icon: 'alert-circle-outline' }
+}
+
+function TrainingLoadCard({ load }: { load: { ctl: number; atl: number; tsb: number } }) {
+  const status = tsbStatus(load.tsb)
+  const tsbPositive = load.tsb >= 0
+  return (
+    <View style={tl.card}>
+      <Text style={tl.title}>Training Load</Text>
+      <View style={tl.metrics}>
+        <View style={tl.metric}>
+          <Text style={tl.metricNum}>{load.ctl}</Text>
+          <Text style={tl.metricLabel}>Fitness</Text>
+          <Text style={tl.metricSub}>CTL</Text>
+        </View>
+        <View style={tl.divider} />
+        <View style={tl.metric}>
+          <Text style={tl.metricNum}>{load.atl}</Text>
+          <Text style={tl.metricLabel}>Fatigue</Text>
+          <Text style={tl.metricSub}>ATL</Text>
+        </View>
+        <View style={tl.divider} />
+        <View style={tl.metric}>
+          <Text style={tl.metricNum}>
+            {tsbPositive ? '+' : ''}{load.tsb}
+          </Text>
+          <Text style={tl.metricLabel}>Form</Text>
+          <Text style={tl.metricSub}>TSB</Text>
+        </View>
+      </View>
+      <View style={[tl.statusRow, { backgroundColor: status.color + '18' }]}>
+        <Ionicons name={status.icon as any} size={14} color={status.color} style={{ marginTop: 1 }} />
+        <Text style={[tl.statusText, { color: status.color }]}>{status.label}</Text>
+      </View>
+    </View>
+  )
+}
+
 // ─── Today weather ─────────────────────────────────────────────────────────
 
 function TodayWeather({ weather }: { weather: Weather }) {
@@ -556,7 +655,7 @@ function WeekForecast({ daily }: { daily: DailyPoint[] }) {
             <Text style={st.weekTempLow}>{d.tempMin}°</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, width: 44, marginLeft: 10 }}>
-            {d.rainPct > 0 && (
+            {true && (
               <>
                 <Ionicons name="water-outline" size={11} color={d.rainPct > 50 ? C.rain : C.text3} />
                 <Text style={[st.weekRain, d.rainPct > 50 && { color: C.rain, fontWeight: '700' }]}>
@@ -1052,4 +1151,22 @@ const wst = StyleSheet.create({
   workoutDesc: { fontSize: 13, color: C.text2, lineHeight: 18 },
   disconnectBtn: { paddingVertical: 8, alignItems: 'center' },
   disconnectText: { fontSize: 13, color: C.text3 },
+})
+
+const tl = StyleSheet.create({
+  card: {
+    backgroundColor: C.surface, borderRadius: 20, padding: 20,
+    borderWidth: 1, borderColor: C.border,
+    shadowColor: C.accent, shadowOpacity: 0.08, shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 }, elevation: 4,
+  },
+  title: { fontSize: 13, fontWeight: '700', color: C.text2, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 16 },
+  metrics: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  metric: { flex: 1, alignItems: 'center' },
+  metricNum: { fontSize: 32, fontWeight: '800', lineHeight: 34, color: C.accent },
+  metricLabel: { fontSize: 12, fontWeight: '600', color: C.text2, marginTop: 2 },
+  metricSub: { fontSize: 10, color: C.text3, marginTop: 1 },
+  divider: { width: 1, height: 44, backgroundColor: C.border, marginHorizontal: 4 },
+  statusRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, borderRadius: 10, padding: 10 },
+  statusText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '500' },
 })

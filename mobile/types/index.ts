@@ -18,6 +18,9 @@ export interface UserProfile {
   strava_refresh_token: string | null
   strava_token_expires_at: string | null
   daily_kcal_target: number | null
+  goal_protein_g: number | null
+  goal_fat_g: number | null
+  goal_carb_g: number | null
   ftp_watts: number | null
   push_token: string | null
   on_period: boolean

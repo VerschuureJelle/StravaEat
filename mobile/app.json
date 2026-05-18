@@ -30,6 +30,8 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
@@ -61,6 +63,12 @@
       "eas": {
         "projectId": "f21eb942-c737-47d4-b9d4-28ffab5c9d9a"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/f21eb942-c737-47d4-b9d4-28ffab5c9d9a"
     }
   }
 }

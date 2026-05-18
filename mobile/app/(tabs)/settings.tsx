@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase'
 import { initiateStravaOAuth } from '../../lib/stravaAuth'
 import { useAppMode } from '../../contexts/AppModeContext'
 import { C } from '../../lib/theme'
+import { ACTIVITY_LEVELS } from '../../lib/activityLevels'
 import { SEVERITY_LABELS, SEVERITY_DESCRIPTIONS } from '../../lib/periodConfig'
 import type { UserProfile, HeartRateZone, MealTemplate, UserSport, PeriodSeverity } from '../../types'
 
@@ -83,6 +84,10 @@ export default function SettingsScreen() {
 
   // Display preferences
   const [hideCalories, setHideCalories] = useState(false)
+
+  // Calorie target calculator
+  const [showActivitySelector, setShowActivitySelector] = useState(false)
+  const [selectedActivityKey, setSelectedActivityKey] = useState<string | null>(null)
 
   const isDirty = JSON.stringify(editedProfile) !== JSON.stringify(savedProfile)
 
@@ -376,6 +381,117 @@ export default function SettingsScreen() {
             {profileField('Resting Heart Rate (bpm)', 'resting_hr', true)}
             {profileField('FTP (watts, cycling)', 'ftp_watts', true)}
 
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Daily calorie target (kcal)</Text>
+              <View style={styles.kcalRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                  value={editedProfile.daily_kcal_target != null ? String(editedProfile.daily_kcal_target) : ''}
+                  keyboardType="numeric"
+                  placeholderTextColor={C.text3}
+                  placeholder="e.g. 2200"
+                  onChangeText={v =>
+                    setEditedProfile(p => ({ ...p, daily_kcal_target: v ? parseFloat(v) : null }))
+                  }
+                />
+                <Pressable
+                  style={[styles.kcalCalcBtn, showActivitySelector && { backgroundColor: C.accentBg }]}
+                  onPress={() => setShowActivitySelector(v => !v)}
+                >
+                  <Ionicons name="calculator-outline" size={15} color={C.accent} />
+                  <Text style={styles.kcalCalcText}>{showActivitySelector ? 'Hide' : 'Calculate'}</Text>
+                </Pressable>
+              </View>
+
+              {showActivitySelector && (() => {
+                const w = editedProfile.weight_kg
+                const h = editedProfile.height_cm
+                const a = editedProfile.age
+                const s = editedProfile.sex
+                const hasData = !!(w && h && a && s)
+                const calcTDEE = (factor: number) => {
+                  if (!hasData) return null
+                  const base = 10 * w! + 6.25 * h! - 5 * a!
+                  const offset = s === 'female' ? -161 : s === 'male' ? 5 : -78
+                  return Math.round((base + offset) * factor)
+                }
+                return (
+                  <View style={styles.activitySelectorBox}>
+                    {!hasData && (
+                      <View style={styles.activityMissingNote}>
+                        <Ionicons name="information-circle-outline" size={15} color={C.accent2} />
+                        <Text style={styles.activityMissingText}>Fill in weight, height, age and sex above to see your estimated targets.</Text>
+                      </View>
+                    )}
+                    {ACTIVITY_LEVELS.map(level => {
+                      const tdee = calcTDEE(level.factor)
+                      const isSelected = selectedActivityKey === level.key
+                      return (
+                        <Pressable
+                          key={level.key}
+                          style={[styles.activityCard, isSelected && styles.activityCardSelected]}
+                          onPress={() => {
+                            if (!hasData) { Alert.alert('Missing data', 'Fill in weight, height, age and sex first.'); return }
+                            setSelectedActivityKey(level.key)
+                            setEditedProfile(p => ({ ...p, daily_kcal_target: tdee }))
+                          }}
+                        >
+                          <View style={styles.activityCardTop}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.activityCardLabel, isSelected && { color: C.accent }]}>{level.label}</Text>
+                              <Text style={styles.activityCardDetail}>{level.detail}</Text>
+                            </View>
+                            <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                              <Text style={[styles.activityCardFactor, isSelected && { color: C.accent }]}>× {level.factor}</Text>
+                              {tdee && <Text style={[styles.activityCardTDEE, isSelected && { color: C.accent, fontWeight: '800' }]}>{tdee.toLocaleString()} kcal</Text>}
+                            </View>
+                            {isSelected && <Ionicons name="checkmark-circle" size={18} color={C.accent} style={{ marginLeft: 8 }} />}
+                          </View>
+                          <Text style={styles.activityCardInfo}>{level.info}</Text>
+                        </Pressable>
+                      )
+                    })}
+                  </View>
+                )
+              })()}
+
+              <Text style={styles.prefNote}>This is your baseline — workouts automatically add on top. You can always type a number directly.</Text>
+            </View>
+
+            {/* Macro goals */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Macro goals</Text>
+              {(() => {
+                const kcal = editedProfile.daily_kcal_target
+                const autoProtein = kcal ? Math.round(kcal * 0.2 / 4) : null
+                const autoFat = kcal ? Math.round(kcal * 0.3 / 9) : null
+                const autoCarb = kcal ? Math.round(kcal * 0.5 / 4) : null
+                return (
+                  <View style={styles.macroGoalRows}>
+                    {([
+                      { key: 'goal_protein_g' as const, label: 'Protein', color: C.accent, auto: autoProtein },
+                      { key: 'goal_fat_g' as const, label: 'Fat', color: C.walk, auto: autoFat },
+                      { key: 'goal_carb_g' as const, label: 'Carbs', color: C.accent2, auto: autoCarb },
+                    ]).map(m => (
+                      <View key={m.key} style={styles.macroGoalRow}>
+                        <Text style={[styles.macroGoalLabel, { color: m.color }]}>{m.label}</Text>
+                        <TextInput
+                          style={styles.macroGoalInput}
+                          value={editedProfile[m.key] != null ? String(editedProfile[m.key]) : ''}
+                          keyboardType="numeric"
+                          placeholder={m.auto != null ? `${m.auto} (auto)` : 'g/day'}
+                          placeholderTextColor={C.text3}
+                          onChangeText={v => setEditedProfile(p => ({ ...p, [m.key]: v ? parseInt(v) : null }))}
+                        />
+                        <Text style={styles.macroGoalUnit}>g</Text>
+                      </View>
+                    ))}
+                    <Text style={styles.macroGoalNote}>Leave blank for auto targets (20% protein · 30% fat · 50% carbs of daily kcal).</Text>
+                  </View>
+                )
+              })()}
+            </View>
+
             <View style={[styles.fieldGroup, styles.prefRow]}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Hide calorie numbers</Text>
@@ -398,10 +514,10 @@ export default function SettingsScreen() {
                 {(['male', 'female', 'other'] as const).map(s => (
                   <Pressable
                     key={s}
-                    style={[styles.sexBtn, savedProfile.sex === s && styles.sexBtnActive]}
+                    style={[styles.sexBtn, editedProfile.sex === s && styles.sexBtnActive]}
                     onPress={() => setEditedProfile(p => ({ ...p, sex: s }))}
                   >
-                    <Text style={[styles.sexBtnText, savedProfile.sex === s && styles.sexBtnTextActive]}>
+                    <Text style={[styles.sexBtnText, editedProfile.sex === s && styles.sexBtnTextActive]}>
                       {s.charAt(0).toUpperCase() + s.slice(1)}
                     </Text>
                   </Pressable>
@@ -1077,7 +1193,48 @@ const styles = StyleSheet.create({
 
   // Display preferences
   prefRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  prefNote: { fontSize: 11, color: C.text3, marginTop: 2, lineHeight: 15 },
+  prefNote: { fontSize: 11, color: C.text3, marginTop: 6, lineHeight: 15 },
+  kcalRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 0 },
+  kcalCalcBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: C.accentBg, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1, borderColor: C.accent + '33',
+  },
+  kcalCalcText: { fontSize: 13, fontWeight: '700', color: C.accent },
+  activitySelectorBox: { marginTop: 12, gap: 8 },
+  activityMissingNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: C.surface2, borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: C.border,
+  },
+  activityMissingText: { flex: 1, fontSize: 12, color: C.text2, lineHeight: 17 },
+  activityCard: {
+    borderRadius: 12, padding: 14,
+    backgroundColor: C.surface2, borderWidth: 1.5, borderColor: C.border,
+    gap: 6,
+  },
+  activityCardSelected: {
+    borderColor: C.accent, backgroundColor: C.accentBg,
+  },
+  activityCardTop: { flexDirection: 'row', alignItems: 'flex-start' },
+  activityCardLabel: { fontSize: 15, fontWeight: '700', color: C.text1 },
+  activityCardDetail: { fontSize: 12, color: C.text2, marginTop: 1 },
+  activityCardFactor: { fontSize: 12, fontWeight: '600', color: C.text3 },
+  activityCardTDEE: { fontSize: 14, fontWeight: '600', color: C.text2 },
+  activityCardInfo: { fontSize: 12, color: C.text2, lineHeight: 17 },
+
+  // Macro goals
+  macroGoalRows: { gap: 10 },
+  macroGoalRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  macroGoalLabel: { fontSize: 13, fontWeight: '700', width: 56 },
+  macroGoalInput: {
+    flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 8, fontSize: 14,
+    backgroundColor: C.surface2, color: C.text1,
+  },
+  macroGoalUnit: { fontSize: 12, color: C.text3, width: 14 },
+  macroGoalNote: { fontSize: 11, color: C.text3, lineHeight: 16, marginTop: 2 },
 
   // Sex selector
   sexRow: { flexDirection: 'row', gap: 8 },
