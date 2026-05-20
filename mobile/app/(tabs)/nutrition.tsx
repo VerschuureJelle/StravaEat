@@ -3,6 +3,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera'
 import {
   View, Text, TextInput, Pressable, ScrollView,
   StyleSheet, Alert, ActivityIndicator, Modal,
+  Keyboard, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect } from 'expo-router'
@@ -195,6 +196,14 @@ function calcMifflinTDEE(
   return { bmr, tdee: Math.round(bmr * factor) }
 }
 
+function calcKatchMcArdleTDEE(
+  weight_kg: number, fat_pct: number, factor: number,
+): { lbm: number; bmr: number; tdee: number } {
+  const lbm = weight_kg * (1 - fat_pct / 100)
+  const bmr = Math.round(370 + 21.6 * lbm)
+  return { lbm: Math.round(lbm * 10) / 10, bmr, tdee: Math.round(bmr * factor) }
+}
+
 interface CommonFood { name: string; kcal: number; protein_g?: number; fat_g?: number; carb_g?: number }
 const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[] = [
   {
@@ -284,7 +293,10 @@ const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[] = [
 ]
 
 interface TodayActivity { id: string; name: string; type: string; total_kcal: number }
-interface MealItem { meal_index: number; name: string; scheduled_time: string; checked: boolean; kcal: number | null }
+interface MealItem {
+  meal_index: number; name: string; scheduled_time: string; checked: boolean
+  kcal: number | null; protein_g: number | null; fat_g: number | null; carb_g: number | null
+}
 
 export default function NutritionScreen() {
   const [subTab, setSubTab] = useState<SubTab>('nutrition')
@@ -316,6 +328,8 @@ export default function NutritionScreen() {
 
   // ── Quick add state ──────────────────────────────────────────────────────────
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+  const [quickAddItem, setQuickAddItem] = useState<CommonFood | null>(null)
+  const [quickAddQty, setQuickAddQty] = useState('1')
 
   // ── Barcode scanner state ────────────────────────────────────────────────────
   const [scannerVisible, setScannerVisible] = useState(false)
@@ -338,6 +352,8 @@ export default function NutritionScreen() {
   const [activityLevel, setActivityLevel] = useState<ActivityLevel>('moderate')
   const [showActivityQuiz, setShowActivityQuiz] = useState(false)
   const [showActivityInfo, setShowActivityInfo] = useState(false)
+  const [estimateMethod, setEstimateMethod] = useState<'mifflin' | 'katch'>('mifflin')
+  const [fatPctInput, setFatPctInput] = useState('')
 
   const todayStr = localDate()
 
@@ -450,7 +466,10 @@ export default function NutritionScreen() {
       name: t.name,
       scheduled_time: t.scheduled_time,
       checked: checkedSet.has(t.meal_index),
-      kcal: (t as any).kcal ?? null,
+      kcal: t.kcal ?? null,
+      protein_g: t.protein_g ?? null,
+      fat_g: t.fat_g ?? null,
+      carb_g: t.carb_g ?? null,
     }))
     setMeals(items)
     const inputs: Record<number, string> = {}
@@ -582,6 +601,9 @@ export default function NutritionScreen() {
       await supabase.from('food_logs').insert({
         user_id: userId, date: todayStr, name: meal.name, kcal,
         meal_index: meal.meal_index,
+        protein_g: meal.protein_g ?? null,
+        fat_g: meal.fat_g ?? null,
+        carb_g: meal.carb_g ?? null,
       })
     }
     setMeals(prev => prev.map(m => m.meal_index === meal.meal_index ? { ...m, checked: true } : m))
@@ -631,6 +653,21 @@ export default function NutritionScreen() {
         visible={showActivityQuiz}
         onApply={level => { setActivityLevel(level); setShowActivityQuiz(false); setShowActivityInfo(false) }}
         onClose={() => setShowActivityQuiz(false)}
+      />
+
+      <QuickAddQtyModal
+        food={quickAddItem}
+        qty={quickAddQty}
+        onQtyChange={setQuickAddQty}
+        onConfirm={(name, kcal, protein, fat, carb) => {
+          setFoodName(name)
+          setFoodKcal(String(kcal))
+          setFoodProtein(protein)
+          setFoodFat(fat)
+          setFoodCarb(carb)
+          setQuickAddItem(null)
+        }}
+        onClose={() => setQuickAddItem(null)}
       />
 
       <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
@@ -732,7 +769,17 @@ export default function NutritionScreen() {
             <View style={st.card}>
               <View style={st.cardLabelRow}>
                 <Text style={st.cardLabel}>Log food</Text>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  {(foodName || foodKcal || foodProtein || foodFat || foodCarb) ? (
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() => { setFoodName(''); setFoodKcal(''); setFoodProtein(''); setFoodFat(''); setFoodCarb('') }}
+                      style={st.clearFormBtn}
+                    >
+                      <Ionicons name="close-circle" size={13} color={C.text3} />
+                      <Text style={st.clearFormBtnText}>Clear</Text>
+                    </Pressable>
+                  ) : null}
                   <Pressable onPress={openScanner} style={[st.myFoodsBtn, { backgroundColor: 'rgba(126,87,194,0.12)' }]}>
                     <Ionicons name="barcode-outline" size={13} color="#7E57C2" />
                     <Text style={[st.myFoodsBtnText, { color: '#7E57C2' }]}>Scan</Text>
@@ -817,7 +864,7 @@ export default function NutritionScreen() {
             {/* Common foods quick-add */}
             <View style={st.card}>
               <Text style={st.cardLabel}>Quick add</Text>
-              <Text style={st.quickAddNote}>Tap any item to pre-fill the form above</Text>
+              <Text style={st.quickAddNote}>Tap any item to adjust quantity and add</Text>
               {COMMON_FOOD_CATEGORIES.map(cat => {
                 const isOpen = expandedCategories.has(cat.category)
                 return (
@@ -837,13 +884,7 @@ export default function NutritionScreen() {
                       <Pressable
                         key={food.name}
                         style={[st.quickAddRow, i < cat.items.length - 1 && st.quickAddRowBorder]}
-                        onPress={() => {
-                          setFoodName(food.name)
-                          setFoodKcal(String(food.kcal))
-                          setFoodProtein(food.protein_g != null ? String(food.protein_g) : '')
-                          setFoodFat(food.fat_g != null ? String(food.fat_g) : '')
-                          setFoodCarb(food.carb_g != null ? String(food.carb_g) : '')
-                        }}
+                        onPress={() => { setQuickAddItem(food); setQuickAddQty('1') }}
                       >
                         <Text style={st.quickAddRowName}>{food.name}</Text>
                         <Text style={st.quickAddRowKcal}>{food.kcal} kcal</Text>
@@ -988,6 +1029,15 @@ export default function NutritionScreen() {
                       )}
                       {meal.checked && <Text style={st.checkedLabel}>done</Text>}
                     </View>
+                    {(meal.protein_g != null || meal.fat_g != null || meal.carb_g != null) && (
+                      <Text style={st.mealMacroMeta}>
+                        {[
+                          meal.protein_g != null && `P ${meal.protein_g}g`,
+                          meal.fat_g     != null && `F ${meal.fat_g}g`,
+                          meal.carb_g    != null && `C ${meal.carb_g}g`,
+                        ].filter(Boolean).join(' · ')}
+                      </Text>
+                    )}
                   </View>
                   {!meal.checked ? (
                     <TextInput
@@ -1016,31 +1066,74 @@ export default function NutritionScreen() {
 
         {/* ── CALORIC INTAKE ESTIMATE ──────────────────────────────────────── */}
         {subTab === 'estimate' && (() => {
-          const w = profileWeight
-          const h = profileHeight
-          const a = profileAge
-          const s = profileSex
-          const hasData = w && h && a && s
           const selectedLevel = ACTIVITY_LEVELS.find(l => l.key === activityLevel)!
-          const result = hasData ? calcMifflinTDEE(w!, h!, a!, s!, selectedLevel.factor) : null
+          const fatPct = parseFloat(fatPctInput)
+          const katchHasData = !!profileWeight && !isNaN(fatPct) && fatPct > 0 && fatPct < 100
+          const mifflinHasData = !!(profileWeight && profileHeight && profileAge && profileSex)
+          const hasData = estimateMethod === 'katch' ? katchHasData : mifflinHasData
+
+          const mifflinResult = mifflinHasData
+            ? calcMifflinTDEE(profileWeight!, profileHeight!, profileAge!, profileSex!, selectedLevel.factor)
+            : null
+          const katchResult = katchHasData
+            ? calcKatchMcArdleTDEE(profileWeight!, fatPct, selectedLevel.factor)
+            : null
+          const result = estimateMethod === 'katch' ? katchResult : mifflinResult
+
+          const missingMsg = estimateMethod === 'katch'
+            ? (!profileWeight ? 'Fill in your weight in Settings → Profile, then enter your body fat % above.' : 'Enter your body fat percentage above to see your estimate.')
+            : 'Fill in your weight, height, age and sex in Settings → Profile to see your estimate.'
 
           return (
             <>
               <Text style={st.estimateTitle}>Caloric intake estimate</Text>
+
+              {/* Method toggle */}
+              <View style={st.methodToggle}>
+                {(['mifflin', 'katch'] as const).map(m => (
+                  <Pressable
+                    key={m}
+                    style={[st.methodToggleBtn, estimateMethod === m && st.methodToggleBtnActive]}
+                    onPress={() => setEstimateMethod(m)}
+                  >
+                    <Text style={[st.methodToggleBtnText, estimateMethod === m && st.methodToggleBtnTextActive]}>
+                      {m === 'mifflin' ? 'Mifflin-St Jeor' : 'Katch-McArdle'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
               <Text style={st.estimateNote}>
-                Uses the Mifflin-St Jeor formula to estimate your daily energy needs based on your body measurements and activity level.
+                {estimateMethod === 'mifflin'
+                  ? 'Estimates BMR from weight, height, age and sex. Works without body composition data.'
+                  : 'Estimates BMR from lean body mass (weight × fat %). More accurate if you know your body fat %.'}
               </Text>
+
+              {/* Katch-McArdle: fat % input */}
+              {estimateMethod === 'katch' && (
+                <View style={st.fatPctRow}>
+                  <Text style={st.fatPctLabel}>Body fat %</Text>
+                  <TextInput
+                    style={st.fatPctInput}
+                    value={fatPctInput}
+                    onChangeText={setFatPctInput}
+                    keyboardType="decimal-pad"
+                    placeholder="e.g. 18"
+                    placeholderTextColor={C.text3}
+                    returnKeyType="done"
+                    onSubmitEditing={Keyboard.dismiss}
+                  />
+                </View>
+              )}
 
               {!hasData && (
                 <View style={st.estimateWarning}>
                   <Ionicons name="information-circle-outline" size={18} color={C.accent2} />
-                  <Text style={st.estimateWarningText}>
-                    Fill in your weight, height, age and sex in Settings → Profile to see your estimate.
-                  </Text>
+                  <Text style={st.estimateWarningText}>{missingMsg}</Text>
                 </View>
               )}
 
-              {hasData && (
+              {hasData && result && (
                 <View style={st.calcCard}>
                   {/* Activity level */}
                   <View style={st.calcActivityHeader}>
@@ -1083,9 +1176,15 @@ export default function NutritionScreen() {
                   </Pressable>
 
                   <View style={st.calcBreakdown}>
+                    {estimateMethod === 'katch' && (
+                      <View style={st.calcBreakdownRow}>
+                        <Text style={st.calcBreakdownLabel}>Lean body mass</Text>
+                        <Text style={st.calcBreakdownValue}>{(katchResult!.lbm).toFixed(1)} kg</Text>
+                      </View>
+                    )}
                     <View style={st.calcBreakdownRow}>
                       <Text style={st.calcBreakdownLabel}>Basal metabolic rate (at rest)</Text>
-                      <Text style={st.calcBreakdownValue}>{result!.bmr.toLocaleString()} kcal</Text>
+                      <Text style={st.calcBreakdownValue}>{result.bmr.toLocaleString()} kcal</Text>
                     </View>
                     <View style={st.calcBreakdownRow}>
                       <Text style={st.calcBreakdownLabel}>Activity multiplier</Text>
@@ -1093,7 +1192,7 @@ export default function NutritionScreen() {
                     </View>
                     <View style={[st.calcBreakdownRow, st.calcBreakdownTotal]}>
                       <Text style={st.calcTotalLabel}>Daily target</Text>
-                      <Text style={st.calcTotalValue}>{result!.tdee.toLocaleString()} kcal</Text>
+                      <Text style={st.calcTotalValue}>{result.tdee.toLocaleString()} kcal</Text>
                     </View>
                   </View>
 
@@ -1101,13 +1200,13 @@ export default function NutritionScreen() {
                     style={st.useTargetBtn}
                     onPress={async () => {
                       if (!userId) return
-                      await supabase.from('users').update({ daily_kcal_target: result!.tdee }).eq('id', userId)
-                      setBaseline(result!.tdee)
-                      Alert.alert('Target updated', `Daily target set to ${result!.tdee.toLocaleString()} kcal.`)
+                      await supabase.from('users').update({ daily_kcal_target: result.tdee }).eq('id', userId)
+                      setBaseline(result.tdee)
+                      Alert.alert('Target updated', `Daily target set to ${result.tdee.toLocaleString()} kcal.`)
                     }}
                   >
                     <Ionicons name="checkmark-circle-outline" size={16} color={C.white} />
-                    <Text style={st.useTargetBtnText}>Use {result!.tdee.toLocaleString()} kcal as target</Text>
+                    <Text style={st.useTargetBtnText}>Use {result.tdee.toLocaleString()} kcal as target</Text>
                   </Pressable>
                 </View>
               )}
@@ -1922,6 +2021,7 @@ const st = StyleSheet.create({
   mealMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   mealTime: { fontSize: 13, color: C.text3 },
   mealTimeOverdue: { color: C.danger, fontWeight: '600' },
+  mealMacroMeta: { fontSize: 11, color: C.text3, marginTop: 3 },
   overdueTag: { backgroundColor: 'rgba(239,83,80,0.15)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 2 },
   overdueTagText: { fontSize: 11, fontWeight: '700', color: C.danger },
   checkedLabel: { fontSize: 11, fontWeight: '600', color: C.success, marginLeft: 2 },
@@ -1938,8 +2038,27 @@ const st = StyleSheet.create({
   mealKcalBadge: { fontSize: 12, fontWeight: '600', color: C.text2, minWidth: 68, textAlign: 'right' },
 
   // Estimate tab
-  estimateTitle: { fontSize: 22, fontWeight: '800', color: C.text1, marginBottom: 4 },
+  estimateTitle: { fontSize: 22, fontWeight: '800', color: C.text1, marginBottom: 12 },
   estimateNote: { fontSize: 13, color: C.text2, lineHeight: 19, marginBottom: 16 },
+  methodToggle: {
+    flexDirection: 'row', backgroundColor: C.surface2,
+    borderRadius: 10, padding: 3, marginBottom: 12,
+  },
+  methodToggleBtn: { flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: 'center' },
+  methodToggleBtnActive: { backgroundColor: C.accent },
+  methodToggleBtnText: { fontSize: 13, fontWeight: '700', color: C.text2 },
+  methodToggleBtnTextActive: { color: C.white },
+  fatPctRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: C.surface2, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: C.border, marginBottom: 14,
+  },
+  fatPctLabel: { fontSize: 14, fontWeight: '700', color: C.text1 },
+  fatPctInput: {
+    fontSize: 16, fontWeight: '700', color: C.text1,
+    backgroundColor: C.surface, borderRadius: 8, borderWidth: 1, borderColor: C.border,
+    paddingHorizontal: 12, paddingVertical: 6, minWidth: 72, textAlign: 'center',
+  },
   estimateWarning: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 10,
     backgroundColor: C.surface2, borderRadius: 12, padding: 14,
@@ -1988,4 +2107,155 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
   },
   useTargetBtnText: { color: C.white, fontWeight: '800', fontSize: 14 },
+  clearFormBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.border },
+  clearFormBtnText: { fontSize: 12, color: C.text3, fontWeight: '600' },
+})
+
+// ─── Quick-add quantity modal ──────────────────────────────────────────────
+
+function QuickAddQtyModal({
+  food, qty, onQtyChange, onConfirm, onClose,
+}: {
+  food: CommonFood | null
+  qty: string
+  onQtyChange: (v: string) => void
+  onConfirm: (name: string, kcal: number, protein: string, fat: string, carb: string) => void
+  onClose: () => void
+}) {
+  if (!food) return null
+  const q = parseFloat(qty)
+  const safeQ = isNaN(q) || q <= 0 ? 0 : q
+  const calcKcal = Math.round(food.kcal * safeQ)
+  const calcProtein = food.protein_g != null ? Math.round(food.protein_g * safeQ * 10) / 10 : null
+  const calcFat = food.fat_g != null ? Math.round(food.fat_g * safeQ * 10) / 10 : null
+  const calcCarb = food.carb_g != null ? Math.round(food.carb_g * safeQ * 10) / 10 : null
+
+  function dismiss() { Keyboard.dismiss(); onClose() }
+
+  return (
+    <Modal visible transparent animationType="slide">
+      <KeyboardAvoidingView
+        style={qa.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={dismiss} />
+
+        <View style={qa.sheet}>
+          <View style={qa.handle} />
+
+          {/* Header */}
+          <View style={qa.headerRow}>
+            <Text style={qa.foodName} numberOfLines={2}>{food.name}</Text>
+            <Pressable onPress={dismiss} hitSlop={12} style={qa.closeBtn}>
+              <Ionicons name="close" size={20} color={C.text3} />
+            </Pressable>
+          </View>
+
+          {/* Macro pills — always above keyboard */}
+          <View style={qa.macroRow}>
+            <View style={qa.macroPill}>
+              <Text style={[qa.macroNum, { color: C.text1 }]}>{calcKcal}</Text>
+              <Text style={qa.macroLabel}>kcal</Text>
+            </View>
+            {calcProtein != null && (
+              <View style={qa.macroPill}>
+                <Text style={[qa.macroNum, { color: C.accent }]}>{calcProtein}g</Text>
+                <Text style={qa.macroLabel}>protein</Text>
+              </View>
+            )}
+            {calcFat != null && (
+              <View style={qa.macroPill}>
+                <Text style={[qa.macroNum, { color: C.walk }]}>{calcFat}g</Text>
+                <Text style={qa.macroLabel}>fat</Text>
+              </View>
+            )}
+            {calcCarb != null && (
+              <View style={qa.macroPill}>
+                <Text style={[qa.macroNum, { color: C.accent2 }]}>{calcCarb}g</Text>
+                <Text style={qa.macroLabel}>carbs</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Quantity input + Done */}
+          <View style={qa.qtySection}>
+            <Text style={qa.qtyLabel}>Quantity</Text>
+            <View style={qa.qtyRow}>
+              <TextInput
+                style={qa.qtyInput}
+                value={qty}
+                onChangeText={onQtyChange}
+                keyboardType="decimal-pad"
+                selectTextOnFocus
+              />
+              <Text style={qa.qtyUnit}>× 1 serving</Text>
+              <Pressable onPress={() => Keyboard.dismiss()} style={qa.doneBtn}>
+                <Text style={qa.doneBtnText}>Done</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Add to form */}
+          <Pressable
+            style={[qa.confirmBtn, safeQ === 0 && qa.confirmBtnDisabled]}
+            disabled={safeQ === 0}
+            onPress={() => {
+              const name = safeQ !== 1 ? `${qty}× ${food.name}` : food.name
+              onConfirm(
+                name, calcKcal,
+                calcProtein != null ? String(calcProtein) : '',
+                calcFat != null ? String(calcFat) : '',
+                calcCarb != null ? String(calcCarb) : '',
+              )
+            }}
+          >
+            <Ionicons name="add-circle-outline" size={18} color={C.white} />
+            <Text style={qa.confirmText}>Add to form</Text>
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  )
+}
+
+const qa = StyleSheet.create({
+  kav: { flex: 1, justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 24, paddingTop: 12, paddingBottom: 32,
+  },
+  handle: { width: 36, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 16 },
+  foodName: { flex: 1, fontSize: 17, fontWeight: '800', color: C.text1 },
+  closeBtn: { paddingTop: 2 },
+  macroRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 20 },
+  macroPill: {
+    flex: 1, minWidth: 60, backgroundColor: C.surface2, borderRadius: 10,
+    paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center',
+    borderWidth: 1, borderColor: C.border,
+  },
+  macroNum: { fontSize: 15, fontWeight: '800' },
+  macroLabel: { fontSize: 10, color: C.text3, marginTop: 2 },
+  qtySection: { marginBottom: 16 },
+  qtyLabel: { fontSize: 11, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
+  qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  qtyInput: {
+    width: 80, borderWidth: 1.5, borderColor: C.accent, borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 8,
+    fontSize: 18, fontWeight: '700', color: C.text1,
+    backgroundColor: C.surface2, textAlign: 'center',
+  },
+  qtyUnit: { flex: 1, fontSize: 13, color: C.text3 },
+  doneBtn: {
+    backgroundColor: C.surface2, borderRadius: 8,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: 1, borderColor: C.border,
+  },
+  doneBtnText: { fontSize: 13, fontWeight: '700', color: C.text2 },
+  confirmBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: C.accent, borderRadius: 14, paddingVertical: 15,
+  },
+  confirmBtnDisabled: { opacity: 0.4 },
+  confirmText: { color: C.white, fontWeight: '800', fontSize: 16 },
 })

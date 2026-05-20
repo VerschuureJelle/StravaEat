@@ -11,6 +11,11 @@ import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { C } from '../../lib/theme'
+import {
+  bayesianUpdate, calibrationLabel, calibrationConfidencePct,
+  PERIOD_DEFAULTS, FEEDBACK_LABELS,
+  type PeriodCalibration, type PeriodSeverityCalib,
+} from '../../lib/periodCalibration'
 
 // ─── WMO weather code helpers ──────────────────────────────────────────────
 
@@ -46,7 +51,7 @@ function wmo(code: number): { label: string; icon: IoniconsName } {
 
 // ─── types ─────────────────────────────────────────────────────────────────
 
-interface HourlyPoint { time: string; temp: number; code: number; rainPct: number }
+interface HourlyPoint { time: string; temp: number; code: number; rainPct: number; nextDay?: boolean }
 interface DailyPoint { dayLabel: string; code: number; tempMax: number; tempMin: number; rainPct: number }
 interface Weather {
   city: string; temp: number; tempMax: number; tempMin: number
@@ -97,24 +102,30 @@ function calcFuelingRec(durationMin: number | null, setting: FuelingSetting | un
 // ─── weather parsing ───────────────────────────────────────────────────────
 
 function parseHourly(data: any): HourlyPoint[] {
-  const todayStr = new Date().toISOString().slice(0, 10)
   const now = new Date()
   const currentHour = now.getHours()
   const currentMinute = now.getMinutes()
+  const todayStr = now.toISOString().slice(0, 10)
+  const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1)
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10)
   const result: HourlyPoint[] = []
   for (let i = 0; i < (data.hourly?.time?.length ?? 0); i++) {
     const timeStr: string = data.hourly.time[i]
-    if (!timeStr.startsWith(todayStr)) continue
+    const isToday = timeStr.startsWith(todayStr)
+    const isTomorrow = timeStr.startsWith(tomorrowStr)
+    if (!isToday && !isTomorrow) continue
     const hour = parseInt(timeStr.split('T')[1])
-    if (hour < currentHour || (hour === currentHour && currentMinute >= 30)) continue
+    if (isToday && (hour < currentHour || (hour === currentHour && currentMinute >= 30))) continue
     result.push({
       time: `${String(hour).padStart(2, '0')}:00`,
       temp: Math.round(data.hourly.temperature_2m[i]),
       code: data.hourly.weathercode[i],
       rainPct: data.hourly.precipitation_probability[i] ?? 0,
+      nextDay: isTomorrow,
     })
+    if (result.length >= 24) break
   }
-  return result.slice(0, 12)
+  return result
 }
 
 function parseDaily(data: any): DailyPoint[] {
@@ -236,8 +247,11 @@ export default function HomeScreen() {
   const [zoneMap, setZoneMap] = useState<Record<string, number>>({})
   const [hideCalories, setHideCalories] = useState(false)
   const [consumedKcal, setConsumedKcal] = useState(0)
+  const [userSex, setUserSex] = useState<string | null>(null)
   const [onPeriod, setOnPeriod] = useState(false)
   const [periodSeverity, setPeriodSeverity] = useState<'minor' | 'medium' | 'severe' | null>(null)
+  const [periodCalib, setPeriodCalib] = useState<PeriodCalibration | null>(null)
+  const [showPeriodFeedback, setShowPeriodFeedback] = useState(false)
   const [trainingLoad, setTrainingLoad] = useState<{ ctl: number; atl: number; tsb: number } | null>(null)
   const [userMaxHr, setUserMaxHr] = useState<number | null>(null)
 
@@ -258,8 +272,8 @@ export default function HomeScreen() {
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60)
     const sixtyDaysAgoStr = `${sixtyDaysAgo.getFullYear()}-${String(sixtyDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(sixtyDaysAgo.getDate()).padStart(2, '0')}`
 
-    const [profileRes, actsRes, plannedRes, zonesRes, fuelingRes, foodRes, histActsRes] = await Promise.all([
-      supabase.from('users').select('name, daily_kcal_target, hide_calories, on_period, period_severity, max_hr').eq('id', user.id).single(),
+    const [profileRes, actsRes, plannedRes, zonesRes, fuelingRes, foodRes, histActsRes, calibRes] = await Promise.all([
+      supabase.from('users').select('name, daily_kcal_target, hide_calories, on_period, period_severity, max_hr, sex').eq('id', user.id).single(),
       supabase.from('activities').select('id, name, type, total_kcal').eq('user_id', user.id)
         .gte('date', todayISOStart).not('total_kcal', 'is', null),
       supabase.from('planned_workouts')
@@ -270,12 +284,24 @@ export default function HomeScreen() {
       supabase.from('food_logs').select('kcal').eq('user_id', user.id).eq('date', todayDate),
       supabase.from('activities').select('date, duration_sec, avg_hr').eq('user_id', user.id)
         .gte('date', `${sixtyDaysAgoStr}T00:00:00`).not('avg_hr', 'is', null),
+      supabase.from('period_calibration').select('*').eq('user_id', user.id),
     ])
     setUserName(profileRes.data?.name ?? null)
     setDailyTarget(profileRes.data?.daily_kcal_target ?? null)
     setHideCalories(profileRes.data?.hide_calories ?? false)
+    setUserSex(profileRes.data?.sex ?? null)
     setOnPeriod(profileRes.data?.on_period ?? false)
-    setPeriodSeverity(profileRes.data?.period_severity ?? null)
+    const severity = profileRes.data?.period_severity ?? null
+    setPeriodSeverity(severity)
+    if (severity && severity !== 'severe') {
+      const row = (calibRes.data ?? []).find((r: any) => r.severity === severity) ?? null
+      setPeriodCalib(row ? {
+        severity: row.severity, mu: row.mu, sigma_sq: row.sigma_sq,
+        n_obs: row.n_obs, last_feedback_date: row.last_feedback_date ?? null,
+      } : null)
+    } else {
+      setPeriodCalib(null)
+    }
     setConsumedKcal((foodRes.data ?? []).reduce((s: number, l: any) => s + (l.kcal ?? 0), 0))
     setTodayActivities(actsRes.data ?? [])
 
@@ -336,6 +362,35 @@ export default function HomeScreen() {
       setWeatherLoading(false)
     }
   }
+
+  async function submitPeriodFeedback(rating: 1 | 2 | 3 | 4) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user || userSex !== 'female' || !periodSeverity || periodSeverity === 'severe') return
+    const severity = periodSeverity as PeriodSeverityCalib
+    const defaults = PERIOD_DEFAULTS[severity]
+    const current = periodCalib ?? { mu: defaults.mu, sigma_sq: defaults.sigma_sq, n_obs: 0 }
+    const updated = bayesianUpdate(current.mu, current.sigma_sq, current.mu, rating)
+    const todayDate = localDate()
+    await supabase.from('period_calibration').upsert({
+      user_id: user.id, severity,
+      mu: updated.mu, sigma_sq: updated.sigma_sq,
+      n_obs: (current.n_obs ?? 0) + 1,
+      last_feedback_date: todayDate,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,severity' })
+    setPeriodCalib({
+      severity, mu: updated.mu, sigma_sq: updated.sigma_sq,
+      n_obs: (current.n_obs ?? 0) + 1, last_feedback_date: todayDate,
+    })
+    setShowPeriodFeedback(false)
+  }
+
+  async function deletePlannedWorkout(id: string) {
+    setPlannedWorkouts(prev => prev.filter(w => w.id !== id))
+    await supabase.from('planned_workouts').delete().eq('id', id)
+  }
+
+  const periodActive = userSex === 'female' && onPeriod
 
   const burned = Math.round(burnedToday)
   const planned = plannedKcalToday
@@ -449,6 +504,39 @@ export default function HomeScreen() {
             <TrainingLoadCard load={trainingLoad} />
           )}
 
+          {/* Today's workout card */}
+          <View style={st.card}>
+            <Text style={st.cardTitle}>Today's workout</Text>
+            {plannedWorkouts.length > 0 ? (
+              <PlannedWorkoutList
+                workouts={plannedWorkouts}
+                fuelingSettings={fuelingSettings}
+                onPeriod={periodActive}
+                periodSeverity={periodSeverity}
+                periodCalib={periodCalib}
+                onDelete={deletePlannedWorkout}
+              />
+            ) : connectedApp === null ? (
+              <>
+                <Text style={st.connectNote}>
+                  Plan a workout in the Planner tab, or connect a training app.
+                </Text>
+                <View style={st.appRow}>
+                  <Pressable style={st.appBtn} onPress={() => setConnectedApp('trainingpeaks')}>
+                    <Ionicons name="barbell-outline" size={20} color={C.accent2} />
+                    <Text style={st.appBtnText}>TrainingPeaks</Text>
+                  </Pressable>
+                  <Pressable style={st.appBtn} onPress={() => setConnectedApp('runna')}>
+                    <Ionicons name="walk-outline" size={20} color={C.success} />
+                    <Text style={st.appBtnText}>Runna</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <WorkoutPlaceholder app={connectedApp} onDisconnect={() => setConnectedApp(null)} />
+            )}
+          </View>
+
           {/* Weather card */}
           <View style={st.card}>
             <View style={st.cardHeaderRow}>
@@ -489,36 +577,18 @@ export default function HomeScreen() {
             )}
           </View>
 
-          {/* Today's workout card */}
-          <View style={st.card}>
-            <Text style={st.cardTitle}>Today's workout</Text>
-            {plannedWorkouts.length > 0 ? (
-              <PlannedWorkoutList
-                workouts={plannedWorkouts}
-                fuelingSettings={fuelingSettings}
-                onPeriod={onPeriod}
-                periodSeverity={periodSeverity}
-              />
-            ) : connectedApp === null ? (
-              <>
-                <Text style={st.connectNote}>
-                  Plan a workout in the Planner tab, or connect a training app.
-                </Text>
-                <View style={st.appRow}>
-                  <Pressable style={st.appBtn} onPress={() => setConnectedApp('trainingpeaks')}>
-                    <Ionicons name="barbell-outline" size={20} color={C.accent2} />
-                    <Text style={st.appBtnText}>TrainingPeaks</Text>
-                  </Pressable>
-                  <Pressable style={st.appBtn} onPress={() => setConnectedApp('runna')}>
-                    <Ionicons name="walk-outline" size={20} color={C.success} />
-                    <Text style={st.appBtnText}>Runna</Text>
-                  </Pressable>
-                </View>
-              </>
-            ) : (
-              <WorkoutPlaceholder app={connectedApp} onDisconnect={() => setConnectedApp(null)} />
-            )}
-          </View>
+          {/* Period feedback prompt — shown after workout days */}
+          {periodActive && periodSeverity && periodSeverity !== 'severe' &&
+            todayActivities.length > 0 &&
+            periodCalib?.last_feedback_date !== localDate() && (
+            <Pressable style={pf.promptCard} onPress={() => setShowPeriodFeedback(true)}>
+              <View style={pf.promptRow}>
+                <Ionicons name="rose-outline" size={15} color={C.run} />
+                <Text style={pf.promptText}>How did today's adjusted training feel?</Text>
+                <Ionicons name="chevron-forward" size={14} color={C.text3} />
+              </View>
+            </Pressable>
+          )}
 
         </View>
       </ScrollView>
@@ -531,6 +601,13 @@ export default function HomeScreen() {
         totalTarget={projectedTotal ?? totalTarget}
         consumedKcal={consumedKcal}
         onClose={() => setCalorieModalOpen(false)}
+      />
+      <PeriodFeedbackModal
+        visible={showPeriodFeedback}
+        severity={periodSeverity}
+        periodCalib={periodCalib}
+        onSubmit={submitPeriodFeedback}
+        onClose={() => setShowPeriodFeedback(false)}
       />
     </SafeAreaView>
   )
@@ -609,18 +686,29 @@ function TodayWeather({ weather }: { weather: Weather }) {
       {weather.hourly.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}
           contentContainerStyle={{ gap: 6, paddingRight: 4 }}>
-          {weather.hourly.map(h => (
-            <View key={h.time} style={st.hourlyItem}>
-              <Text style={st.hourlyTime}>{h.time}</Text>
-              <Ionicons name={wmo(h.code).icon} size={16} color={C.text3} style={{ marginVertical: 4 }} />
-              <Text style={st.hourlyTemp}>{h.temp}°</Text>
-              {h.rainPct > 0 && (
-                <Text style={[st.hourlyRain, h.rainPct > 50 && { color: C.rain, fontWeight: '700' }]}>
-                  {h.rainPct}%
-                </Text>
-              )}
-            </View>
-          ))}
+          {weather.hourly.flatMap((h, i) => {
+            const items = []
+            if (h.nextDay && !weather.hourly[i - 1]?.nextDay) {
+              items.push(
+                <View key={`div-${i}`} style={st.dayDivider}>
+                  <Text style={st.dayDividerText}>tmr</Text>
+                </View>
+              )
+            }
+            items.push(
+              <View key={`${h.nextDay ? 'tmr' : 'td'}-${h.time}`} style={st.hourlyItem}>
+                <Text style={st.hourlyTime}>{h.time}</Text>
+                <Ionicons name={wmo(h.code).icon} size={16} color={C.text3} style={{ marginVertical: 4 }} />
+                <Text style={st.hourlyTemp}>{h.temp}°</Text>
+                {h.rainPct > 0 && (
+                  <Text style={[st.hourlyRain, h.rainPct > 50 && { color: C.rain, fontWeight: '700' }]}>
+                    {h.rainPct}%
+                  </Text>
+                )}
+              </View>
+            )
+            return items
+          })}
         </ScrollView>
       )}
 
@@ -687,13 +775,19 @@ const PERIOD_ADVICE: Record<string, { intensityReduction: number; restRecommende
   },
 }
 
-function PlannedWorkoutList({ workouts, fuelingSettings, onPeriod, periodSeverity }: {
+function PlannedWorkoutList({ workouts, fuelingSettings, onPeriod, periodSeverity, periodCalib, onDelete }: {
   workouts: PlannedWorkoutItem[]
   fuelingSettings: FuelingSetting[]
   onPeriod: boolean
   periodSeverity: 'minor' | 'medium' | 'severe' | null
+  periodCalib?: PeriodCalibration | null
+  onDelete: (id: string) => void
 }) {
-  const periodAdj = onPeriod && periodSeverity ? PERIOD_ADVICE[periodSeverity] : null
+  const baseAdj = onPeriod && periodSeverity ? PERIOD_ADVICE[periodSeverity] : null
+  const effectiveReduction = baseAdj && periodSeverity !== 'severe' && periodCalib?.mu != null
+    ? periodCalib.mu
+    : baseAdj?.intensityReduction ?? 0
+  const periodAdj = baseAdj ? { ...baseAdj, intensityReduction: effectiveReduction } : null
 
   return (
     <View style={{ gap: 10, marginTop: 10 }}>
@@ -701,8 +795,18 @@ function PlannedWorkoutList({ workouts, fuelingSettings, onPeriod, periodSeverit
         <View style={pw.periodBanner}>
           <Ionicons name="rose-outline" size={15} color={C.run} style={{ marginTop: 1 }} />
           <View style={{ flex: 1 }}>
-            <Text style={pw.periodBannerTitle}>Period adjustment active</Text>
+            <Text style={pw.periodBannerTitle}>
+              Period adjustment active — −{Math.round(periodAdj.intensityReduction * 100)}% load
+            </Text>
             <Text style={pw.periodBannerNote}>{periodAdj.note}</Text>
+            {periodCalib != null && (
+              <Text style={pw.periodCalibNote}>
+                {calibrationLabel(periodCalib.n_obs)} · {calibrationConfidencePct(
+                  periodCalib.sigma_sq,
+                  PERIOD_DEFAULTS[periodSeverity as PeriodSeverityCalib]?.sigma_sq ?? periodCalib.sigma_sq,
+                )}% personalised
+              </Text>
+            )}
           </View>
         </View>
       )}
@@ -738,6 +842,9 @@ function PlannedWorkoutList({ workouts, fuelingSettings, onPeriod, periodSeverit
                   <Text style={pw.periodBadgeText}>Adjusted</Text>
                 </View>
               )}
+              <Pressable onPress={() => onDelete(w.id)} style={pw.deleteBtn} hitSlop={8}>
+                <Ionicons name="trash-outline" size={15} color={C.text3} />
+              </Pressable>
             </View>
 
             {restRecommended ? (
@@ -915,6 +1022,64 @@ function CalorieModal({ visible, baseline, activities, planned, totalTarget, con
   )
 }
 
+// ─── Period feedback modal ─────────────────────────────────────────────────
+
+function PeriodFeedbackModal({ visible, severity, periodCalib, onSubmit, onClose }: {
+  visible: boolean
+  severity: 'minor' | 'medium' | 'severe' | null
+  periodCalib: PeriodCalibration | null
+  onSubmit: (rating: 1 | 2 | 3 | 4) => void
+  onClose: () => void
+}) {
+  if (!severity || severity === 'severe') return null
+  const sev = severity as PeriodSeverityCalib
+  const defaults = PERIOD_DEFAULTS[sev]
+  const n_obs = periodCalib?.n_obs ?? 0
+  const label = calibrationLabel(n_obs)
+  const confPct = calibrationConfidencePct(
+    periodCalib?.sigma_sq ?? defaults.sigma_sq,
+    defaults.sigma_sq,
+  )
+  const effectivePct = Math.round((periodCalib?.mu ?? defaults.mu) * 100)
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <Pressable style={pf.overlay} onPress={onClose}>
+        <Pressable style={pf.sheet} onPress={e => e.stopPropagation()}>
+          <View style={pf.handle} />
+          <View style={pf.headerRow}>
+            <Ionicons name="rose-outline" size={18} color={C.run} />
+            <Text style={pf.title}>Period training feedback</Text>
+          </View>
+          <Text style={pf.subtitle}>
+            Today your load was reduced by ~{effectivePct}%. How did that feel?
+          </Text>
+          <View style={pf.ratingGrid}>
+            {([1, 2, 3, 4] as const).map(r => (
+              <Pressable key={r} style={pf.ratingBtn} onPress={() => onSubmit(r)}>
+                <Text style={pf.ratingText}>{FEEDBACK_LABELS[r]}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={pf.calibInfo}>
+            <Text style={pf.calibLabel}>{label}</Text>
+            {n_obs > 0 && (
+              <>
+                <View style={pf.calibTrack}>
+                  <View style={[pf.calibFill, { width: `${confPct}%` as any }]} />
+                </View>
+                <Text style={pf.calibSub}>{confPct}% personalised · {n_obs} session{n_obs !== 1 ? 's' : ''}</Text>
+              </>
+            )}
+          </View>
+          <Pressable style={pf.skipBtn} onPress={onClose}>
+            <Text style={pf.skipText}>Skip for now</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  )
+}
+
 // ─── Training placeholder ──────────────────────────────────────────────────
 
 function WorkoutPlaceholder({ app, onDisconnect }: { app: TrainingApp; onDisconnect: () => void }) {
@@ -1018,6 +1183,12 @@ const st = StyleSheet.create({
   hourlyTime: { fontSize: 10, color: C.text3, fontWeight: '600' },
   hourlyTemp: { fontSize: 13, fontWeight: '700', color: C.text1 },
   hourlyRain: { fontSize: 10, color: C.text3, marginTop: 2 },
+  dayDivider: {
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 6, marginRight: 6,
+    borderLeftWidth: 1, borderLeftColor: C.border,
+  },
+  dayDividerText: { fontSize: 9, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.5 },
   recBox: { flexDirection: 'row', gap: 8, borderRadius: 12, padding: 12 },
   recText: { flex: 1, fontSize: 13, lineHeight: 19 },
 
@@ -1128,7 +1299,9 @@ const pw = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 2,
   },
   periodBadgeText: { fontSize: 10, fontWeight: '700', color: C.run },
+  deleteBtn: { padding: 4, marginLeft: 4 },
   periodDescNote: { fontSize: 11, color: C.run, fontStyle: 'italic', marginTop: 6, opacity: 0.85 },
+  periodCalibNote: { fontSize: 10, color: C.run, marginTop: 4, opacity: 0.70 },
   restBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 7,
     backgroundColor: 'rgba(239,83,80,0.08)', borderRadius: 10,
@@ -1169,4 +1342,39 @@ const tl = StyleSheet.create({
   divider: { width: 1, height: 44, backgroundColor: C.border, marginHorizontal: 4 },
   statusRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, borderRadius: 10, padding: 10 },
   statusText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: '500' },
+})
+
+const pf = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 24, paddingBottom: 40, paddingTop: 12,
+    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20, shadowOffset: { width: 0, height: -4 },
+  },
+  handle: { width: 36, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
+  title: { fontSize: 20, fontWeight: '800', color: C.text1 },
+  subtitle: { fontSize: 14, color: C.text2, lineHeight: 20, marginBottom: 22 },
+  ratingGrid: { gap: 10, marginBottom: 20 },
+  ratingBtn: {
+    backgroundColor: C.surface2, borderRadius: 14, padding: 16,
+    alignItems: 'center', borderWidth: 1, borderColor: C.border,
+  },
+  ratingText: { fontSize: 15, fontWeight: '700', color: C.text1 },
+  calibInfo: {
+    backgroundColor: C.surface2, borderRadius: 12, padding: 14,
+    marginBottom: 16, gap: 6,
+  },
+  calibLabel: { fontSize: 12, fontWeight: '700', color: C.text2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  calibTrack: { height: 6, backgroundColor: C.border, borderRadius: 3, overflow: 'hidden' },
+  calibFill: { height: 6, backgroundColor: C.accent, borderRadius: 3 },
+  calibSub: { fontSize: 11, color: C.text3 },
+  skipBtn: { paddingVertical: 10, alignItems: 'center' },
+  skipText: { fontSize: 14, color: C.text3 },
+  promptCard: {
+    backgroundColor: C.surface, borderRadius: 16, padding: 16,
+    borderWidth: 1, borderColor: 'rgba(239,83,80,0.25)',
+  },
+  promptRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  promptText: { flex: 1, fontSize: 14, fontWeight: '600', color: C.text1 },
 })

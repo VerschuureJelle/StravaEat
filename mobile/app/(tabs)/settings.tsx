@@ -11,7 +11,6 @@ import { supabase } from '../../lib/supabase'
 import { initiateStravaOAuth } from '../../lib/stravaAuth'
 import { useAppMode } from '../../contexts/AppModeContext'
 import { C } from '../../lib/theme'
-import { ACTIVITY_LEVELS } from '../../lib/activityLevels'
 import { SEVERITY_LABELS, SEVERITY_DESCRIPTIONS } from '../../lib/periodConfig'
 import type { UserProfile, HeartRateZone, MealTemplate, UserSport, PeriodSeverity } from '../../types'
 
@@ -34,7 +33,10 @@ const MEAL_DEFAULTS: { name: string; time: string }[] = [
 type SettingsTab = 'profile' | 'zones' | 'meals' | 'fueling'
 type SportMode = 'standard' | 'custom' | 'linked'
 interface SportConfig { mode: SportMode; linkedTo: string | null }
-interface DraftMeal { meal_index: number; name: string; scheduled_time: string; kcal: number | null }
+interface DraftMeal {
+  meal_index: number; name: string; scheduled_time: string
+  kcal: number | null; protein_g: number | null; fat_g: number | null; carb_g: number | null
+}
 interface FuelingConfig { threshold_min: number; carbs_per_interval_g: number; interval_min: number }
 
 function normalizeType(type: string): string {
@@ -69,7 +71,7 @@ export default function SettingsScreen() {
 
   // Meal plan
   const [draftMeals, setDraftMeals] = useState<DraftMeal[]>([
-    { meal_index: 0, name: 'Breakfast', scheduled_time: '07:00', kcal: null },
+    { meal_index: 0, name: 'Breakfast', scheduled_time: '07:00', kcal: null, protein_g: null, fat_g: null, carb_g: null },
   ])
   const [savingMeals, setSavingMeals] = useState(false)
 
@@ -84,10 +86,6 @@ export default function SettingsScreen() {
 
   // Display preferences
   const [hideCalories, setHideCalories] = useState(false)
-
-  // Calorie target calculator
-  const [showActivitySelector, setShowActivitySelector] = useState(false)
-  const [selectedActivityKey, setSelectedActivityKey] = useState<string | null>(null)
 
   const isDirty = JSON.stringify(editedProfile) !== JSON.stringify(savedProfile)
 
@@ -145,7 +143,10 @@ export default function SettingsScreen() {
     // Meal templates
     const meals = (mealRes.data ?? []) as MealTemplate[]
     if (meals.length > 0) {
-      setDraftMeals(meals.map(m => ({ meal_index: m.meal_index, name: m.name, scheduled_time: m.scheduled_time, kcal: m.kcal ?? null })))
+      setDraftMeals(meals.map(m => ({
+        meal_index: m.meal_index, name: m.name, scheduled_time: m.scheduled_time,
+        kcal: m.kcal ?? null, protein_g: m.protein_g ?? null, fat_g: m.fat_g ?? null, carb_g: m.carb_g ?? null,
+      })))
     }
 
     // Planner sports — auto-populate from activities (normalized, no Virtual*) if empty
@@ -288,6 +289,9 @@ export default function SettingsScreen() {
       name: m.name || `Meal ${i + 1}`,
       scheduled_time: m.scheduled_time || '12:00',
       kcal: m.kcal ?? null,
+      protein_g: m.protein_g ?? null,
+      fat_g: m.fat_g ?? null,
+      carb_g: m.carb_g ?? null,
     }))
     await supabase.from('meal_templates').delete().eq('user_id', userId).gte('meal_index', draftMeals.length)
     const { error } = await supabase.from('meal_templates').upsert(toSave, { onConflict: 'user_id,meal_index' })
@@ -300,7 +304,7 @@ export default function SettingsScreen() {
     if (draftMeals.length >= 8) return
     const i = draftMeals.length
     const def = MEAL_DEFAULTS[i] ?? { name: `Meal ${i + 1}`, time: '12:00' }
-    setDraftMeals(prev => [...prev, { meal_index: i, name: def.name, scheduled_time: def.time, kcal: null }])
+    setDraftMeals(prev => [...prev, { meal_index: i, name: def.name, scheduled_time: def.time, kcal: null, protein_g: null, fat_g: null, carb_g: null }])
   }
 
   function removeMeal() {
@@ -315,6 +319,11 @@ export default function SettingsScreen() {
   function updateDraftMealKcal(index: number, value: string) {
     const n = value ? parseInt(value) : null
     setDraftMeals(prev => prev.map((m, i) => i === index ? { ...m, kcal: (n != null && !isNaN(n) && n > 0) ? n : null } : m))
+  }
+
+  function updateDraftMealMacro(index: number, field: 'protein_g' | 'fat_g' | 'carb_g', value: string) {
+    const n = value ? parseFloat(value) : null
+    setDraftMeals(prev => prev.map((m, i) => i === index ? { ...m, [field]: (n != null && !isNaN(n) && n >= 0) ? n : null } : m))
   }
 
   const profileField = (label: string, key: keyof UserProfile, numeric?: boolean) => (
@@ -383,79 +392,17 @@ export default function SettingsScreen() {
 
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>Daily calorie target (kcal)</Text>
-              <View style={styles.kcalRow}>
-                <TextInput
-                  style={[styles.input, { flex: 1, marginBottom: 0 }]}
-                  value={editedProfile.daily_kcal_target != null ? String(editedProfile.daily_kcal_target) : ''}
-                  keyboardType="numeric"
-                  placeholderTextColor={C.text3}
-                  placeholder="e.g. 2200"
-                  onChangeText={v =>
-                    setEditedProfile(p => ({ ...p, daily_kcal_target: v ? parseFloat(v) : null }))
-                  }
-                />
-                <Pressable
-                  style={[styles.kcalCalcBtn, showActivitySelector && { backgroundColor: C.accentBg }]}
-                  onPress={() => setShowActivitySelector(v => !v)}
-                >
-                  <Ionicons name="calculator-outline" size={15} color={C.accent} />
-                  <Text style={styles.kcalCalcText}>{showActivitySelector ? 'Hide' : 'Calculate'}</Text>
-                </Pressable>
-              </View>
-
-              {showActivitySelector && (() => {
-                const w = editedProfile.weight_kg
-                const h = editedProfile.height_cm
-                const a = editedProfile.age
-                const s = editedProfile.sex
-                const hasData = !!(w && h && a && s)
-                const calcTDEE = (factor: number) => {
-                  if (!hasData) return null
-                  const base = 10 * w! + 6.25 * h! - 5 * a!
-                  const offset = s === 'female' ? -161 : s === 'male' ? 5 : -78
-                  return Math.round((base + offset) * factor)
+              <TextInput
+                style={styles.input}
+                value={editedProfile.daily_kcal_target != null ? String(editedProfile.daily_kcal_target) : ''}
+                keyboardType="numeric"
+                placeholderTextColor={C.text3}
+                placeholder="e.g. 2200"
+                onChangeText={v =>
+                  setEditedProfile(p => ({ ...p, daily_kcal_target: v ? parseFloat(v) : null }))
                 }
-                return (
-                  <View style={styles.activitySelectorBox}>
-                    {!hasData && (
-                      <View style={styles.activityMissingNote}>
-                        <Ionicons name="information-circle-outline" size={15} color={C.accent2} />
-                        <Text style={styles.activityMissingText}>Fill in weight, height, age and sex above to see your estimated targets.</Text>
-                      </View>
-                    )}
-                    {ACTIVITY_LEVELS.map(level => {
-                      const tdee = calcTDEE(level.factor)
-                      const isSelected = selectedActivityKey === level.key
-                      return (
-                        <Pressable
-                          key={level.key}
-                          style={[styles.activityCard, isSelected && styles.activityCardSelected]}
-                          onPress={() => {
-                            if (!hasData) { Alert.alert('Missing data', 'Fill in weight, height, age and sex first.'); return }
-                            setSelectedActivityKey(level.key)
-                            setEditedProfile(p => ({ ...p, daily_kcal_target: tdee }))
-                          }}
-                        >
-                          <View style={styles.activityCardTop}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.activityCardLabel, isSelected && { color: C.accent }]}>{level.label}</Text>
-                              <Text style={styles.activityCardDetail}>{level.detail}</Text>
-                            </View>
-                            <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                              <Text style={[styles.activityCardFactor, isSelected && { color: C.accent }]}>× {level.factor}</Text>
-                              {tdee && <Text style={[styles.activityCardTDEE, isSelected && { color: C.accent, fontWeight: '800' }]}>{tdee.toLocaleString()} kcal</Text>}
-                            </View>
-                            {isSelected && <Ionicons name="checkmark-circle" size={18} color={C.accent} style={{ marginLeft: 8 }} />}
-                          </View>
-                          <Text style={styles.activityCardInfo}>{level.info}</Text>
-                        </Pressable>
-                      )
-                    })}
-                  </View>
-                )
-              })()}
-
-              <Text style={styles.prefNote}>This is your baseline — workouts automatically add on top. You can always type a number directly.</Text>
+              />
+              <Text style={styles.prefNote}>Baseline — workouts add on top. Use Nutrition → Estimate to calculate from your body stats.</Text>
             </View>
 
             {/* Macro goals */}
@@ -830,13 +777,33 @@ export default function SettingsScreen() {
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>Default kcal (optional)</Text>
                   <TextInput
-                    style={[styles.input, { marginBottom: 0 }]}
+                    style={styles.input}
                     value={meal.kcal != null ? String(meal.kcal) : ''}
                     onChangeText={v => updateDraftMealKcal(i, v)}
                     placeholder="e.g. 450"
                     placeholderTextColor={C.text3}
                     keyboardType="numeric"
                   />
+                </View>
+                <Text style={styles.fieldLabel}>Macros (optional)</Text>
+                <View style={styles.mealMacroRow}>
+                  {([
+                    { field: 'protein_g' as const, label: 'Protein g', placeholder: 'e.g. 30' },
+                    { field: 'fat_g' as const,     label: 'Fat g',     placeholder: 'e.g. 15' },
+                    { field: 'carb_g' as const,    label: 'Carbs g',   placeholder: 'e.g. 60' },
+                  ]).map(({ field, label, placeholder }) => (
+                    <View key={field} style={styles.mealMacroField}>
+                      <Text style={styles.mealMacroLabel}>{label}</Text>
+                      <TextInput
+                        style={[styles.input, { marginBottom: 0 }]}
+                        value={meal[field] != null ? String(meal[field]) : ''}
+                        onChangeText={v => updateDraftMealMacro(i, field, v)}
+                        placeholder={placeholder}
+                        placeholderTextColor={C.text3}
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                  ))}
                 </View>
               </View>
             ))}
@@ -1154,6 +1121,9 @@ const styles = StyleSheet.create({
     fontSize: 11, fontWeight: '700', color: C.text3,
     textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10,
   },
+  mealMacroRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  mealMacroField: { flex: 1 },
+  mealMacroLabel: { fontSize: 10, fontWeight: '600', color: C.text3, marginBottom: 4 },
 
   // Fueling
   fuelingCard: {
@@ -1194,36 +1164,6 @@ const styles = StyleSheet.create({
   // Display preferences
   prefRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   prefNote: { fontSize: 11, color: C.text3, marginTop: 6, lineHeight: 15 },
-  kcalRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 0 },
-  kcalCalcBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: C.accentBg, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 10,
-    borderWidth: 1, borderColor: C.accent + '33',
-  },
-  kcalCalcText: { fontSize: 13, fontWeight: '700', color: C.accent },
-  activitySelectorBox: { marginTop: 12, gap: 8 },
-  activityMissingNote: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    backgroundColor: C.surface2, borderRadius: 10, padding: 12,
-    borderWidth: 1, borderColor: C.border,
-  },
-  activityMissingText: { flex: 1, fontSize: 12, color: C.text2, lineHeight: 17 },
-  activityCard: {
-    borderRadius: 12, padding: 14,
-    backgroundColor: C.surface2, borderWidth: 1.5, borderColor: C.border,
-    gap: 6,
-  },
-  activityCardSelected: {
-    borderColor: C.accent, backgroundColor: C.accentBg,
-  },
-  activityCardTop: { flexDirection: 'row', alignItems: 'flex-start' },
-  activityCardLabel: { fontSize: 15, fontWeight: '700', color: C.text1 },
-  activityCardDetail: { fontSize: 12, color: C.text2, marginTop: 1 },
-  activityCardFactor: { fontSize: 12, fontWeight: '600', color: C.text3 },
-  activityCardTDEE: { fontSize: 14, fontWeight: '600', color: C.text2 },
-  activityCardInfo: { fontSize: 12, color: C.text2, lineHeight: 17 },
-
   // Macro goals
   macroGoalRows: { gap: 10 },
   macroGoalRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },

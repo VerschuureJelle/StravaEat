@@ -11,8 +11,8 @@ import { supabase } from '../../lib/supabase'
 import { C } from '../../lib/theme'
 import type { BurnSchemaPoint } from '../../types'
 
-type BlankForm = { hr: string; kcal: string; carb: string }
-const BLANK: BlankForm = { hr: '', kcal: '', carb: '' }
+type BlankForm = { hr: string; kcal: string; fat: string; carb: string; protein: string }
+const BLANK: BlankForm = { hr: '', kcal: '', fat: '', carb: '', protein: '' }
 
 export default function BurnSchemaScreen() {
   const { sport } = useLocalSearchParams<{ sport: string }>()
@@ -47,18 +47,20 @@ export default function BurnSchemaScreen() {
       return
     }
     const carb = form.carb ? parseFloat(form.carb) : null
-    if (carb !== null && isNaN(carb)) {
-      Alert.alert('Invalid', 'Enter a valid number for carbs.')
-      return
-    }
+    const fat = form.fat ? parseFloat(form.fat) : null
+    const protein = form.protein ? parseFloat(form.protein) : null
+    if (carb !== null && isNaN(carb)) { Alert.alert('Invalid', 'Enter a valid number for carbs.'); return }
+    if (fat !== null && isNaN(fat)) { Alert.alert('Invalid', 'Enter a valid number for fat.'); return }
+    if (protein !== null && isNaN(protein)) { Alert.alert('Invalid', 'Enter a valid number for protein.'); return }
     setSaving(true)
     const { error } = await supabase.from('burn_schema_points').upsert({
       user_id: userId,
       sport_type: sport,
       hr_value: hr,
       kcal_per_hour: kcal,
-      fat_g_per_hour: null,
+      fat_g_per_hour: fat,
       carb_g_per_hour: carb,
+      protein_g_per_hour: protein,
     }, { onConflict: 'user_id,sport_type,hr_value' })
     setSaving(false)
     if (error) { Alert.alert('Error', error.message); return }
@@ -87,7 +89,7 @@ export default function BurnSchemaScreen() {
         <View style={styles.infoBox}>
           <Ionicons name="information-circle-outline" size={16} color={C.accent2} style={{ marginTop: 1 }} />
           <Text style={styles.infoText}>
-            Enter how many kcal/hr you burn at each heart rate. Optionally add carbs (g/hr).
+            Enter how many kcal/hr you burn at each heart rate. Optionally add fat, carbs, and protein (g/hr).
             HR values are free to choose and apply only to {sport}.
           </Text>
         </View>
@@ -108,16 +110,20 @@ export default function BurnSchemaScreen() {
         {points.length > 0 && (
           <View style={styles.table}>
             <View style={styles.tableHeader}>
-              <Text style={[styles.cell, styles.headerCell]}>HR (bpm)</Text>
+              <Text style={[styles.cell, styles.headerCell]}>HR</Text>
               <Text style={[styles.cell, styles.headerCell]}>kcal/hr</Text>
+              <Text style={[styles.cell, styles.headerCell]}>fat g/hr</Text>
               <Text style={[styles.cell, styles.headerCell]}>carb g/hr</Text>
+              <Text style={[styles.cell, styles.headerCell]}>prot g/hr</Text>
               <View style={{ width: 36 }} />
             </View>
             {points.map(pt => (
               <View key={pt.id} style={styles.tableRow}>
-                <Text style={styles.cell}>{pt.hr_value} bpm</Text>
+                <Text style={styles.cell}>{pt.hr_value}</Text>
                 <Text style={styles.cell}>{pt.kcal_per_hour}</Text>
+                <Text style={styles.cell}>{pt.fat_g_per_hour != null ? pt.fat_g_per_hour : '—'}</Text>
                 <Text style={styles.cell}>{pt.carb_g_per_hour != null ? pt.carb_g_per_hour : '—'}</Text>
+                <Text style={styles.cell}>{pt.protein_g_per_hour != null ? pt.protein_g_per_hour : '—'}</Text>
                 <Pressable onPress={() => deletePoint(pt.id)} hitSlop={8} style={styles.deleteBtn}>
                   <Ionicons name="trash-outline" size={16} color={C.text3} />
                 </Pressable>
@@ -130,8 +136,8 @@ export default function BurnSchemaScreen() {
         <Text style={styles.formTitle}>Add point</Text>
 
         <View style={styles.row}>
-          <View style={styles.third}>
-            <Text style={styles.inputLabel}>HR (bpm)</Text>
+          <View style={styles.half}>
+            <Text style={styles.inputLabel}>HR (bpm) *</Text>
             <TextInput
               style={styles.input}
               placeholder="e.g. 150"
@@ -141,7 +147,7 @@ export default function BurnSchemaScreen() {
               onChangeText={v => setForm(f => ({ ...f, hr: v }))}
             />
           </View>
-          <View style={styles.third}>
+          <View style={styles.half}>
             <Text style={styles.inputLabel}>kcal/hr *</Text>
             <TextInput
               style={styles.input}
@@ -150,6 +156,19 @@ export default function BurnSchemaScreen() {
               keyboardType="numeric"
               value={form.kcal}
               onChangeText={v => setForm(f => ({ ...f, kcal: v }))}
+            />
+          </View>
+        </View>
+        <View style={styles.row}>
+          <View style={styles.third}>
+            <Text style={styles.inputLabel}>Fat g/hr</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="optional"
+              placeholderTextColor={C.text3}
+              keyboardType="numeric"
+              value={form.fat}
+              onChangeText={v => setForm(f => ({ ...f, fat: v }))}
             />
           </View>
           <View style={styles.third}>
@@ -161,6 +180,17 @@ export default function BurnSchemaScreen() {
               keyboardType="numeric"
               value={form.carb}
               onChangeText={v => setForm(f => ({ ...f, carb: v }))}
+            />
+          </View>
+          <View style={styles.third}>
+            <Text style={styles.inputLabel}>Protein g/hr</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="optional"
+              placeholderTextColor={C.text3}
+              keyboardType="numeric"
+              value={form.protein}
+              onChangeText={v => setForm(f => ({ ...f, protein: v }))}
             />
           </View>
         </View>
@@ -179,7 +209,7 @@ export default function BurnSchemaScreen() {
           <Text style={styles.hintText}>
             • Add one point per heart rate value you know from training or measurement.{'\n'}
             • The app linearly interpolates between points.{'\n'}
-            • No carbs entered? Carb tracking is skipped for this sport.{'\n'}
+            • Fat, carb, and protein fields are optional — leave blank to skip tracking that macro.{'\n'}
             • No points? Falls back to standard MET calculation.
           </Text>
         </View>
@@ -335,6 +365,7 @@ const styles = StyleSheet.create({
 
   formTitle: { fontSize: 14, fontWeight: '700', color: C.text2, marginTop: 8, marginBottom: 12 },
   row: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  half: { flex: 1 },
   third: { flex: 1 },
   inputLabel: { fontSize: 10, fontWeight: '700', color: C.text3, marginBottom: 5, textTransform: 'uppercase' },
   input: {

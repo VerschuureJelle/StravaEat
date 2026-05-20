@@ -49,6 +49,9 @@ export interface MealTemplate {
   name: string
   scheduled_time: string  // HH:MM
   kcal: number | null
+  protein_g: number | null
+  fat_g: number | null
+  carb_g: number | null
 }
 
 export interface HeartRateZone {
@@ -89,6 +92,7 @@ export interface BurnSchemaPoint {
   kcal_per_hour: number
   fat_g_per_hour: number | null
   carb_g_per_hour: number | null
+  protein_g_per_hour: number | null
 }
 
 export interface SportEnergySetting {
