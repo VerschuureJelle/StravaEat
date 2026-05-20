@@ -278,6 +278,7 @@ export default function ActivitiesScreen() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [syncBanner, setSyncBanner] = useState<{ count: number } | null>(null)
   const [period, setPeriod] = useState<Period>('total')
   const [anchor, setAnchor] = useState(new Date())
   const [monthsBack, setMonthsBack] = useState(5)
@@ -322,15 +323,31 @@ export default function ActivitiesScreen() {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-recent`, {
         method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
       })
-      const json = await res.json()
+      const text = await res.text()
+      let json: any = {}
+      try { json = JSON.parse(text) } catch { /* non-JSON body from CDN/gateway */ }
       if (!res.ok) {
         if (json.error === 'strava_not_connected') {
           Alert.alert('Strava not connected', 'Link your Strava account via the Settings tab.')
           return
         }
-        throw new Error(json.error ?? String(res.status))
+        if (res.status === 429 || String(json.error).startsWith('rate_limit:')) {
+          const minutes = String(json.error).startsWith('rate_limit:')
+            ? String(json.error).split(':')[1]
+            : '15'
+          Alert.alert(
+            'Strava rate limit reached',
+            `Strava only allows a limited number of syncs per 15-minute window. Try again in ${minutes} minute${minutes === '1' ? '' : 's'}.`,
+          )
+          return
+        }
+        throw new Error(json.error ?? `HTTP ${res.status}`)
       }
       await fetchActivities(period, anchor, monthsBack, customStart, customEnd)
+
+      const syncedCount: number = json.synced ?? 0
+      setSyncBanner({ count: syncedCount })
+      setTimeout(() => setSyncBanner(null), 4000)
 
       // Notify if any kcal were burned today
       const todayStr = new Date().toISOString().slice(0, 10)
@@ -431,6 +448,21 @@ export default function ActivitiesScreen() {
           <Pressable onPress={() => setAnchor(a => advance(period, a, 1))} style={st.navBtn}>
             <Text style={st.navArrow}>›</Text>
           </Pressable>
+        </View>
+      )}
+
+      {syncBanner && (
+        <View style={[st.syncBanner, syncBanner.count === 0 && st.syncBannerNeutral]}>
+          <Ionicons
+            name={syncBanner.count === 0 ? 'checkmark-circle-outline' : 'cloud-download-outline'}
+            size={16}
+            color={syncBanner.count === 0 ? C.text2 : C.accent}
+          />
+          <Text style={[st.syncBannerText, syncBanner.count === 0 && st.syncBannerTextNeutral]}>
+            {syncBanner.count === 0
+              ? 'You are completely up to date'
+              : `${syncBanner.count} new ${syncBanner.count === 1 ? 'activity' : 'activities'} synced`}
+          </Text>
         </View>
       )}
 
@@ -623,4 +655,14 @@ const st = StyleSheet.create({
   dropdownRowText: { fontSize: 16, color: C.text1 },
   dropdownRowActive: { color: C.accent, fontWeight: '700' },
   dropdownDivider: { height: 1, backgroundColor: C.surface2, marginVertical: 4 },
+  syncBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: C.accentBg, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10,
+    marginHorizontal: 16, marginTop: 10,
+    borderWidth: 1, borderColor: C.accent + '44',
+  },
+  syncBannerNeutral: { backgroundColor: C.surface2, borderColor: C.border },
+  syncBannerText: { fontSize: 13, fontWeight: '600', color: C.accent },
+  syncBannerTextNeutral: { color: C.text2 },
 })

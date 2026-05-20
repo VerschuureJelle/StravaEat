@@ -14,7 +14,9 @@ import { scheduleMealNotifications, cancelMealNotification } from '../../lib/not
 import { C } from '../../lib/theme'
 import { ACTIVITY_LEVELS } from '../../lib/activityLevels'
 import type { ActivityLevelKey as ActivityLevel } from '../../lib/activityLevels'
-import type { FoodLog, MealTemplate } from '../../types'
+import { COMMON_FOOD_CATEGORIES } from '../../lib/commonFoods'
+import type { CommonFood } from '../../lib/commonFoods'
+import type { FoodLog, MealTemplate, MealPreset } from '../../types'
 
 interface CustomFood {
   id: string
@@ -23,6 +25,7 @@ interface CustomFood {
   protein_g: number | null
   fat_g: number | null
   carb_g: number | null
+  category: string | null
 }
 
 interface DayData {
@@ -204,93 +207,6 @@ function calcKatchMcArdleTDEE(
   return { lbm: Math.round(lbm * 10) / 10, bmr, tdee: Math.round(bmr * factor) }
 }
 
-interface CommonFood { name: string; kcal: number; protein_g?: number; fat_g?: number; carb_g?: number }
-const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[] = [
-  {
-    category: 'Fruit',
-    items: [
-      { name: 'Apple (medium)', kcal: 72, carb_g: 19 },
-      { name: 'Banana (medium)', kcal: 89, carb_g: 23, protein_g: 1 },
-      { name: 'Orange (medium)', kcal: 62, carb_g: 15 },
-      { name: 'Raspberries (100g)', kcal: 52, carb_g: 12, protein_g: 1 },
-      { name: 'Blueberries (100g)', kcal: 57, carb_g: 14, protein_g: 1 },
-      { name: 'Strawberries (100g)', kcal: 32, carb_g: 8 },
-      { name: 'Mango (100g)', kcal: 60, carb_g: 15 },
-      { name: 'Grapes (100g)', kcal: 69, carb_g: 18 },
-    ],
-  },
-  {
-    category: 'Drinks',
-    items: [
-      { name: 'Cup of coffee (black)', kcal: 2 },
-      { name: 'Coffee with milk', kcal: 30, protein_g: 2, fat_g: 1 },
-      { name: 'Latte (250ml)', kcal: 120, protein_g: 6, fat_g: 5, carb_g: 10 },
-      { name: 'Cup of tea (black)', kcal: 1 },
-      { name: 'Tea with milk', kcal: 20, protein_g: 1 },
-      { name: 'Coke (330ml)', kcal: 139, carb_g: 35 },
-      { name: 'Diet Coke (330ml)', kcal: 1 },
-      { name: 'Orange juice (250ml)', kcal: 112, carb_g: 26 },
-      { name: 'Whole milk (250ml)', kcal: 152, protein_g: 8, fat_g: 8, carb_g: 12 },
-      { name: 'Oat milk (250ml)', kcal: 130, protein_g: 3, fat_g: 5, carb_g: 17 },
-      { name: 'Sports drink (500ml)', kcal: 150, carb_g: 36 },
-      { name: 'Protein shake (scoop)', kcal: 120, protein_g: 25, carb_g: 4, fat_g: 2 },
-    ],
-  },
-  {
-    category: 'Bread & Grains',
-    items: [
-      { name: 'Slice of bread (white)', kcal: 79, carb_g: 15, protein_g: 3, fat_g: 1 },
-      { name: 'Slice of bread (whole wheat)', kcal: 69, carb_g: 12, protein_g: 4, fat_g: 1 },
-      { name: 'Bagel (plain)', kcal: 270, carb_g: 53, protein_g: 10, fat_g: 2 },
-      { name: 'Croissant', kcal: 231, carb_g: 26, protein_g: 5, fat_g: 12 },
-      { name: 'Oats (50g uncooked)', kcal: 188, protein_g: 6, fat_g: 3, carb_g: 33 },
-      { name: 'White rice (100g uncooked)', kcal: 365, protein_g: 7, fat_g: 1, carb_g: 79 },
-      { name: 'Pasta (100g uncooked)', kcal: 371, protein_g: 13, fat_g: 2, carb_g: 74 },
-      { name: 'Wrap / tortilla', kcal: 210, carb_g: 36, protein_g: 5, fat_g: 5 },
-    ],
-  },
-  {
-    category: 'Dairy & Eggs',
-    items: [
-      { name: 'Egg (large)', kcal: 72, protein_g: 6, fat_g: 5 },
-      { name: 'Greek yogurt (150g)', kcal: 133, protein_g: 15, fat_g: 5, carb_g: 6 },
-      { name: 'Cottage cheese (100g)', kcal: 98, protein_g: 11, fat_g: 4, carb_g: 3 },
-      { name: 'Cheddar cheese (30g)', kcal: 120, protein_g: 7, fat_g: 10 },
-      { name: 'Skyr (150g)', kcal: 90, protein_g: 15, fat_g: 0, carb_g: 6 },
-    ],
-  },
-  {
-    category: 'Protein',
-    items: [
-      { name: 'Chicken breast (100g)', kcal: 165, protein_g: 31, fat_g: 4 },
-      { name: 'Salmon (100g)', kcal: 208, protein_g: 20, fat_g: 13 },
-      { name: 'Tuna in water (100g)', kcal: 116, protein_g: 26, fat_g: 1 },
-      { name: 'Beef mince 5% fat (100g)', kcal: 137, protein_g: 21, fat_g: 5 },
-      { name: 'Tofu (100g)', kcal: 76, protein_g: 8, fat_g: 5, carb_g: 2 },
-      { name: 'Energy bar (avg)', kcal: 220, protein_g: 8, carb_g: 30, fat_g: 7 },
-    ],
-  },
-  {
-    category: 'Nuts & Spreads',
-    items: [
-      { name: 'Almonds (30g)', kcal: 174, protein_g: 6, fat_g: 15, carb_g: 6 },
-      { name: 'Peanut butter (1 tbsp)', kcal: 94, protein_g: 4, fat_g: 8, carb_g: 3 },
-      { name: 'Almond butter (1 tbsp)', kcal: 98, protein_g: 3, fat_g: 9, carb_g: 3 },
-      { name: 'Avocado (half)', kcal: 120, fat_g: 11, carb_g: 6, protein_g: 2 },
-      { name: 'Hummus (2 tbsp)', kcal: 70, protein_g: 3, fat_g: 5, carb_g: 5 },
-    ],
-  },
-  {
-    category: 'Snacks & Sweets',
-    items: [
-      { name: 'Banana bread (slice)', kcal: 196, carb_g: 33, protein_g: 3, fat_g: 6 },
-      { name: 'Dark chocolate (30g)', kcal: 170, fat_g: 12, carb_g: 13, protein_g: 2 },
-      { name: 'Rice cake (plain)', kcal: 35, carb_g: 7 },
-      { name: 'Granola bar', kcal: 193, carb_g: 29, protein_g: 4, fat_g: 7 },
-      { name: 'Medjool date (1 piece)', kcal: 66, carb_g: 18 },
-    ],
-  },
-]
 
 interface TodayActivity { id: string; name: string; type: string; total_kcal: number }
 interface MealItem {
@@ -323,6 +239,8 @@ export default function NutritionScreen() {
   // ── Meal plan state ──────────────────────────────────────────────────────────
   const [meals, setMeals] = useState<MealItem[]>([])
   const [mealsLoading, setMealsLoading] = useState(true)
+  const [presetsMap, setPresetsMap] = useState<Record<number, MealPreset[]>>({})
+  const [pickerMeal, setPickerMeal] = useState<MealItem | null>(null)
   const [checking, setChecking] = useState<number | null>(null)
   const [mealKcalInputs, setMealKcalInputs] = useState<Record<number, string>>({})
 
@@ -349,9 +267,8 @@ export default function NutritionScreen() {
   const [profileHeight, setProfileHeight] = useState<number | null>(null)
   const [profileAge, setProfileAge] = useState<number | null>(null)
   const [profileSex, setProfileSex] = useState<'male' | 'female' | 'other' | null>(null)
-  const [activityLevel, setActivityLevel] = useState<ActivityLevel>('moderate')
+  const [activityLevel, setActivityLevel] = useState<ActivityLevel>('sedentary')
   const [showActivityQuiz, setShowActivityQuiz] = useState(false)
-  const [showActivityInfo, setShowActivityInfo] = useState(false)
   const [estimateMethod, setEstimateMethod] = useState<'mifflin' | 'katch'>('mifflin')
   const [fatPctInput, setFatPctInput] = useState('')
 
@@ -407,15 +324,34 @@ export default function NutritionScreen() {
     }
   }
 
-  function applyScanResult() {
+  function applyScanResult(totalGrams: number) {
     if (!scanResult) return
+    const ratio = totalGrams / 100
     setFoodName(scanResult.name)
-    setFoodKcal(String(scanResult.kcal))
-    setFoodProtein(scanResult.protein_g != null ? String(scanResult.protein_g) : '')
-    setFoodFat(scanResult.fat_g != null ? String(scanResult.fat_g) : '')
-    setFoodCarb(scanResult.carb_g != null ? String(scanResult.carb_g) : '')
+    setFoodKcal(String(Math.round(scanResult.kcal * ratio)))
+    setFoodProtein(scanResult.protein_g != null ? String(Math.round(scanResult.protein_g * ratio * 10) / 10) : '')
+    setFoodFat(scanResult.fat_g != null ? String(Math.round(scanResult.fat_g * ratio * 10) / 10) : '')
+    setFoodCarb(scanResult.carb_g != null ? String(Math.round(scanResult.carb_g * ratio * 10) / 10) : '')
     setScannerVisible(false)
     setScanResult(null)
+  }
+
+  async function saveScanResultToMyFoods(category: string | undefined, unitSizeG: number) {
+    if (!scanResult || !userId) return
+    const ratio = unitSizeG / 100
+    const { error } = await supabase.from('custom_foods').insert({
+      user_id: userId,
+      name: `${scanResult.name} (${unitSizeG}g)`,
+      kcal: Math.round(scanResult.kcal * ratio),
+      protein_g: scanResult.protein_g != null ? Math.round(scanResult.protein_g * ratio * 10) / 10 : null,
+      fat_g: scanResult.fat_g != null ? Math.round(scanResult.fat_g * ratio * 10) / 10 : null,
+      carb_g: scanResult.carb_g != null ? Math.round(scanResult.carb_g * ratio * 10) / 10 : null,
+      category: category ?? null,
+    })
+    if (error) { Alert.alert('Error', error.message); return }
+    const { data } = await supabase.from('custom_foods').select('*').eq('user_id', userId).order('name')
+    setCustomFoods(data ?? [])
+    Alert.alert('Saved', `"${scanResult.name} (${unitSizeG}g)" added to My Foods.`)
   }
 
   async function loadAll() {
@@ -455,10 +391,18 @@ export default function NutritionScreen() {
 
   async function loadMeals(uid: string) {
     setMealsLoading(true)
-    const [templatesRes, checksRes] = await Promise.all([
+    const [templatesRes, checksRes, presetsRes] = await Promise.all([
       supabase.from('meal_templates').select('*').eq('user_id', uid).order('meal_index'),
       supabase.from('meal_checks').select('meal_index').eq('user_id', uid).eq('date', todayStr),
+      supabase.from('meal_slot_presets').select('meal_index, sort_order, preset:meal_presets(*, items:meal_preset_items(*))').eq('user_id', uid).order('sort_order'),
     ])
+    const pMap: Record<number, MealPreset[]> = {}
+    for (const row of (presetsRes.data ?? []) as any[]) {
+      if (!row.preset) continue
+      if (!pMap[row.meal_index]) pMap[row.meal_index] = []
+      pMap[row.meal_index].push(row.preset as MealPreset)
+    }
+    setPresetsMap(pMap)
     const templates = (templatesRes.data ?? []) as MealTemplate[]
     const checkedSet = new Set<number>((checksRes.data ?? []).map((c: any) => c.meal_index as number))
     const items: MealItem[] = templates.map(t => ({
@@ -520,8 +464,14 @@ export default function NutritionScreen() {
   }
 
   async function deleteEntry(id: string) {
-    await supabase.from('food_logs').delete().eq('id', id)
-    setLogs(prev => prev.filter(l => l.id !== id))
+    const entry = logs.find(l => l.id === id)
+    Alert.alert('Delete entry?', `Remove "${entry?.name ?? 'this entry'}" from your log?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await supabase.from('food_logs').delete().eq('id', id)
+        setLogs(prev => prev.filter(l => l.id !== id))
+      }},
+    ])
   }
 
   async function addFromCustomFood(food: CustomFood) {
@@ -555,17 +505,66 @@ export default function NutritionScreen() {
     Alert.alert('Saved', `"${foodName.trim()}" added to My Foods.`)
   }
 
-  async function deleteCustomFood(id: string) {
-    await supabase.from('custom_foods').delete().eq('id', id)
-    setCustomFoods(prev => prev.filter(f => f.id !== id))
+  async function deleteCustomFood(id: string, name?: string) {
+    Alert.alert('Delete food?', `Remove "${name ?? 'this food'}" from My Foods?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await supabase.from('custom_foods').delete().eq('id', id)
+        setCustomFoods(prev => prev.filter(f => f.id !== id))
+      }},
+    ])
+  }
+
+  async function updateCustomFoodCategory(id: string, category: string | null) {
+    await supabase.from('custom_foods').update({ category }).eq('id', id)
+    setCustomFoods(prev => prev.map(f => f.id === id ? { ...f, category } : f))
   }
 
   function handleMealTap(meal: MealItem) {
     if (meal.checked) {
       uncheckMeal(meal)
+    } else if ((presetsMap[meal.meal_index] ?? []).length > 0) {
+      setPickerMeal(meal)
     } else {
       confirmMealLog(meal)
     }
+  }
+
+  function presetTotals(preset: MealPreset) {
+    return (preset.items ?? []).reduce(
+      (acc, it) => ({
+        kcal: acc.kcal + it.kcal,
+        protein_g: acc.protein_g + (it.protein_g ?? 0),
+        fat_g: acc.fat_g + (it.fat_g ?? 0),
+        carb_g: acc.carb_g + (it.carb_g ?? 0),
+      }),
+      { kcal: 0, protein_g: 0, fat_g: 0, carb_g: 0 },
+    )
+  }
+
+  async function confirmMealLogWithPreset(meal: MealItem, preset: MealPreset) {
+    if (!userId) return
+    setPickerMeal(null)
+    setChecking(meal.meal_index)
+    const totals = presetTotals(preset)
+    await supabase.from('meal_checks').upsert(
+      { user_id: userId, meal_index: meal.meal_index, date: todayStr },
+      { onConflict: 'user_id,meal_index,date' },
+    )
+    await cancelMealNotification(meal.meal_index)
+    await supabase.from('food_logs').insert({
+      user_id: userId, date: todayStr,
+      name: preset.name,
+      kcal: totals.kcal,
+      meal_index: meal.meal_index,
+      protein_g: totals.protein_g > 0 ? totals.protein_g : null,
+      fat_g: totals.fat_g > 0 ? totals.fat_g : null,
+      carb_g: totals.carb_g > 0 ? totals.carb_g : null,
+    })
+    setMealKcalInputs(prev => ({ ...prev, [meal.meal_index]: String(totals.kcal) }))
+    setMeals(prev => prev.map(m => m.meal_index === meal.meal_index ? { ...m, checked: true } : m))
+    setChecking(null)
+    loadNutrition(userId)
   }
 
   async function uncheckMeal(meal: MealItem) {
@@ -631,6 +630,16 @@ export default function NutritionScreen() {
         ))}
       </View>
 
+      {pickerMeal && (
+        <MealPresetPickerModal
+          meal={pickerMeal}
+          presets={presetsMap[pickerMeal.meal_index] ?? []}
+          onSelect={preset => confirmMealLogWithPreset(pickerMeal, preset)}
+          onCustom={() => { setPickerMeal(null); confirmMealLog(pickerMeal) }}
+          onClose={() => setPickerMeal(null)}
+        />
+      )}
+
       <BarcodeScannerModal
         visible={scannerVisible}
         loading={scanLoading}
@@ -639,6 +648,7 @@ export default function NutritionScreen() {
         onApply={applyScanResult}
         onRetry={() => { lastScannedRef.current = null; setScanResult(null) }}
         onClose={() => { setScannerVisible(false); setScanResult(null) }}
+        onSaveToMyFoods={(category, unitSizeG) => saveScanResultToMyFoods(category, unitSizeG)}
       />
 
       <CustomFoodsModal
@@ -646,12 +656,13 @@ export default function NutritionScreen() {
         foods={customFoods}
         onAdd={addFromCustomFood}
         onDelete={deleteCustomFood}
+        onUpdateCategory={updateCustomFoodCategory}
         onClose={() => setCustomFoodsModalVisible(false)}
       />
 
       <CalorieQuizModal
         visible={showActivityQuiz}
-        onApply={level => { setActivityLevel(level); setShowActivityQuiz(false); setShowActivityInfo(false) }}
+        onApply={level => { setActivityLevel(level); setShowActivityQuiz(false) }}
         onClose={() => setShowActivityQuiz(false)}
       />
 
@@ -670,6 +681,7 @@ export default function NutritionScreen() {
         onClose={() => setQuickAddItem(null)}
       />
 
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
         <Text style={st.screenTitle}>Nutrition</Text>
 
@@ -865,34 +877,51 @@ export default function NutritionScreen() {
             <View style={st.card}>
               <Text style={st.cardLabel}>Quick add</Text>
               <Text style={st.quickAddNote}>Tap any item to adjust quantity and add</Text>
-              {COMMON_FOOD_CATEGORIES.map(cat => {
-                const isOpen = expandedCategories.has(cat.category)
-                return (
-                  <View key={cat.category} style={st.quickAddCategory}>
-                    <Pressable
-                      style={st.quickAddCategoryHeader}
-                      onPress={() => setExpandedCategories(prev => {
-                        const next = new Set(prev)
-                        isOpen ? next.delete(cat.category) : next.add(cat.category)
-                        return next
-                      })}
-                    >
-                      <Text style={st.quickAddCategoryLabel}>{cat.category}</Text>
-                      <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={14} color={C.text3} />
-                    </Pressable>
-                    {isOpen && cat.items.map((food, i) => (
+              {(() => {
+                // Merge custom foods (with category) into the common food categories
+                const knownCats = new Set(COMMON_FOOD_CATEGORIES.map(c => c.category))
+                const mergedCats: { category: string; items: CommonFood[] }[] = COMMON_FOOD_CATEGORIES.map(cat => ({
+                  category: cat.category,
+                  items: [
+                    ...customFoods.filter(f => f.category === cat.category) as CommonFood[],
+                    ...cat.items,
+                  ],
+                }))
+                // Extra categories from custom foods not in COMMON_FOOD_CATEGORIES
+                const extraCatNames = [...new Set(customFoods.filter(f => f.category && !knownCats.has(f.category!)).map(f => f.category!))]
+                const extraCats = extraCatNames.map(cat => ({
+                  category: cat,
+                  items: customFoods.filter(f => f.category === cat) as CommonFood[],
+                }))
+                return [...extraCats, ...mergedCats].map(cat => {
+                  const isOpen = expandedCategories.has(cat.category)
+                  return (
+                    <View key={cat.category} style={st.quickAddCategory}>
                       <Pressable
-                        key={food.name}
-                        style={[st.quickAddRow, i < cat.items.length - 1 && st.quickAddRowBorder]}
-                        onPress={() => { setQuickAddItem(food); setQuickAddQty('1') }}
+                        style={st.quickAddCategoryHeader}
+                        onPress={() => setExpandedCategories(prev => {
+                          const next = new Set(prev)
+                          isOpen ? next.delete(cat.category) : next.add(cat.category)
+                          return next
+                        })}
                       >
-                        <Text style={st.quickAddRowName}>{food.name}</Text>
-                        <Text style={st.quickAddRowKcal}>{food.kcal} kcal</Text>
+                        <Text style={st.quickAddCategoryLabel}>{cat.category}</Text>
+                        <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={14} color={C.text3} />
                       </Pressable>
-                    ))}
-                  </View>
-                )
-              })}
+                      {isOpen && cat.items.map((food, i) => (
+                        <Pressable
+                          key={food.name + i}
+                          style={[st.quickAddRow, i < cat.items.length - 1 && st.quickAddRowBorder]}
+                          onPress={() => { setQuickAddItem(food); setQuickAddQty('1') }}
+                        >
+                          <Text style={st.quickAddRowName}>{food.name}</Text>
+                          <Text style={st.quickAddRowKcal}>{food.kcal} kcal</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )
+                })
+              })()}
             </View>
 
             {/* Food log list */}
@@ -1097,7 +1126,7 @@ export default function NutritionScreen() {
                     onPress={() => setEstimateMethod(m)}
                   >
                     <Text style={[st.methodToggleBtnText, estimateMethod === m && st.methodToggleBtnTextActive]}>
-                      {m === 'mifflin' ? 'Mifflin-St Jeor' : 'Katch-McArdle'}
+                      {m === 'mifflin' ? 'Standard' : 'Advanced'}
                     </Text>
                   </Pressable>
                 ))}
@@ -1105,9 +1134,15 @@ export default function NutritionScreen() {
 
               <Text style={st.estimateNote}>
                 {estimateMethod === 'mifflin'
-                  ? 'Estimates BMR from weight, height, age and sex. Works without body composition data.'
-                  : 'Estimates BMR from lean body mass (weight × fat %). More accurate if you know your body fat %.'}
+                  ? 'Estimates your rest-day calorie needs from weight, height, age and sex.'
+                  : 'Estimates rest-day calorie needs from lean body mass (weight × fat %). More accurate if you know your body fat %.'}
               </Text>
+              <View style={st.baselineInfoBox}>
+                <Ionicons name="information-circle-outline" size={15} color={C.accent2} />
+                <Text style={st.baselineInfoText}>
+                  This gives you your <Text style={{ fontWeight: '700' }}>rest-day baseline</Text> — calories burned just by being alive and moving normally. Workout calories from Strava are added on top automatically, so do not add exercise here.
+                </Text>
+              </View>
 
               {/* Katch-McArdle: fat % input */}
               {estimateMethod === 'katch' && (
@@ -1135,46 +1170,6 @@ export default function NutritionScreen() {
 
               {hasData && result && (
                 <View style={st.calcCard}>
-                  {/* Activity level */}
-                  <View style={st.calcActivityHeader}>
-                    <Text style={st.calcActivityLabel}>Activity level</Text>
-                    <Pressable
-                      onPress={() => setShowActivityInfo(v => !v)}
-                      style={st.infoBtn}
-                      hitSlop={10}
-                    >
-                      <Text style={st.infoBtnText}>i</Text>
-                    </Pressable>
-                  </View>
-
-                  {showActivityInfo && (
-                    <View style={st.infoPopup}>
-                      <Text style={st.infoPopupTitle}>{selectedLevel.label}</Text>
-                      <Text style={st.infoPopupText}>{selectedLevel.info}</Text>
-                    </View>
-                  )}
-
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 6 }}
-                    contentContainerStyle={{ gap: 6, paddingRight: 4 }}>
-                    {ACTIVITY_LEVELS.map(level => (
-                      <Pressable
-                        key={level.key}
-                        style={[st.activityChip, activityLevel === level.key && st.activityChipActive]}
-                        onPress={() => { setActivityLevel(level.key); setShowActivityInfo(false) }}
-                      >
-                        <Text style={[st.activityChipLabel, activityLevel === level.key && st.activityChipLabelActive]}>
-                          {level.label}
-                        </Text>
-                        <Text style={st.activityChipDetail}>{level.detail}</Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-
-                  <Pressable onPress={() => setShowActivityQuiz(true)} style={st.helpBtn}>
-                    <Ionicons name="help-circle-outline" size={13} color={C.accent} />
-                    <Text style={st.helpBtnText}>Help me choose</Text>
-                  </Pressable>
-
                   <View style={st.calcBreakdown}>
                     {estimateMethod === 'katch' && (
                       <View style={st.calcBreakdownRow}>
@@ -1187,11 +1182,11 @@ export default function NutritionScreen() {
                       <Text style={st.calcBreakdownValue}>{result.bmr.toLocaleString()} kcal</Text>
                     </View>
                     <View style={st.calcBreakdownRow}>
-                      <Text style={st.calcBreakdownLabel}>Activity multiplier</Text>
+                      <Text style={st.calcBreakdownLabel}>Sedentary baseline multiplier</Text>
                       <Text style={st.calcBreakdownValue}>× {selectedLevel.factor}</Text>
                     </View>
                     <View style={[st.calcBreakdownRow, st.calcBreakdownTotal]}>
-                      <Text style={st.calcTotalLabel}>Daily target</Text>
+                      <Text style={st.calcTotalLabel}>Baseline (rest day)</Text>
                       <Text style={st.calcTotalValue}>{result.tdee.toLocaleString()} kcal</Text>
                     </View>
                   </View>
@@ -1202,11 +1197,11 @@ export default function NutritionScreen() {
                       if (!userId) return
                       await supabase.from('users').update({ daily_kcal_target: result.tdee }).eq('id', userId)
                       setBaseline(result.tdee)
-                      Alert.alert('Target updated', `Daily target set to ${result.tdee.toLocaleString()} kcal.`)
+                      Alert.alert('Baseline updated', `Daily baseline set to ${result.tdee.toLocaleString()} kcal. Workout calories from Strava will be added on top.`)
                     }}
                   >
                     <Ionicons name="checkmark-circle-outline" size={16} color={C.white} />
-                    <Text style={st.useTargetBtnText}>Use {result.tdee.toLocaleString()} kcal as target</Text>
+                    <Text style={st.useTargetBtnText}>Use {result.tdee.toLocaleString()} kcal as baseline</Text>
                   </Pressable>
                 </View>
               )}
@@ -1214,9 +1209,98 @@ export default function NutritionScreen() {
           )
         })()}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }
+
+// ─── Meal preset picker modal ──────────────────────────────────────────────
+
+function MealPresetPickerModal({
+  meal, presets, onSelect, onCustom, onClose,
+}: {
+  meal: MealItem
+  presets: MealPreset[]
+  onSelect: (preset: MealPreset) => void
+  onCustom: () => void
+  onClose: () => void
+}) {
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={mp.overlay} onPress={onClose} />
+      <View style={mp.sheet}>
+        <View style={mp.handle} />
+        <Text style={mp.title}>{meal.name}</Text>
+        <Text style={mp.subtitle}>What did you have?</Text>
+        {presets.map(preset => {
+          const items = preset.items ?? []
+          const t = items.reduce(
+            (acc, it) => ({ kcal: acc.kcal + it.kcal, p: acc.p + (it.protein_g ?? 0), f: acc.f + (it.fat_g ?? 0), c: acc.c + (it.carb_g ?? 0) }),
+            { kcal: 0, p: 0, f: 0, c: 0 },
+          )
+          return (
+            <Pressable key={preset.id} style={mp.presetCard} onPress={() => onSelect(preset)}>
+              <View style={{ flex: 1 }}>
+                <Text style={mp.presetName}>{preset.name}</Text>
+                {items.map(item => (
+                  <Text key={item.id} style={mp.ingredientRow}>
+                    {item.amount_label ? `${item.amount_label}  ` : ''}{item.name}
+                    {'  ·  '}{item.kcal} kcal
+                  </Text>
+                ))}
+                <View style={mp.totalRow}>
+                  <Text style={mp.totalText}>
+                    Total: {t.kcal} kcal
+                    {t.p > 0 ? ` · P ${t.p.toFixed(0)}g` : ''}
+                    {t.f > 0 ? ` · F ${t.f.toFixed(0)}g` : ''}
+                    {t.c > 0 ? ` · C ${t.c.toFixed(0)}g` : ''}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={C.text3} style={{ marginLeft: 8 }} />
+            </Pressable>
+          )
+        })}
+        <Pressable style={mp.customBtn} onPress={onCustom}>
+          <Ionicons name="create-outline" size={15} color={C.accent} />
+          <Text style={mp.customBtnText}>Log with custom kcal</Text>
+        </Pressable>
+      </View>
+    </Modal>
+  )
+}
+
+const mp = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheet: {
+    backgroundColor: C.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 20, paddingBottom: 36, gap: 0,
+  },
+  handle: {
+    width: 36, height: 4, borderRadius: 2, backgroundColor: C.border,
+    alignSelf: 'center', marginBottom: 16,
+  },
+  title: { fontSize: 18, fontWeight: '800', color: C.text1, marginBottom: 2 },
+  subtitle: { fontSize: 13, color: C.text2, marginBottom: 16 },
+  presetCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.surface2, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: C.border, marginBottom: 8,
+  },
+  presetName: { fontSize: 14, fontWeight: '700', color: C.text1, marginBottom: 4 },
+  ingredientRow: { fontSize: 12, color: C.text2, marginBottom: 1 },
+  totalRow: {
+    borderTopWidth: 1, borderTopColor: C.divider,
+    marginTop: 6, paddingTop: 6,
+  },
+  totalText: { fontSize: 12, fontWeight: '700', color: C.accent },
+  customBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 12, marginTop: 4,
+    borderRadius: 10, borderWidth: 1, borderColor: C.accent + '55',
+  },
+  customBtnText: { fontSize: 14, fontWeight: '600', color: C.accent },
+})
 
 // ─── History view ──────────────────────────────────────────────────────────
 
@@ -1551,36 +1635,66 @@ const hv = StyleSheet.create({
 
 // ─── Barcode scanner modal ─────────────────────────────────────────────────
 
-function BarcodeScannerModal({ visible, loading, result, onBarcodeScanned, onApply, onRetry, onClose }: {
+const FOOD_CATEGORIES = ['Fruit', 'Drinks', 'Bread & Grains', 'Dairy & Eggs', 'Meat & Fish',
+  'Vegetables', 'Snacks & Sweets', 'Fats & Oils', 'Other']
+
+function BarcodeScannerModal({ visible, loading, result, onBarcodeScanned, onApply, onRetry, onClose, onSaveToMyFoods }: {
   visible: boolean
   loading: boolean
   result: { name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null } | null
   onBarcodeScanned: (scan: { data: string }) => void
-  onApply: () => void
+  onApply: (totalGrams: number) => void
   onRetry: () => void
   onClose: () => void
+  onSaveToMyFoods?: (category: string | undefined, unitSizeG: number) => void
 }) {
+  const [unitSizeStr, setUnitSizeStr] = useState('')
+  const [piecesStr, setPiecesStr] = useState('1')
+  const [showCatPicker, setShowCatPicker] = useState(false)
+  const [savedCat, setSavedCat] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (result) { setUnitSizeStr(''); setPiecesStr('1'); setShowCatPicker(false); setSavedCat(null) }
+  }, [result])
+
+  const unitSize = parseFloat(unitSizeStr)
+  const pieces = parseFloat(piecesStr)
+  const validUnit = result && !isNaN(unitSize) && unitSize > 0
+  const validTotal = validUnit && !isNaN(pieces) && pieces > 0
+
+  function scale(per100: number, g: number) { return Math.round(per100 * g / 100 * 10) / 10 }
+
+  const perPiece = validUnit && result ? {
+    kcal: Math.round(result.kcal * unitSize / 100),
+    protein_g: result.protein_g != null ? scale(result.protein_g, unitSize) : null,
+    fat_g: result.fat_g != null ? scale(result.fat_g, unitSize) : null,
+    carb_g: result.carb_g != null ? scale(result.carb_g, unitSize) : null,
+  } : null
+
+  const totalKcal = validTotal && perPiece ? Math.round(perPiece.kcal * pieces) : null
+
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent>
       <View style={bs.container}>
         <CameraView
-          style={bs.camera}
+          style={StyleSheet.absoluteFillObject}
           facing="back"
           barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'qr'] }}
           onBarcodeScanned={!loading && !result ? onBarcodeScanned : undefined}
         />
 
-        {/* Overlay */}
         <View style={bs.overlay} pointerEvents="none">
           <View style={bs.scanFrame} />
         </View>
 
-        {/* Close button */}
         <Pressable style={bs.closeBtn} onPress={onClose}>
           <Ionicons name="close" size={24} color="#fff" />
         </Pressable>
 
-        {/* Bottom sheet */}
+        <KeyboardAvoidingView
+          style={bs.kavWrapper}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
         <View style={bs.sheet}>
           {loading && (
             <View style={bs.sheetContent}>
@@ -1597,37 +1711,94 @@ function BarcodeScannerModal({ visible, loading, result, onBarcodeScanned, onApp
           {!loading && result && (
             <View style={bs.resultContent}>
               <Text style={bs.resultName} numberOfLines={2}>{result.name}</Text>
-              <Text style={bs.resultPer}>per 100g</Text>
-              <View style={bs.resultMacros}>
-                <View style={bs.macroPill}>
-                  <Text style={[bs.macroNum, { color: C.accent }]}>{result.kcal}</Text>
-                  <Text style={bs.macroLabel}>kcal</Text>
-                </View>
-                {result.protein_g != null && (
-                  <View style={bs.macroPill}>
-                    <Text style={[bs.macroNum, { color: '#29B6F6' }]}>{result.protein_g}g</Text>
-                    <Text style={bs.macroLabel}>protein</Text>
-                  </View>
-                )}
-                {result.fat_g != null && (
-                  <View style={bs.macroPill}>
-                    <Text style={[bs.macroNum, { color: C.warning }]}>{result.fat_g}g</Text>
-                    <Text style={bs.macroLabel}>fat</Text>
-                  </View>
-                )}
-                {result.carb_g != null && (
-                  <View style={bs.macroPill}>
-                    <Text style={[bs.macroNum, { color: C.accent2 }]}>{result.carb_g}g</Text>
-                    <Text style={bs.macroLabel}>carbs</Text>
-                  </View>
-                )}
+              <Text style={bs.resultPer}>per 100g: {result.kcal} kcal
+                {result.protein_g != null ? ` · P ${result.protein_g}g` : ''}
+                {result.fat_g != null ? ` · F ${result.fat_g}g` : ''}
+                {result.carb_g != null ? ` · C ${result.carb_g}g` : ''}
+              </Text>
+
+              {/* Step 1: unit size */}
+              <View style={bs.stepRow}>
+                <Text style={bs.stepLabel}>Grams per piece</Text>
+                <TextInput
+                  style={bs.amountInput}
+                  value={unitSizeStr}
+                  onChangeText={setUnitSizeStr}
+                  keyboardType="decimal-pad"
+                  returnKeyType="next"
+                  placeholder="e.g. 12.5"
+                  placeholderTextColor={C.text3}
+                  autoFocus
+                />
+                {perPiece
+                  ? <Text style={bs.amountComputed}>{perPiece.kcal} kcal/piece</Text>
+                  : <Text style={bs.amountHint}>e.g. one slice</Text>
+                }
               </View>
+
+              {/* Step 2: piece count — only shown once unit size is valid */}
+              {validUnit && (
+                <View style={bs.stepRow}>
+                  <Text style={bs.stepLabel}>Pieces</Text>
+                  <TextInput
+                    style={bs.amountInput}
+                    value={piecesStr}
+                    onChangeText={setPiecesStr}
+                    keyboardType="decimal-pad"
+                    returnKeyType="done"
+                    selectTextOnFocus
+                  />
+                  {totalKcal != null
+                    ? <Text style={bs.amountComputed}>= {totalKcal} kcal</Text>
+                    : <Text style={bs.amountHint}>how many?</Text>
+                  }
+                </View>
+              )}
+
+              {/* Save to My Foods */}
+              {onSaveToMyFoods && validUnit && (
+                <View style={bs.saveFoodRow}>
+                  <Pressable style={bs.saveFoodBtn} onPress={() => setShowCatPicker(v => !v)}>
+                    <Ionicons name="bookmark-outline" size={15} color={savedCat ? C.accent : C.accent2} />
+                    <Text style={[bs.saveFoodText, savedCat ? { color: C.accent } : {}]}>
+                      {savedCat ? `Saved to ${savedCat}` : 'Save to My Foods'}
+                    </Text>
+                    {!savedCat && <Ionicons name={showCatPicker ? 'chevron-up' : 'chevron-down'} size={13} color={C.text3} />}
+                  </Pressable>
+                </View>
+              )}
+
+              {showCatPicker && (
+                <View style={bs.catPicker}>
+                  <Text style={bs.catPickerLabel}>Choose category:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 4 }}>
+                    {FOOD_CATEGORIES.map(cat => (
+                      <Pressable
+                        key={cat}
+                        style={bs.catChip}
+                        onPress={() => {
+                          setSavedCat(cat)
+                          setShowCatPicker(false)
+                          onSaveToMyFoods?.(cat, unitSize)
+                        }}
+                      >
+                        <Text style={bs.catChipText}>{cat}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
               <View style={bs.resultBtns}>
                 <Pressable style={bs.retryBtn} onPress={onRetry}>
                   <Ionicons name="refresh-outline" size={16} color={C.text2} />
                   <Text style={bs.retryText}>Scan again</Text>
                 </Pressable>
-                <Pressable style={bs.applyBtn} onPress={onApply}>
+                <Pressable
+                  style={[bs.applyBtn, !validTotal && { opacity: 0.4 }]}
+                  onPress={() => onApply(unitSize * pieces)}
+                  disabled={!validTotal}
+                >
                   <Ionicons name="add-circle-outline" size={16} color={C.white} />
                   <Text style={bs.applyText}>Add to log</Text>
                 </Pressable>
@@ -1635,6 +1806,7 @@ function BarcodeScannerModal({ visible, loading, result, onBarcodeScanned, onApp
             </View>
           )}
         </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   )
@@ -1643,6 +1815,7 @@ function BarcodeScannerModal({ visible, loading, result, onBarcodeScanned, onApp
 const bs = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
+  kavWrapper: { flex: 1, justifyContent: 'flex-end' },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
@@ -1658,26 +1831,52 @@ const bs = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, padding: 8,
   },
   sheet: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     paddingHorizontal: 24, paddingTop: 16, paddingBottom: 48, minHeight: 140,
   },
   sheetContent: { alignItems: 'center', gap: 12, paddingVertical: 16 },
   sheetHint: { fontSize: 15, color: C.text2, textAlign: 'center' },
-  resultContent: { gap: 8 },
+  resultContent: { gap: 10 },
   resultName: { fontSize: 17, fontWeight: '800', color: C.text1, lineHeight: 22 },
-  resultPer: { fontSize: 11, color: C.text3, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  resultMacros: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginVertical: 4 },
-  macroPill: { backgroundColor: C.surface2, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center', minWidth: 64 },
-  macroNum: { fontSize: 16, fontWeight: '800' },
-  macroLabel: { fontSize: 10, color: C.text3, marginTop: 1 },
-  resultBtns: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  resultPer: { fontSize: 12, color: C.text3, lineHeight: 18 },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  stepLabel: { fontSize: 13, color: C.text2, fontWeight: '600', width: 110 },
+  amountRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  amountLabel: { fontSize: 14, color: C.text2, fontWeight: '600' },
+  amountInput: {
+    backgroundColor: C.surface2, borderRadius: 8, borderWidth: 1, borderColor: C.border,
+    paddingHorizontal: 12, paddingVertical: 8, fontSize: 16, fontWeight: '700', color: C.text1,
+    minWidth: 72, textAlign: 'center',
+  },
+  amountComputed: { fontSize: 14, fontWeight: '700', color: C.accent },
+  amountHint: { fontSize: 13, color: C.text3, fontStyle: 'italic' },
+  saveFoodRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  saveFoodBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  saveFoodText: { fontSize: 13, fontWeight: '600', color: C.accent2 },
+  catBadge: { backgroundColor: C.accent2 + '22', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  catBadgeText: { fontSize: 12, fontWeight: '700', color: C.accent2 },
+  catPicker: { gap: 6 },
+  catPickerLabel: { fontSize: 12, color: C.text3, fontWeight: '600' },
+  catChip: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+    borderWidth: 1, borderColor: C.border, backgroundColor: C.surface2,
+  },
+  catChipActive: { backgroundColor: C.accent2, borderColor: C.accent2 },
+  catChipText: { fontSize: 13, fontWeight: '600', color: C.text2 },
+  catChipTextActive: { color: C.white },
+  resultBtns: { flexDirection: 'row', gap: 10, marginTop: 4 },
   retryBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingVertical: 12,
     backgroundColor: C.surface2,
   },
   retryText: { fontSize: 14, fontWeight: '700', color: C.text2 },
+  saveBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1.5, borderColor: C.accent2, borderRadius: 12, paddingVertical: 12,
+    backgroundColor: C.surface2,
+  },
+  saveText: { fontSize: 14, fontWeight: '700', color: C.accent2 },
   applyBtn: {
     flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: C.accent, borderRadius: 12, paddingVertical: 12,
@@ -1758,13 +1957,18 @@ function CalorieQuizModal({
   )
 }
 
-function CustomFoodsModal({ visible, foods, onAdd, onDelete, onClose }: {
+function CustomFoodsModal({ visible, foods, onAdd, onDelete, onUpdateCategory, onClose }: {
   visible: boolean
   foods: CustomFood[]
   onAdd: (food: CustomFood) => void
-  onDelete: (id: string) => void
+  onDelete: (id: string, name?: string) => void
+  onUpdateCategory: (id: string, category: string | null) => void
   onClose: () => void
 }) {
+  const [catPickerFor, setCatPickerFor] = useState<string | null>(null)
+
+  useEffect(() => { if (!visible) setCatPickerFor(null) }, [visible])
+
   return (
     <Modal visible={visible} transparent animationType="slide">
       <Pressable style={cf.overlay} onPress={onClose}>
@@ -1781,24 +1985,63 @@ function CustomFoodsModal({ visible, foods, onAdd, onDelete, onClose }: {
               </Text>
             </View>
           ) : (
-            <ScrollView style={cf.list} showsVerticalScrollIndicator={false}>
+            <ScrollView style={cf.list} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {foods.map(food => (
                 <View key={food.id} style={cf.item}>
-                  <Pressable style={cf.itemMain} onPress={() => onAdd(food)}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={cf.itemName}>{food.name}</Text>
-                      <Text style={cf.itemMeta}>
-                        {food.kcal} kcal
-                        {food.protein_g != null ? ` · P ${food.protein_g}g` : ''}
-                        {food.fat_g != null ? ` · F ${food.fat_g}g` : ''}
-                        {food.carb_g != null ? ` · C ${food.carb_g}g` : ''}
-                      </Text>
+                  <View style={cf.itemRow}>
+                    <Pressable style={cf.itemMain} onPress={() => onAdd(food)}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={cf.itemName}>{food.name}</Text>
+                        <Text style={cf.itemMeta}>
+                          {food.kcal} kcal
+                          {food.protein_g != null ? ` · P ${food.protein_g}g` : ''}
+                          {food.fat_g != null ? ` · F ${food.fat_g}g` : ''}
+                          {food.carb_g != null ? ` · C ${food.carb_g}g` : ''}
+                        </Text>
+                      </View>
+                      <Ionicons name="add-circle-outline" size={22} color={C.accent} />
+                    </Pressable>
+                    <Pressable onPress={() => onDelete(food.id, food.name)} hitSlop={8} style={cf.deleteBtn}>
+                      <Ionicons name="trash-outline" size={16} color={C.text3} />
+                    </Pressable>
+                  </View>
+
+                  {/* Category tag — tap to open picker */}
+                  <Pressable
+                    style={cf.catTag}
+                    onPress={() => setCatPickerFor(prev => prev === food.id ? null : food.id)}
+                  >
+                    <Ionicons name="pricetag-outline" size={11} color={food.category ? C.accent : C.text3} />
+                    <Text style={[cf.catTagText, food.category ? cf.catTagTextSet : {}]}>
+                      {food.category ?? 'Add category'}
+                    </Text>
+                    <Ionicons
+                      name={catPickerFor === food.id ? 'chevron-up' : 'chevron-down'}
+                      size={11} color={C.text3}
+                    />
+                  </Pressable>
+
+                  {catPickerFor === food.id && (
+                    <View style={cf.catChips}>
+                      {food.category && (
+                        <Pressable
+                          style={[cf.catChip, cf.catChipClear]}
+                          onPress={() => { onUpdateCategory(food.id, null); setCatPickerFor(null) }}
+                        >
+                          <Text style={cf.catChipClearText}>✕ Remove</Text>
+                        </Pressable>
+                      )}
+                      {FOOD_CATEGORIES.map(cat => (
+                        <Pressable
+                          key={cat}
+                          style={[cf.catChip, food.category === cat && cf.catChipActive]}
+                          onPress={() => { onUpdateCategory(food.id, cat); setCatPickerFor(null) }}
+                        >
+                          <Text style={[cf.catChipText, food.category === cat && cf.catChipTextActive]}>{cat}</Text>
+                        </Pressable>
+                      ))}
                     </View>
-                    <Ionicons name="add-circle-outline" size={24} color={C.accent} />
-                  </Pressable>
-                  <Pressable onPress={() => onDelete(food.id)} hitSlop={8} style={cf.deleteBtn}>
-                    <Ionicons name="trash-outline" size={16} color={C.text3} />
-                  </Pressable>
+                  )}
                 </View>
               ))}
             </ScrollView>
@@ -1869,16 +2112,34 @@ const cf = StyleSheet.create({
   emptyText: { fontSize: 14, color: C.text3, textAlign: 'center', lineHeight: 20 },
   list: { maxHeight: 320 },
   item: {
-    flexDirection: 'row', alignItems: 'center',
-    borderBottomWidth: 1, borderBottomColor: C.divider,
+    borderBottomWidth: 1, borderBottomColor: C.divider, paddingBottom: 8,
   },
+  itemRow: { flexDirection: 'row', alignItems: 'center' },
   itemMain: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
-    gap: 12, paddingVertical: 14,
+    gap: 12, paddingVertical: 12,
   },
   itemName: { fontSize: 15, fontWeight: '600', color: C.text1, marginBottom: 2 },
   itemMeta: { fontSize: 12, color: C.text2 },
   deleteBtn: { padding: 8 },
+  catTag: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4, marginBottom: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: C.surface2, borderRadius: 10, borderWidth: 1, borderColor: C.border,
+  },
+  catTagText: { fontSize: 11, color: C.text3, fontWeight: '600' },
+  catTagTextSet: { color: C.accent },
+  catChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: 8 },
+  catChip: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16,
+    borderWidth: 1, borderColor: C.border, backgroundColor: C.surface2,
+  },
+  catChipActive: { backgroundColor: C.accent, borderColor: C.accent },
+  catChipText: { fontSize: 12, fontWeight: '600', color: C.text2 },
+  catChipTextActive: { color: C.white },
+  catChipClear: { borderColor: '#EF5350', backgroundColor: 'transparent' },
+  catChipClearText: { fontSize: 12, fontWeight: '600', color: '#EF5350' },
   closeBtn: { backgroundColor: C.accent, borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 16 },
   closeBtnText: { color: C.white, fontWeight: '800', fontSize: 16 },
 })
@@ -2039,7 +2300,12 @@ const st = StyleSheet.create({
 
   // Estimate tab
   estimateTitle: { fontSize: 22, fontWeight: '800', color: C.text1, marginBottom: 12 },
-  estimateNote: { fontSize: 13, color: C.text2, lineHeight: 19, marginBottom: 16 },
+  estimateNote: { fontSize: 13, color: C.text2, lineHeight: 19, marginBottom: 10 },
+  baselineInfoBox: {
+    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+    backgroundColor: C.surface2, borderRadius: 8, padding: 10, marginBottom: 16,
+  },
+  baselineInfoText: { flex: 1, fontSize: 12, color: C.text2, lineHeight: 17 },
   methodToggle: {
     flexDirection: 'row', backgroundColor: C.surface2,
     borderRadius: 10, padding: 3, marginBottom: 12,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView, Modal,
-  StyleSheet, Alert, ActivityIndicator,
+  StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
@@ -338,10 +338,16 @@ export default function PlannerScreen() {
   }
 
   async function deletePlan(id: string) {
-    setDeletingPlanId(id)
-    await supabase.from('planned_workouts').delete().eq('id', id)
-    setTodayPlans(prev => prev.filter(p => p.id !== id))
-    setDeletingPlanId(null)
+    const plan = todayPlans.find(p => p.id === id)
+    Alert.alert('Delete plan?', `Remove the planned ${plan?.sport_type ?? 'workout'}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        setDeletingPlanId(id)
+        await supabase.from('planned_workouts').delete().eq('id', id)
+        setTodayPlans(prev => prev.filter(p => p.id !== id))
+        setDeletingPlanId(null)
+      }},
+    ])
   }
 
   // ─── build mode ─────────────────────────────────────────────────────────────
@@ -706,6 +712,7 @@ export default function PlannerScreen() {
 
   return (
     <SafeAreaView style={st.container}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
         <Text style={st.screenTitle}>Workout Planner</Text>
 
@@ -1546,6 +1553,7 @@ export default function PlannerScreen() {
           </>
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }

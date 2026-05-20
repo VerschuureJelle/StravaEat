@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, Modal,
+  ActivityIndicator, Modal, Alert,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect, useRouter } from 'expo-router'
@@ -246,6 +246,7 @@ export default function HomeScreen() {
   const [fuelingSettings, setFuelingSettings] = useState<FuelingSetting[]>([])
   const [zoneMap, setZoneMap] = useState<Record<string, number>>({})
   const [hideCalories, setHideCalories] = useState(false)
+  const [maxKcalTarget, setMaxKcalTarget] = useState<number | null>(null)
   const [consumedKcal, setConsumedKcal] = useState(0)
   const [userSex, setUserSex] = useState<string | null>(null)
   const [onPeriod, setOnPeriod] = useState(false)
@@ -273,7 +274,7 @@ export default function HomeScreen() {
     const sixtyDaysAgoStr = `${sixtyDaysAgo.getFullYear()}-${String(sixtyDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(sixtyDaysAgo.getDate()).padStart(2, '0')}`
 
     const [profileRes, actsRes, plannedRes, zonesRes, fuelingRes, foodRes, histActsRes, calibRes] = await Promise.all([
-      supabase.from('users').select('name, daily_kcal_target, hide_calories, on_period, period_severity, max_hr, sex').eq('id', user.id).single(),
+      supabase.from('users').select('name, daily_kcal_target, max_kcal_target, hide_calories, on_period, period_severity, max_hr, sex').eq('id', user.id).single(),
       supabase.from('activities').select('id, name, type, total_kcal').eq('user_id', user.id)
         .gte('date', todayISOStart).not('total_kcal', 'is', null),
       supabase.from('planned_workouts')
@@ -288,6 +289,7 @@ export default function HomeScreen() {
     ])
     setUserName(profileRes.data?.name ?? null)
     setDailyTarget(profileRes.data?.daily_kcal_target ?? null)
+    setMaxKcalTarget(profileRes.data?.max_kcal_target ?? null)
     setHideCalories(profileRes.data?.hide_calories ?? false)
     setUserSex(profileRes.data?.sex ?? null)
     setOnPeriod(profileRes.data?.on_period ?? false)
@@ -386,8 +388,14 @@ export default function HomeScreen() {
   }
 
   async function deletePlannedWorkout(id: string) {
-    setPlannedWorkouts(prev => prev.filter(w => w.id !== id))
-    await supabase.from('planned_workouts').delete().eq('id', id)
+    const workout = plannedWorkouts.find(w => w.id === id)
+    Alert.alert('Delete workout?', `Remove the planned ${workout?.sport_type ?? 'workout'}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        setPlannedWorkouts(prev => prev.filter(w => w.id !== id))
+        await supabase.from('planned_workouts').delete().eq('id', id)
+      }},
+    ])
   }
 
   const periodActive = userSex === 'female' && onPeriod
@@ -431,14 +439,28 @@ export default function HomeScreen() {
           {hideCalories ? (
             <View style={st.heroKcalBlock}>
               {displayKcal != null ? (
-                <>
-                  <View style={st.heroProgressTrack}>
-                    <View style={[st.heroProgressFill, {
-                      width: `${Math.round(Math.min(consumedKcal / Math.max(displayKcal, 1), 1) * 100)}%` as any,
-                    }]} />
-                  </View>
-                  <Text style={[st.heroKcalLabel, { marginTop: 10 }]}>kcal today</Text>
-                </>
+                (() => {
+                  const pct = Math.min(consumedKcal / Math.max(displayKcal, 1), 1)
+                  const isOver = consumedKcal >= displayKcal
+                  const isExceeded = maxKcalTarget != null && consumedKcal > maxKcalTarget
+                  const barLabel = isExceeded ? 'Daily maximum exceeded' : isOver ? 'Daily minimum reached' : 'kcal today'
+                  return (
+                    <>
+                      <View style={st.heroProgressTrack}>
+                        <LinearGradient
+                          colors={['#EF5350', '#FFA726', '#66BB6A']}
+                          start={{ x: 0, y: 0.5 }}
+                          end={{ x: 1, y: 0.5 }}
+                          style={StyleSheet.absoluteFillObject}
+                        />
+                        <View style={[st.heroProgressMask, { width: `${Math.round((1 - pct) * 100)}%` as any }]} />
+                      </View>
+                      <Text style={[st.heroKcalLabel, { marginTop: 10 }, isExceeded && { color: '#FF8A80' }]}>
+                        {barLabel}
+                      </Text>
+                    </>
+                  )
+                })()
               ) : (
                 <Text style={st.heroKcalEmpty}>Set a calorie target in Settings</Text>
               )}
@@ -448,16 +470,15 @@ export default function HomeScreen() {
               {displayKcal != null ? (
                 (() => {
                   const remaining = displayKcal - consumedKcal
-                  const isOver = remaining < 0
+                  const isOver = remaining <= 0
+                  const isExceeded = maxKcalTarget != null && consumedKcal > maxKcalTarget
                   return (
                     <>
-                      <Text style={[st.heroKcalNum, isOver && { color: '#FF8A80' }]}>
-                        {isOver
-                          ? `−${Math.abs(remaining).toLocaleString()}`
-                          : remaining.toLocaleString()}
+                      <Text style={[st.heroKcalNum, isExceeded && { color: '#FF8A80' }]}>
+                        {isOver ? (isExceeded ? '!' : '✓') : remaining.toLocaleString()}
                       </Text>
                       <Text style={st.heroKcalLabel}>
-                        {isOver ? 'kcal over target' : 'kcal remaining today'}
+                        {isExceeded ? 'Daily maximum exceeded' : isOver ? 'Daily minimum reached' : 'kcal remaining today'}
                       </Text>
                       <View style={st.heroKcalSubRow}>
                         <Text style={st.heroKcalSub}>{consumedKcal.toLocaleString()} eaten</Text>
@@ -1136,6 +1157,7 @@ const st = StyleSheet.create({
     height: 12, backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 6, overflow: 'hidden',
   },
   heroProgressFill: { height: 12, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 6 },
+  heroProgressMask: { position: 'absolute', right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.25)', borderTopRightRadius: 6, borderBottomRightRadius: 6 },
   heroKcalNum: { fontSize: 52, fontWeight: '800', color: C.white, lineHeight: 54 },
   heroKcalLabel: { fontSize: 15, color: 'rgba(255,255,255,0.8)', fontWeight: '500', marginTop: 2 },
   heroKcalEmpty: { fontSize: 15, color: 'rgba(255,255,255,0.7)', fontStyle: 'italic' },

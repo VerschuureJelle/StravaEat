@@ -18,6 +18,7 @@ export interface UserProfile {
   strava_refresh_token: string | null
   strava_token_expires_at: string | null
   daily_kcal_target: number | null
+  max_kcal_target: number | null
   goal_protein_g: number | null
   goal_fat_g: number | null
   goal_carb_g: number | null
@@ -52,6 +53,26 @@ export interface MealTemplate {
   protein_g: number | null
   fat_g: number | null
   carb_g: number | null
+}
+
+export interface MealPresetItem {
+  id: string
+  preset_id: string
+  name: string
+  amount_label: string | null
+  kcal: number
+  protein_g: number | null
+  fat_g: number | null
+  carb_g: number | null
+  sort_order: number
+}
+
+export interface MealPreset {
+  id: string
+  user_id: string
+  name: string
+  sort_order: number
+  items?: MealPresetItem[]
 }
 
 export interface HeartRateZone {

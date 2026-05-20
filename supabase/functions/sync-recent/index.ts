@@ -31,11 +31,14 @@ function interpolateBurn(hr: number, pts: BurnPoint[]): { kcal: number; fat: num
   return { kcal: 0, fat: 0, carb: 0 }
 }
 
+const jsonErr = (msg: string, status: number) =>
+  new Response(JSON.stringify({ error: msg }), { status, headers: { 'Content-Type': 'application/json' } })
+
 Deno.serve(async (req) => {
-  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+  if (req.method !== 'POST') return jsonErr('Method not allowed', 405)
 
   const authHeader = req.headers.get('Authorization')
-  if (!authHeader) return new Response('Unauthorized', { status: 401 })
+  if (!authHeader) return jsonErr('Unauthorized', 401)
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -48,7 +51,7 @@ Deno.serve(async (req) => {
   )
 
   const { data: { user }, error: authError } = await userClient.auth.getUser()
-  if (authError || !user) return new Response('Unauthorized', { status: 401 })
+  if (authError || !user) return jsonErr('Unauthorized', 401)
 
   const { data: profile } = await supabase
     .from('users')
@@ -68,26 +71,52 @@ Deno.serve(async (req) => {
     `${STRAVA_API}/athlete/activities?per_page=20`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   )
-  if (!activitiesRes.ok) return new Response('Strava activities fetch failed', { status: 502 })
+  if (!activitiesRes.ok) {
+    if (activitiesRes.status === 429) {
+      const retryAfter = activitiesRes.headers.get('Retry-After')
+      const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15
+      return jsonErr(`rate_limit:${minutes}`, 429)
+    }
+    const body = await activitiesRes.text().catch(() => '')
+    return jsonErr(`Strava error ${activitiesRes.status}: ${body.slice(0, 200)}`, 502)
+  }
   const stravaActivities = await activitiesRes.json()
 
-  // Load zones, burn schema and sport energy settings once
-  const [{ data: zones }, { data: burnSchema }, { data: sportSettings }] = await Promise.all([
+  // Load zones, burn schema, sport settings, and already-processed activity IDs in parallel
+  const stravaIds = stravaActivities.map((a: any) => String(a.id))
+  const [{ data: zones }, { data: burnSchema }, { data: sportSettings }, { data: existingRows }] = await Promise.all([
     supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
     supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
     supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
+    supabase.from('activities').select('strava_activity_id').eq('user_id', user.id).in('strava_activity_id', stravaIds),
   ])
+
+  // Activities already in the DB don't need stream/laps re-fetched
+  const alreadySynced = new Set((existingRows ?? []).map((r: any) => r.strava_activity_id))
 
   const weightKg = profile.weight_kg ?? 0
   const results = []
 
   for (const act of stravaActivities) {
+    // Skip stream/laps API calls for activities already stored
+    if (alreadySynced.has(String(act.id))) {
+      results.push({ strava_id: act.id, reason: 'already_synced' })
+      continue
+    }
+
     const [streamRes, lapsRes] = await Promise.all([
       fetch(`${STRAVA_API}/activities/${act.id}/streams?keys=heartrate&key_by_type=true`,
         { headers: { Authorization: `Bearer ${accessToken}` } }),
       fetch(`${STRAVA_API}/activities/${act.id}/laps`,
         { headers: { Authorization: `Bearer ${accessToken}` } }),
     ])
+
+    // Rate limited mid-sync — stop early, report what was done
+    if (streamRes.status === 429 || lapsRes.status === 429) {
+      const retryAfter = (streamRes.headers.get('Retry-After') ?? lapsRes.headers.get('Retry-After'))
+      const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15
+      return jsonErr(`rate_limit:${minutes}`, 429)
+    }
 
     const [streamBody, lapsData] = await Promise.all([
       streamRes.ok ? streamRes.json() : Promise.resolve(null),
@@ -246,7 +275,8 @@ Deno.serve(async (req) => {
     // Activity pairing is non-critical; ignore errors
   }
 
-  return new Response(JSON.stringify({ synced: results.length, results }), {
+  const newCount = results.filter(r => r.reason !== 'already_synced').length
+  return new Response(JSON.stringify({ synced: newCount, results }), {
     headers: { 'Content-Type': 'application/json' },
   })
 })

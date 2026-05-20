@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView,
-  StyleSheet, Alert, useWindowDimensions,
+  StyleSheet, Alert, useWindowDimensions, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
@@ -69,8 +69,13 @@ export default function BurnSchemaScreen() {
   }
 
   async function deletePoint(id: string) {
-    await supabase.from('burn_schema_points').delete().eq('id', id)
-    setPoints(prev => prev.filter(p => p.id !== id))
+    Alert.alert('Delete point?', 'Remove this HR → kcal/hr data point?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await supabase.from('burn_schema_points').delete().eq('id', id)
+        setPoints(prev => prev.filter(p => p.id !== id))
+      }},
+    ])
   }
 
   const chartWidth = width - 32
@@ -82,6 +87,7 @@ export default function BurnSchemaScreen() {
         <Text style={styles.backText}>Back</Text>
       </Pressable>
 
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Burn schema</Text>
         <Text style={styles.title}>{sport}</Text>
@@ -214,6 +220,7 @@ export default function BurnSchemaScreen() {
           </Text>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }
