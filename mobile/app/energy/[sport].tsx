@@ -31,7 +31,7 @@ export default function BurnSchemaScreen() {
     setUserId(user.id)
     const { data } = await supabase
       .from('burn_schema_points')
-      .select('*')
+      .select('id, user_id, sport_type, hr_value, kcal_per_hour, fat_g_per_hour, carb_g_per_hour, protein_g_per_hour')
       .eq('user_id', user.id)
       .eq('sport_type', sport)
       .order('hr_value')

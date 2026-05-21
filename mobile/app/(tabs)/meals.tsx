@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import {
   View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator,
 } from 'react-native'
@@ -33,11 +33,12 @@ export default function MealsScreen() {
   const [meals, setMeals] = useState<MealItem[]>([])
   const [loading, setLoading] = useState(true)
   const [checking, setChecking] = useState<number | null>(null)
+  const lastLoadRef = useRef<number>(0)
 
   const todayStr = localDate()
 
   useFocusEffect(useCallback(() => {
-    load()
+    if (Date.now() - lastLoadRef.current > 60_000) load()
   }, []))
 
   async function load() {
@@ -47,7 +48,7 @@ export default function MealsScreen() {
     setUserId(user.id)
 
     const [templatesRes, checksRes] = await Promise.all([
-      supabase.from('meal_templates').select('*').eq('user_id', user.id).order('meal_index'),
+      supabase.from('meal_templates').select('meal_index, name, scheduled_time').eq('user_id', user.id).order('meal_index'),
       supabase.from('meal_checks').select('meal_index').eq('user_id', user.id).eq('date', todayStr),
     ])
 
@@ -62,6 +63,7 @@ export default function MealsScreen() {
     }))
 
     setMeals(items)
+    lastLoadRef.current = Date.now()
     setLoading(false)
 
     await scheduleMealNotifications(items.map(m => ({
@@ -76,30 +78,36 @@ export default function MealsScreen() {
   async function toggleMeal(meal: MealItem) {
     if (!userId) return
     setChecking(meal.meal_index)
-
-    if (meal.checked) {
-      await supabase.from('meal_checks')
-        .delete()
-        .eq('user_id', userId)
-        .eq('meal_index', meal.meal_index)
-        .eq('date', todayStr)
-      const [hh, mm] = meal.scheduled_time.split(':').map(Number)
-      const [y, mo, d] = todayStr.split('-').map(Number)
-      const overdueTime = new Date(y, mo - 1, d, hh + 1, mm, 0, 0)
-      if (overdueTime.getTime() > Date.now()) {
-        await scheduleMealNotifications([{ ...meal, date: todayStr, checked: false }])
-      }
-    } else {
-      await supabase.from('meal_checks').upsert(
-        { user_id: userId, meal_index: meal.meal_index, date: todayStr },
-        { onConflict: 'user_id,meal_index,date' },
-      )
-      await cancelMealNotification(meal.meal_index)
-    }
-
     setMeals(prev => prev.map(m =>
       m.meal_index === meal.meal_index ? { ...m, checked: !m.checked } : m,
     ))
+
+    try {
+      if (meal.checked) {
+        await supabase.from('meal_checks')
+          .delete()
+          .eq('user_id', userId)
+          .eq('meal_index', meal.meal_index)
+          .eq('date', todayStr)
+        const [hh, mm] = meal.scheduled_time.split(':').map(Number)
+        const [y, mo, d] = todayStr.split('-').map(Number)
+        const overdueTime = new Date(y, mo - 1, d, hh + 1, mm, 0, 0)
+        if (overdueTime.getTime() > Date.now()) {
+          await scheduleMealNotifications([{ ...meal, date: todayStr, checked: false }])
+        }
+      } else {
+        await supabase.from('meal_checks').upsert(
+          { user_id: userId, meal_index: meal.meal_index, date: todayStr },
+          { onConflict: 'user_id,meal_index,date' },
+        )
+        await cancelMealNotification(meal.meal_index)
+      }
+    } catch {
+      setMeals(prev => prev.map(m =>
+        m.meal_index === meal.meal_index ? { ...m, checked: meal.checked } : m,
+      ))
+    }
+
     setChecking(null)
   }
 

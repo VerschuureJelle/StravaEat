@@ -96,7 +96,7 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
 
   async function loadCustomFoods() {
     setLoadingFoods(true)
-    const { data } = await supabase.from('custom_foods').select('*').eq('user_id', userId).order('name')
+    const { data } = await supabase.from('custom_foods').select('id, name, kcal, protein_g, fat_g, carb_g, category').eq('user_id', userId).order('name')
     setCustomFoods(data ?? [])
     setLoadingFoods(false)
   }

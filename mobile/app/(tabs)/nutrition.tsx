@@ -256,6 +256,7 @@ export default function NutritionScreen() {
   const [scanLoading, setScanLoading] = useState(false)
   const [scanResult, setScanResult] = useState<{ name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null } | null>(null)
   const lastScannedRef = useRef<string | null>(null)
+  const lastLoadRef = useRef<number>(0)
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
 
   // ── Macro goals state ────────────────────────────────────────────────────────
@@ -289,7 +290,7 @@ export default function NutritionScreen() {
   const barColor = remaining != null && remaining < 0 ? C.danger : C.accent
 
   useFocusEffect(useCallback(() => {
-    loadAll()
+    if (Date.now() - lastLoadRef.current > 60_000) loadAll()
   }, []))
 
   async function openScanner() {
@@ -342,7 +343,7 @@ export default function NutritionScreen() {
   async function saveScanResultToMyFoods(category: string | undefined, unitSizeG: number) {
     if (!scanResult || !userId) return
     const ratio = unitSizeG / 100
-    const { error } = await supabase.from('custom_foods').insert({
+    const { data: newFood, error } = await supabase.from('custom_foods').insert({
       user_id: userId,
       name: `${scanResult.name} (${unitSizeG}g)`,
       kcal: Math.round(scanResult.kcal * ratio),
@@ -350,10 +351,9 @@ export default function NutritionScreen() {
       fat_g: scanResult.fat_g != null ? Math.round(scanResult.fat_g * ratio * 10) / 10 : null,
       carb_g: scanResult.carb_g != null ? Math.round(scanResult.carb_g * ratio * 10) / 10 : null,
       category: category ?? null,
-    })
+    }).select('id, name, kcal, protein_g, fat_g, carb_g, category').single()
     if (error) { Alert.alert('Error', error.message); return }
-    const { data } = await supabase.from('custom_foods').select('*').eq('user_id', userId).order('name')
-    setCustomFoods(data ?? [])
+    if (newFood) setCustomFoods(prev => [...prev, newFood as CustomFood].sort((a, b) => a.name.localeCompare(b.name)))
     Alert.alert('Saved', `"${scanResult.name} (${unitSizeG}g)" added to My Foods.`)
   }
 
@@ -362,6 +362,7 @@ export default function NutritionScreen() {
     if (!user) return
     setUserId(user.id)
     await Promise.all([loadNutrition(user.id), loadMeals(user.id)])
+    lastLoadRef.current = Date.now()
   }
 
   async function loadNutrition(uid: string) {
@@ -372,9 +373,9 @@ export default function NutritionScreen() {
         .eq('user_id', uid).gte('date', todayStr).not('total_kcal', 'is', null),
       supabase.from('planned_workouts').select('target_kcal')
         .eq('user_id', uid).eq('planned_for', todayStr),
-      supabase.from('food_logs').select('*')
+      supabase.from('food_logs').select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at')
         .eq('user_id', uid).eq('date', todayStr).order('logged_at'),
-      supabase.from('custom_foods').select('*').eq('user_id', uid).order('name'),
+      supabase.from('custom_foods').select('id, name, kcal, protein_g, fat_g, carb_g, category').eq('user_id', uid).order('name'),
     ])
     setBaseline(profileRes.data?.daily_kcal_target ?? null)
     setGoalProtein(profileRes.data?.goal_protein_g ?? null)
@@ -395,7 +396,7 @@ export default function NutritionScreen() {
   async function loadMeals(uid: string) {
     setMealsLoading(true)
     const [templatesRes, checksRes, presetsRes] = await Promise.all([
-      supabase.from('meal_templates').select('*').eq('user_id', uid).order('meal_index'),
+      supabase.from('meal_templates').select('id, meal_index, name, scheduled_time, kcal, protein_g, fat_g, carb_g').eq('user_id', uid).order('meal_index'),
       supabase.from('meal_checks').select('meal_index').eq('user_id', uid).eq('date', todayStr),
       supabase.from('meal_slot_presets').select('meal_index, sort_order, preset:meal_presets(*, items:meal_preset_items(*))').eq('user_id', uid).order('sort_order'),
     ])
@@ -454,16 +455,16 @@ export default function NutritionScreen() {
     const protein = foodProtein ? Math.min(Math.max(parseFloat(foodProtein), 0), 500) : null
     const fat = foodFat ? Math.min(Math.max(parseFloat(foodFat), 0), 500) : null
     const carb = foodCarb ? Math.min(Math.max(parseFloat(foodCarb), 0), 500) : null
-    const { error } = await supabase.from('food_logs').insert({
+    const { data: inserted, error } = await supabase.from('food_logs').insert({
       user_id: userId, date: todayStr, name: foodName.trim(), kcal,
       protein_g: isNaN(protein as number) ? null : protein,
       fat_g: isNaN(fat as number) ? null : fat,
       carb_g: isNaN(carb as number) ? null : carb,
-    })
+    }).select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').single()
     setAdding(false)
     if (error) { Alert.alert('Error', error.message); return }
     setFoodName(''); setFoodKcal(''); setFoodProtein(''); setFoodFat(''); setFoodCarb('')
-    loadNutrition(userId)
+    if (inserted) setLogs(prev => [...prev, inserted as FoodLog])
   }
 
   async function deleteEntry(id: string) {
@@ -479,13 +480,13 @@ export default function NutritionScreen() {
 
   async function addFromCustomFood(food: CustomFood) {
     if (!userId) return
-    const { error } = await supabase.from('food_logs').insert({
+    const { data: inserted, error } = await supabase.from('food_logs').insert({
       user_id: userId, date: todayStr, name: food.name, kcal: food.kcal,
       protein_g: food.protein_g, fat_g: food.fat_g, carb_g: food.carb_g,
-    })
+    }).select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').single()
     if (error) { Alert.alert('Error', error.message); return }
     setCustomFoodsModalVisible(false)
-    loadNutrition(userId)
+    if (inserted) setLogs(prev => [...prev, inserted as FoodLog])
   }
 
   async function saveAsCustomFood() {
@@ -496,15 +497,14 @@ export default function NutritionScreen() {
     const protein = foodProtein ? parseFloat(foodProtein) : null
     const fat = foodFat ? parseFloat(foodFat) : null
     const carb = foodCarb ? parseFloat(foodCarb) : null
-    const { error } = await supabase.from('custom_foods').insert({
+    const { data: newFood, error } = await supabase.from('custom_foods').insert({
       user_id: userId, name: foodName.trim(), kcal,
       protein_g: isNaN(protein as number) ? null : protein,
       fat_g: isNaN(fat as number) ? null : fat,
       carb_g: isNaN(carb as number) ? null : carb,
-    })
+    }).select('id, name, kcal, protein_g, fat_g, carb_g, category').single()
     if (error) { Alert.alert('Error', error.message); return }
-    const { data } = await supabase.from('custom_foods').select('*').eq('user_id', userId).order('name')
-    setCustomFoods(data ?? [])
+    if (newFood) setCustomFoods(prev => [...prev, newFood as CustomFood].sort((a, b) => a.name.localeCompare(b.name)))
     Alert.alert('Saved', `"${foodName.trim()}" added to My Foods.`)
   }
 
@@ -555,7 +555,7 @@ export default function NutritionScreen() {
       { onConflict: 'user_id,meal_index,date' },
     )
     await cancelMealNotification(meal.meal_index)
-    await supabase.from('food_logs').insert({
+    const { data: inserted } = await supabase.from('food_logs').insert({
       user_id: userId, date: todayStr,
       name: preset.name,
       kcal: totals.kcal,
@@ -563,11 +563,11 @@ export default function NutritionScreen() {
       protein_g: totals.protein_g > 0 ? totals.protein_g : null,
       fat_g: totals.fat_g > 0 ? totals.fat_g : null,
       carb_g: totals.carb_g > 0 ? totals.carb_g : null,
-    })
+    }).select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').single()
     setMealKcalInputs(prev => ({ ...prev, [meal.meal_index]: String(totals.kcal) }))
     setMeals(prev => prev.map(m => m.meal_index === meal.meal_index ? { ...m, checked: true } : m))
+    if (inserted) setLogs(prev => [...prev, inserted as FoodLog])
     setChecking(null)
-    loadNutrition(userId)
   }
 
   async function uncheckMeal(meal: MealItem) {
@@ -585,8 +585,8 @@ export default function NutritionScreen() {
       await scheduleMealNotifications([{ ...meal, date: todayStr, checked: false }])
     }
     setMeals(prev => prev.map(m => m.meal_index === meal.meal_index ? { ...m, checked: false } : m))
+    setLogs(prev => prev.filter(l => l.meal_index !== meal.meal_index))
     setChecking(null)
-    loadNutrition(userId)
   }
 
   async function confirmMealLog(meal: MealItem) {
@@ -600,17 +600,17 @@ export default function NutritionScreen() {
     )
     await cancelMealNotification(meal.meal_index)
     if (kcal && kcal > 0 && kcal <= 5000) {
-      await supabase.from('food_logs').insert({
+      const { data: inserted } = await supabase.from('food_logs').insert({
         user_id: userId, date: todayStr, name: meal.name, kcal,
         meal_index: meal.meal_index,
         protein_g: meal.protein_g ?? null,
         fat_g: meal.fat_g ?? null,
         carb_g: meal.carb_g ?? null,
-      })
+      }).select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').single()
+      if (inserted) setLogs(prev => [...prev, inserted as FoodLog])
     }
     setMeals(prev => prev.map(m => m.meal_index === meal.meal_index ? { ...m, checked: true } : m))
     setChecking(null)
-    loadNutrition(userId)
   }
 
   return (

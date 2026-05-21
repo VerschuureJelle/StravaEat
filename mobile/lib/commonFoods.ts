@@ -54,6 +54,7 @@ export const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[]
       { name: 'Beetroot (100g)', kcal: 43, carb_g: 10, protein_g: 2 },
       { name: 'Lettuce / mixed greens (50g)', kcal: 10, carb_g: 2 },
       { name: 'Avocado (half)', kcal: 120, fat_g: 11, carb_g: 6, protein_g: 2 },
+      { name: 'Eggplant / aubergine (100g)', kcal: 25, carb_g: 6, protein_g: 1 },
     ],
   },
   {
