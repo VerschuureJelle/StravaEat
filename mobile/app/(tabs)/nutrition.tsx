@@ -6,7 +6,7 @@ import {
   Keyboard, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
@@ -215,6 +215,7 @@ interface MealItem {
 }
 
 export default function NutritionScreen() {
+  const router = useRouter()
   const [subTab, setSubTab] = useState<SubTab>('nutrition')
   const [userId, setUserId] = useState<string | null>(null)
 
@@ -248,6 +249,7 @@ export default function NutritionScreen() {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [quickAddItem, setQuickAddItem] = useState<CommonFood | null>(null)
   const [quickAddQty, setQuickAddQty] = useState('1')
+  const [quickAddSearch, setQuickAddSearch] = useState('')
 
   // ── Barcode scanner state ────────────────────────────────────────────────────
   const [scannerVisible, setScannerVisible] = useState(false)
@@ -269,6 +271,7 @@ export default function NutritionScreen() {
   const [profileSex, setProfileSex] = useState<'male' | 'female' | 'other' | null>(null)
   const [activityLevel, setActivityLevel] = useState<ActivityLevel>('sedentary')
   const [showActivityQuiz, setShowActivityQuiz] = useState(false)
+  const [showRedsWarning, setShowRedsWarning] = useState(false)
   const [estimateMethod, setEstimateMethod] = useState<'mifflin' | 'katch'>('mifflin')
   const [fatPctInput, setFatPctInput] = useState('')
 
@@ -636,6 +639,7 @@ export default function NutritionScreen() {
           presets={presetsMap[pickerMeal.meal_index] ?? []}
           onSelect={preset => confirmMealLogWithPreset(pickerMeal, preset)}
           onCustom={() => { setPickerMeal(null); confirmMealLog(pickerMeal) }}
+          onManage={() => { setPickerMeal(null); router.push('/(tabs)/settings') }}
           onClose={() => setPickerMeal(null)}
         />
       )}
@@ -876,9 +880,19 @@ export default function NutritionScreen() {
             {/* Common foods quick-add */}
             <View style={st.card}>
               <Text style={st.cardLabel}>Quick add</Text>
-              <Text style={st.quickAddNote}>Tap any item to adjust quantity and add</Text>
+              <View style={st.quickAddSearchRow}>
+                <Ionicons name="search-outline" size={15} color={C.text3} />
+                <TextInput
+                  style={st.quickAddSearchInput}
+                  value={quickAddSearch}
+                  onChangeText={setQuickAddSearch}
+                  placeholder="Search foods…"
+                  placeholderTextColor={C.text3}
+                  returnKeyType="search"
+                  clearButtonMode="while-editing"
+                />
+              </View>
               {(() => {
-                // Merge custom foods (with category) into the common food categories
                 const knownCats = new Set(COMMON_FOOD_CATEGORIES.map(c => c.category))
                 const mergedCats: { category: string; items: CommonFood[] }[] = COMMON_FOOD_CATEGORIES.map(cat => ({
                   category: cat.category,
@@ -887,13 +901,32 @@ export default function NutritionScreen() {
                     ...cat.items,
                   ],
                 }))
-                // Extra categories from custom foods not in COMMON_FOOD_CATEGORIES
                 const extraCatNames = [...new Set(customFoods.filter(f => f.category && !knownCats.has(f.category!)).map(f => f.category!))]
                 const extraCats = extraCatNames.map(cat => ({
                   category: cat,
                   items: customFoods.filter(f => f.category === cat) as CommonFood[],
                 }))
-                return [...extraCats, ...mergedCats].map(cat => {
+                const allCats = [...extraCats, ...mergedCats]
+
+                if (quickAddSearch.trim()) {
+                  const q = quickAddSearch.trim().toLowerCase()
+                  const matches = allCats.flatMap(c => c.items).filter(f => f.name.toLowerCase().includes(q))
+                  if (matches.length === 0) {
+                    return <Text style={st.quickAddNote}>No results for "{quickAddSearch}"</Text>
+                  }
+                  return matches.map((food, i) => (
+                    <Pressable
+                      key={food.name + i}
+                      style={[st.quickAddRow, i < matches.length - 1 && st.quickAddRowBorder]}
+                      onPress={() => { setQuickAddItem(food); setQuickAddQty('1') }}
+                    >
+                      <Text style={st.quickAddRowName}>{food.name}</Text>
+                      <Text style={st.quickAddRowKcal}>{food.kcal} kcal</Text>
+                    </Pressable>
+                  ))
+                }
+
+                return allCats.map(cat => {
                   const isOpen = expandedCategories.has(cat.category)
                   return (
                     <View key={cat.category} style={st.quickAddCategory}>
@@ -1146,19 +1179,53 @@ export default function NutritionScreen() {
 
               {/* Katch-McArdle: fat % input */}
               {estimateMethod === 'katch' && (
-                <View style={st.fatPctRow}>
-                  <Text style={st.fatPctLabel}>Body fat %</Text>
-                  <TextInput
-                    style={st.fatPctInput}
-                    value={fatPctInput}
-                    onChangeText={setFatPctInput}
-                    keyboardType="decimal-pad"
-                    placeholder="e.g. 18"
-                    placeholderTextColor={C.text3}
-                    returnKeyType="done"
-                    onSubmitEditing={Keyboard.dismiss}
-                  />
-                </View>
+                <>
+                  <View style={st.fatPctRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={st.fatPctLabel}>Body fat %</Text>
+                      <Pressable
+                        onPress={() => setShowRedsWarning(v => !v)}
+                        hitSlop={10}
+                        style={st.redsInfoBtn}
+                      >
+                        <Text style={st.redsInfoBtnText}>i</Text>
+                      </Pressable>
+                    </View>
+                    <TextInput
+                      style={st.fatPctInput}
+                      value={fatPctInput}
+                      onChangeText={setFatPctInput}
+                      keyboardType="decimal-pad"
+                      placeholder="e.g. 18"
+                      placeholderTextColor={C.text3}
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
+                    />
+                  </View>
+                  {showRedsWarning && (
+                    <View style={st.redsWarningBox}>
+                      <Ionicons name="warning-outline" size={15} color="#FFA726" />
+                      <Text style={st.redsWarningText}>
+                        Body fat below <Text style={{ fontWeight: '700' }}>8% (men)</Text> or <Text style={{ fontWeight: '700' }}>12% (women)</Text> raises the risk of Relative Energy Deficiency in Sport (RED-S) — a condition where low energy availability disrupts hormones, bone health, and recovery. If you're in this range, consider increasing your caloric intake and consulting a sports dietitian.
+                      </Text>
+                    </View>
+                  )}
+                  {(() => {
+                    const pct = parseFloat(fatPctInput)
+                    const threshold = profileSex === 'female' ? 12 : 8
+                    if (!isNaN(pct) && pct > 0 && pct < threshold) {
+                      return (
+                        <View style={st.redsAlertBox}>
+                          <Ionicons name="warning" size={15} color="#EF5350" />
+                          <Text style={st.redsAlertText}>
+                            Your body fat % is below the {profileSex === 'female' ? '12%' : '8%'} threshold. You may be at risk of RED-S — consider eating more to support your training.
+                          </Text>
+                        </View>
+                      )
+                    }
+                    return null
+                  })()}
+                </>
               )}
 
               {!hasData && (
@@ -1217,12 +1284,13 @@ export default function NutritionScreen() {
 // ─── Meal preset picker modal ──────────────────────────────────────────────
 
 function MealPresetPickerModal({
-  meal, presets, onSelect, onCustom, onClose,
+  meal, presets, onSelect, onCustom, onManage, onClose,
 }: {
   meal: MealItem
   presets: MealPreset[]
   onSelect: (preset: MealPreset) => void
   onCustom: () => void
+  onManage: () => void
   onClose: () => void
 }) {
   return (
@@ -1230,7 +1298,13 @@ function MealPresetPickerModal({
       <Pressable style={mp.overlay} onPress={onClose} />
       <View style={mp.sheet}>
         <View style={mp.handle} />
-        <Text style={mp.title}>{meal.name}</Text>
+        <View style={mp.titleRow}>
+          <Text style={mp.title}>{meal.name}</Text>
+          <Pressable onPress={onManage} hitSlop={10} style={mp.manageBtn}>
+            <Ionicons name="pencil-outline" size={15} color={C.accent2} />
+            <Text style={mp.manageBtnText}>Edit</Text>
+          </Pressable>
+        </View>
         <Text style={mp.subtitle}>What did you have?</Text>
         {presets.map(preset => {
           const items = preset.items ?? []
@@ -1280,7 +1354,10 @@ const mp = StyleSheet.create({
     width: 36, height: 4, borderRadius: 2, backgroundColor: C.border,
     alignSelf: 'center', marginBottom: 16,
   },
-  title: { fontSize: 18, fontWeight: '800', color: C.text1, marginBottom: 2 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
+  title: { fontSize: 18, fontWeight: '800', color: C.text1 },
+  manageBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  manageBtnText: { fontSize: 13, fontWeight: '600', color: C.accent2 },
   subtitle: { fontSize: 13, color: C.text2, marginBottom: 16 },
   presetCard: {
     flexDirection: 'row', alignItems: 'center',
@@ -2219,6 +2296,12 @@ const st = StyleSheet.create({
   saveTemplateBtn: { backgroundColor: C.surface2, borderWidth: 1.5, borderColor: C.border },
 
   quickAddNote: { fontSize: 12, color: C.text3, marginBottom: 8 },
+  quickAddSearchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: C.surface2, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
+    marginBottom: 10,
+  },
+  quickAddSearchInput: { flex: 1, fontSize: 14, color: C.text1 },
   quickAddCategory: { borderTopWidth: 1, borderTopColor: C.divider },
   quickAddCategoryHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -2344,6 +2427,22 @@ const st = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   infoBtnText: { fontSize: 11, fontWeight: '800', color: C.accent, lineHeight: 14 },
+  redsInfoBtn: {
+    width: 18, height: 18, borderRadius: 9,
+    borderWidth: 1.5, borderColor: C.accent2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  redsInfoBtnText: { fontSize: 10, fontWeight: '800', color: C.accent2, lineHeight: 13 },
+  redsWarningBox: {
+    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+    backgroundColor: '#FFF8E1', borderRadius: 8, padding: 10, marginTop: 8, marginBottom: 4,
+  },
+  redsWarningText: { flex: 1, fontSize: 12, color: '#795548', lineHeight: 17 },
+  redsAlertBox: {
+    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+    backgroundColor: '#FFEBEE', borderRadius: 8, padding: 10, marginTop: 4, marginBottom: 4,
+  },
+  redsAlertText: { flex: 1, fontSize: 12, color: '#C62828', lineHeight: 17 },
   infoPopup: {
     backgroundColor: C.surface, borderRadius: 10, padding: 12,
     borderWidth: 1, borderColor: C.border, marginBottom: 10,

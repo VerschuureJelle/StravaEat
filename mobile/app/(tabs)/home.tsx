@@ -260,6 +260,7 @@ export default function HomeScreen() {
   const plannedKcalToday = plannedWorkouts.reduce((s, p) => s + p.target_kcal, 0)
   const totalTarget = dailyTarget != null ? Math.round(dailyTarget + burnedToday) : null
   const projectedTotal = totalTarget != null ? Math.round(totalTarget + plannedKcalToday) : null
+  const displayMaxKcal = maxKcalTarget != null ? Math.round(maxKcalTarget + burnedToday + plannedKcalToday) : null
 
   useEffect(() => { loadWeather() }, [])
   useFocusEffect(useCallback(() => { loadProfileAndActivities() }, []))
@@ -442,7 +443,7 @@ export default function HomeScreen() {
                 (() => {
                   const pct = Math.min(consumedKcal / Math.max(displayKcal, 1), 1)
                   const isOver = consumedKcal >= displayKcal
-                  const isExceeded = maxKcalTarget != null && consumedKcal > maxKcalTarget
+                  const isExceeded = displayMaxKcal != null && consumedKcal > displayMaxKcal
                   const barLabel = isExceeded ? 'Daily maximum exceeded' : isOver ? 'Daily minimum reached' : 'kcal today'
                   return (
                     <>
@@ -471,7 +472,7 @@ export default function HomeScreen() {
                 (() => {
                   const remaining = displayKcal - consumedKcal
                   const isOver = remaining <= 0
-                  const isExceeded = maxKcalTarget != null && consumedKcal > maxKcalTarget
+                  const isExceeded = displayMaxKcal != null && consumedKcal > displayMaxKcal
                   return (
                     <>
                       <Text style={[st.heroKcalNum, isExceeded && { color: '#FF8A80' }]}>
