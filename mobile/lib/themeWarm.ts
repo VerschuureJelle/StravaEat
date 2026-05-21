@@ -9,8 +9,8 @@ export const W = {
   divider:  '#F0EBE4',
 
   accent:   '#1C1917',      // Near-black primary
-  accent2:  '#F0845C',      // Warm coral
-  accentBg: 'rgba(240,132,92,0.10)',
+  accent2:  '#3A9E6B',      // Medium sage green
+  accentBg: 'rgba(58,158,107,0.10)',
 
   gradA:    '#DDF0E6',      // Soft mint
   gradB:    '#BFE4D1',      // Light sage green
@@ -23,8 +23,8 @@ export const W = {
   overlay:  'rgba(28,25,23,0.35)',
   white:    '#FFFFFF',
 
-  accent2Bg:     'rgba(240,132,92,0.10)',
-  accent2Border: 'rgba(240,132,92,0.25)',
+  accent2Bg:     'rgba(58,158,107,0.10)',
+  accent2Border: 'rgba(58,158,107,0.25)',
 
   success:       '#16A34A',
   successBg:     'rgba(22,163,74,0.10)',
