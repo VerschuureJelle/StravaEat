@@ -12,8 +12,8 @@ export const W = {
   accent2:  '#F0845C',      // Warm coral
   accentBg: 'rgba(240,132,92,0.10)',
 
-  gradA:    '#FDE8D8',      // Soft peach
-  gradB:    '#EDD5EC',      // Soft lavender-rose
+  gradA:    '#DDF0E6',      // Soft mint
+  gradB:    '#BFE4D1',      // Light sage green
 
   text1:    '#1C1917',
   text2:    '#6B6560',

@@ -421,24 +421,20 @@ export default function TodayScreen() {
                 const mealKcal = mealLogs.reduce((s, l) => s + l.kcal, 0)
                 return (
                   <View key={meal.meal_index} style={[st.mealCard, meal.checked && st.mealCardChecked]}>
-                    <View style={st.mealCardHeader}>
+                    <Pressable style={st.mealCardHeader} onPress={() => toggleMealCheck(meal)}>
                       <View>
                         <Text style={st.mealName}>{meal.name}</Text>
                         <Text style={st.mealTime}>{meal.scheduled_time}</Text>
                       </View>
                       <View style={st.mealHeaderRight}>
                         {mealKcal > 0 && !hideCalories && <Text style={st.mealKcalBadge}>{mealKcal} kcal</Text>}
-                        <Pressable
-                          onPress={() => toggleMealCheck(meal)}
-                          style={[st.checkCircle, meal.checked && st.checkCircleActive]}
-                          hitSlop={8}
-                        >
+                        <View style={[st.checkCircle, meal.checked && st.checkCircleActive]}>
                           {(meal.checked || checking === meal.meal_index) && (
                             <Ionicons name="checkmark" size={14} color="#fff" />
                           )}
-                        </Pressable>
+                        </View>
                       </View>
-                    </View>
+                    </Pressable>
 
                     {mealLogs.map(log => (
                       <View key={log.id} style={st.mealLogRow}>
