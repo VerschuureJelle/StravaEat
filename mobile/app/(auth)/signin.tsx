@@ -3,7 +3,7 @@ import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Alert 
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 
 export default function SignInScreen() {
   const router = useRouter()

@@ -7,7 +7,7 @@ import { useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { scheduleMealNotifications, cancelMealNotification } from '../../lib/notifications'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 import type { MealTemplate } from '../../types'
 
 function localDate(): string {

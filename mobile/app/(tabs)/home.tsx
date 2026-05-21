@@ -10,7 +10,7 @@ import * as Location from 'expo-location'
 import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 import {
   bayesianUpdate, calibrationLabel, calibrationConfidencePct,
   PERIOD_DEFAULTS, FEEDBACK_LABELS,

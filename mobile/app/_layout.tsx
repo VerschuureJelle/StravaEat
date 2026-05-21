@@ -35,7 +35,7 @@ export default function RootLayout() {
   function redirect(isSignedIn: boolean) {
     const inAuthGroup = segments[0] === '(auth)'
     if (!isSignedIn && !inAuthGroup) router.replace('/(auth)/')
-    else if (isSignedIn && inAuthGroup) router.replace('/(tabs)/home')
+    else if (isSignedIn && inAuthGroup) router.replace('/(tabs)/today')
   }
 
   if (!ready) {

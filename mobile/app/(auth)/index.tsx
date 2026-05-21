@@ -1,7 +1,7 @@
 import { View, Text, Pressable, StyleSheet } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 
 export default function WelcomeScreen() {
   const router = useRouter()

@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
 

@@ -6,7 +6,7 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../lib/supabase'
-import { C } from '../lib/theme'
+import { W as C } from '../lib/themeWarm'
 import { COMMON_FOOD_CATEGORIES } from '../lib/commonFoods'
 
 export type FoodPickResult = {

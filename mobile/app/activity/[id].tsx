@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import MapView, { Polyline } from 'react-native-maps'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 import type { ActivityWithZones, Lap } from '../../types'
 
 const ZONE_COLORS = [C.swim, C.success, C.warning, C.run, C.danger]

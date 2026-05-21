@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 import { getZoneAdjustment, SEVERITY_LABELS } from '../../lib/periodConfig'
 import type {
   HeartRateZone, BurnSchemaPoint, SportEnergySetting, PlannedWorkout,

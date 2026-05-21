@@ -7,7 +7,7 @@ import { useFocusEffect, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { useAppMode } from '../../contexts/AppModeContext'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 
 interface Athlete {
   athlete_id: string

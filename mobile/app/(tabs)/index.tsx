@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { notifyWorkoutSynced } from '../../lib/notifications'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 import type { Activity } from '../../types'
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!

@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
 import { initiateStravaOAuth } from '../../lib/stravaAuth'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 import { generateZonesFromMaxHR } from '../../constants/zones'
 import type { SportHistory, Sex } from '../../types'
 

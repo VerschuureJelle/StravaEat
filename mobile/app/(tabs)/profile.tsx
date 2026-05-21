@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
 import { initiateStravaOAuth } from '../../lib/stravaAuth'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 import type { UserProfile } from '../../types'
 
 export default function ProfileScreen() {

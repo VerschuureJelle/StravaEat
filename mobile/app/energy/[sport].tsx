@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import Svg, { Polyline, Line, Text as SvgText, Circle } from 'react-native-svg'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 import type { BurnSchemaPoint } from '../../types'
 
 type BlankForm = { hr: string; kcal: string; fat: string; carb: string; protein: string }

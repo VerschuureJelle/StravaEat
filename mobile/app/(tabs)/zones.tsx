@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
-import { C } from '../../lib/theme'
+import { W as C } from '../../lib/themeWarm'
 import type { HeartRateZone } from '../../types'
 
 export default function ZonesScreen() {
