@@ -11,41 +11,19 @@ export default function TabsLayout() {
       tabBarStyle: { backgroundColor: C.surface, borderTopColor: C.border, borderTopWidth: 1 },
     }}>
       <Tabs.Screen
-        name="home"
+        name="today"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} />,
+          title: 'Today',
+          tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Activities',
+          title: 'History',
           tabBarIcon: ({ color, size }) => <Ionicons name="flash-outline" size={size} color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="planner"
-        options={{
-          title: 'Planner',
-          tabBarIcon: ({ color, size }) => <Ionicons name="calculator-outline" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="nutrition"
-        options={{
-          title: 'Nutrition',
-          tabBarIcon: ({ color, size }) => <Ionicons name="restaurant-outline" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="coach"
-        options={{
-          title: 'Coach',
-          tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen name="meals" options={{ href: null }} />
       <Tabs.Screen
         name="settings"
         options={{
@@ -53,6 +31,11 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen name="home" options={{ href: null }} />
+      <Tabs.Screen name="nutrition" options={{ href: null }} />
+      <Tabs.Screen name="planner" options={{ href: null }} />
+      <Tabs.Screen name="coach" options={{ href: null }} />
+      <Tabs.Screen name="meals" options={{ href: null }} />
       <Tabs.Screen name="zones" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
