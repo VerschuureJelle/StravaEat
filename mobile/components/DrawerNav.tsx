@@ -9,7 +9,7 @@ import { W as C } from '../lib/themeWarm'
 
 const NAV_ITEMS = [
   { label: 'Today',    icon: 'calendar-outline'  as const, route: '/(tabs)/today'    },
-  { label: 'History',  icon: 'flash-outline'      as const, route: '/(tabs)/index'    },
+  { label: 'History',  icon: 'flash-outline'      as const, route: '/(tabs)/'         },
   { label: 'Planner',  icon: 'calculator-outline' as const, route: '/(tabs)/planner'  },
   { label: 'Settings', icon: 'settings-outline'   as const, route: '/(tabs)/settings' },
 ]
@@ -84,7 +84,7 @@ export function AppDrawer({ children }: { children: (openDrawer: () => void) => 
 
   function handleNav(route: string) {
     drawerRef.current?.closeDrawer()
-    setTimeout(() => router.push(route as any), 180)
+    setTimeout(() => router.navigate(route as any), 180)
   }
 
   return (

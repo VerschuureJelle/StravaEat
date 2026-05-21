@@ -588,7 +588,7 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.container}>
       <AppDrawer>
         {openDrawer => (
-        <>
+        <View style={{ flex: 1 }}>
       {/* Top bar with hamburger */}
       <View style={styles.topBar}>
         <HamburgerBtn onPress={openDrawer} />
@@ -1376,7 +1376,7 @@ export default function SettingsScreen() {
 
       </ScrollView>
       </KeyboardAvoidingView>
-        </>
+        </View>
         )}
       </AppDrawer>
 

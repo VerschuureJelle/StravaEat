@@ -715,13 +715,14 @@ export default function PlannerScreen() {
     <SafeAreaView style={st.container}>
       <AppDrawer>
         {openDrawer => (
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
+      <View style={{ flex: 1 }}>
         <View style={st.topBar}>
           <HamburgerBtn onPress={openDrawer} />
           <Text style={st.topBarTitle}>Planner</Text>
           <View style={{ width: 34 }} />
         </View>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
         <Text style={st.screenTitle}>Workout Planner</Text>
 
         {/* Today's plan */}
@@ -1562,6 +1563,7 @@ export default function PlannerScreen() {
         )}
       </ScrollView>
       </KeyboardAvoidingView>
+      </View>
         )}
       </AppDrawer>
     </SafeAreaView>
@@ -1574,7 +1576,7 @@ const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   content: { padding: 20, paddingBottom: 60 },
 
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8 },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
   topBarTitle: { fontSize: 15, fontWeight: '700', color: C.text1 },
   screenTitle: { fontSize: 26, fontWeight: '800', marginBottom: 20, color: C.text1 },
 
