@@ -69,7 +69,6 @@ export default function TodayScreen() {
   const [meals, setMeals] = useState<MealItem[]>([])
   const [presetsMap, setPresetsMap] = useState<Record<number, MealPreset[]>>({})
   const [pickerMeal, setPickerMeal] = useState<MealItem | null>(null)
-  const [checking, setChecking] = useState<number | null>(null)
 
   // Food log
   const [logs, setLogs] = useState<FoodLog[]>([])
@@ -252,15 +251,23 @@ export default function TodayScreen() {
   }
 
   async function toggleMealCheck(meal: MealItem) {
-    if (!userId || checking === meal.meal_index) return
-    setChecking(meal.meal_index)
-    if (meal.checked) {
-      await supabase.from('meal_checks').delete().eq('user_id', userId).eq('meal_index', meal.meal_index).eq('date', todayStr)
-    } else {
-      await supabase.from('meal_checks').upsert({ user_id: userId, meal_index: meal.meal_index, date: todayStr }, { onConflict: 'user_id,meal_index,date' })
+    if (!userId) return
+    // Optimistic update — flip immediately so the UI responds instantly
+    setMeals(prev => prev.map(m =>
+      m.meal_index === meal.meal_index ? { ...m, checked: !m.checked } : m
+    ))
+    try {
+      if (meal.checked) {
+        await supabase.from('meal_checks').delete().eq('user_id', userId).eq('meal_index', meal.meal_index).eq('date', todayStr)
+      } else {
+        await supabase.from('meal_checks').upsert({ user_id: userId, meal_index: meal.meal_index, date: todayStr }, { onConflict: 'user_id,meal_index,date' })
+      }
+    } catch {
+      // Revert on failure
+      setMeals(prev => prev.map(m =>
+        m.meal_index === meal.meal_index ? { ...m, checked: meal.checked } : m
+      ))
     }
-    setChecking(null)
-    await load()
   }
 
   async function addFromPicker(food: { name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null; amount_label?: string | null }) {
@@ -429,9 +436,7 @@ export default function TodayScreen() {
                       <View style={st.mealHeaderRight}>
                         {mealKcal > 0 && !hideCalories && <Text style={st.mealKcalBadge}>{mealKcal} kcal</Text>}
                         <View style={[st.checkCircle, meal.checked && st.checkCircleActive]}>
-                          {(meal.checked || checking === meal.meal_index) && (
-                            <Ionicons name="checkmark" size={14} color="#fff" />
-                          )}
+                          {meal.checked && <Ionicons name="checkmark" size={14} color="#fff" />}
                         </View>
                       </View>
                     </Pressable>
