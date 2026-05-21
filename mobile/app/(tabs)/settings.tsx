@@ -275,7 +275,12 @@ export default function SettingsScreen() {
       const path = `${userId}/avatar.${ext}`
       const response = await fetch(asset.uri)
       const blob = await response.blob()
-      const arrayBuffer = await blob.arrayBuffer()
+      const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as ArrayBuffer)
+        reader.onerror = () => reject(new Error('FileReader failed'))
+        reader.readAsArrayBuffer(blob)
+      })
       const { error: uploadError } = await supabase.storage.from('avatars').upload(path, arrayBuffer, { contentType: mime, upsert: true })
       if (uploadError) throw uploadError
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
