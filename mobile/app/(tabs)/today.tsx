@@ -661,16 +661,27 @@ function QuickAddCategory({ cat, hideCalories, onSelect }: {
 
 // ─── Quick add qty modal ───────────────────────────────────────────────────────
 
+function parseGrams(label: string): number | null {
+  const m = label.trim().match(/^(\d+(?:\.\d+)?)\s*(g|ml|kg|l)?$/i)
+  return m ? parseFloat(m[1]) : null
+}
+
 function QuickAddModal({ food, hideCalories, onAdd, onClose }: {
   food: CommonFood & { amount_label?: string | null }
   hideCalories: boolean
   onAdd: (kcal: number, protein: number | null, fat: number | null, carb: number | null) => void
   onClose: () => void
 }) {
+  const defaultLabel = food.amount_label ?? '100g'
+  const [servingLabel, setServingLabel] = useState(defaultLabel)
   const [qty, setQty] = useState('1')
+
   const q = parseFloat(qty) || 0
-  const kcal = Math.round(food.kcal * q)
-  const protein = food.protein_g != null ? Math.round(food.protein_g * q * 10) / 10 : null
+  const origGrams = parseGrams(defaultLabel)
+  const curGrams = parseGrams(servingLabel)
+  const servingScale = origGrams && curGrams ? curGrams / origGrams : 1
+  const kcal = Math.round(food.kcal * q * servingScale)
+  const protein = food.protein_g != null ? Math.round(food.protein_g * q * servingScale * 10) / 10 : null
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -678,11 +689,33 @@ function QuickAddModal({ food, hideCalories, onAdd, onClose }: {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ justifyContent: 'flex-end' }}>
         <View style={st.addFormSheet}>
           <Text style={st.addFormTitle}>{food.name}</Text>
+
           <View style={st.qtyRow}>
-            <Text style={st.qtyLabel}>Servings (1 = {food.amount_label ?? '100g'})</Text>
-            <TextInput style={st.qtyInput} value={qty} onChangeText={setQty}
-              keyboardType="decimal-pad" returnKeyType="done" autoFocus selectTextOnFocus />
+            <Text style={st.qtyLabel}>1 serving =</Text>
+            <TextInput
+              style={st.qtyInput}
+              value={servingLabel}
+              onChangeText={setServingLabel}
+              placeholder="e.g. 100g"
+              placeholderTextColor={C.text4}
+              returnKeyType="next"
+              selectTextOnFocus
+            />
           </View>
+
+          <View style={st.qtyRow}>
+            <Text style={st.qtyLabel}>Number of servings</Text>
+            <TextInput
+              style={st.qtyInput}
+              value={qty}
+              onChangeText={setQty}
+              keyboardType="decimal-pad"
+              returnKeyType="done"
+              autoFocus
+              selectTextOnFocus
+            />
+          </View>
+
           {!hideCalories && q > 0 && (
             <Text style={st.qtyPreview}>
               {kcal} kcal{protein != null ? ` · ${protein}g protein` : ''}

@@ -8,6 +8,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { W as C } from '../../lib/themeWarm'
+import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import { getZoneAdjustment, SEVERITY_LABELS } from '../../lib/periodConfig'
 import type {
   HeartRateZone, BurnSchemaPoint, SportEnergySetting, PlannedWorkout,
@@ -712,8 +713,15 @@ export default function PlannerScreen() {
 
   return (
     <SafeAreaView style={st.container}>
+      <AppDrawer>
+        {openDrawer => (
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
+        <View style={st.topBar}>
+          <HamburgerBtn onPress={openDrawer} />
+          <Text style={st.topBarTitle}>Planner</Text>
+          <View style={{ width: 34 }} />
+        </View>
         <Text style={st.screenTitle}>Workout Planner</Text>
 
         {/* Today's plan */}
@@ -1554,6 +1562,8 @@ export default function PlannerScreen() {
         )}
       </ScrollView>
       </KeyboardAvoidingView>
+        )}
+      </AppDrawer>
     </SafeAreaView>
   )
 }
@@ -1564,6 +1574,8 @@ const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   content: { padding: 20, paddingBottom: 60 },
 
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8 },
+  topBarTitle: { fontSize: 15, fontWeight: '700', color: C.text1 },
   screenTitle: { fontSize: 26, fontWeight: '800', marginBottom: 20, color: C.text1 },
 
   sectionLabel: {

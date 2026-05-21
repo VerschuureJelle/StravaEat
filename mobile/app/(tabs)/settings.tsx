@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  View, Text, TextInput, Pressable, ScrollView,
+  View, Text, TextInput, Pressable, ScrollView, Image,
   StyleSheet, Alert, Switch, Modal, InputAccessoryView, Keyboard, Platform, KeyboardAvoidingView,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import * as Linking from 'expo-linking'
+import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '../../lib/supabase'
 import { initiateStravaOAuth } from '../../lib/stravaAuth'
 import { useAppMode } from '../../contexts/AppModeContext'
 import { W as C } from '../../lib/themeWarm'
+import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import { SEVERITY_LABELS, SEVERITY_DESCRIPTIONS } from '../../lib/periodConfig'
 import type { UserProfile, HeartRateZone, MealTemplate, MealPreset, MealPresetItem, UserSport, PeriodSeverity } from '../../types'
 import FoodPickerModal from '../../components/FoodPickerModal'
@@ -70,6 +72,7 @@ export default function SettingsScreen() {
   const [savedProfile, setSavedProfile] = useState<Partial<UserProfile>>({})
   const [editedProfile, setEditedProfile] = useState<Partial<UserProfile>>({})
   const [savingProfile, setSavingProfile] = useState(false)
+  const [avatarUploading, setAvatarUploading] = useState(false)
 
   // Zones
   const [zones, setZones] = useState<HeartRateZone[]>([])
@@ -249,6 +252,60 @@ export default function SettingsScreen() {
     setSavingProfile(false)
     if (error) { Alert.alert('Error', error.message); return }
     setSavedProfile(editedProfile)
+  }
+
+  async function uploadAvatar() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow photo library access to upload a profile picture.')
+      return
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    })
+    if (result.canceled || !result.assets[0] || !userId) return
+    setAvatarUploading(true)
+    try {
+      const asset = result.assets[0]
+      const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg'
+      const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
+      const path = `${userId}/avatar.${ext}`
+      const response = await fetch(asset.uri)
+      const blob = await response.blob()
+      const arrayBuffer = await blob.arrayBuffer()
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, arrayBuffer, { contentType: mime, upsert: true })
+      if (uploadError) throw uploadError
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
+      const url = `${publicUrl}?t=${Date.now()}`
+      await supabase.from('users').update({ avatar_url: url }).eq('id', userId)
+      setEditedProfile(p => ({ ...p, avatar_url: url }))
+      setSavedProfile(p => ({ ...p, avatar_url: url }))
+    } catch (e: any) {
+      Alert.alert('Upload failed', e.message ?? 'Something went wrong.')
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
+  async function removeAvatar() {
+    if (!userId) return
+    setAvatarUploading(true)
+    try {
+      const { data: files } = await supabase.storage.from('avatars').list(userId)
+      if (files?.length) {
+        await supabase.storage.from('avatars').remove(files.map(f => `${userId}/${f.name}`))
+      }
+      await supabase.from('users').update({ avatar_url: null }).eq('id', userId)
+      setEditedProfile(p => ({ ...p, avatar_url: null }))
+      setSavedProfile(p => ({ ...p, avatar_url: null }))
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not remove photo.')
+    } finally {
+      setAvatarUploading(false)
+    }
   }
 
   async function saveZone(zone: HeartRateZone) {
@@ -529,6 +586,16 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <AppDrawer>
+        {openDrawer => (
+        <>
+      {/* Top bar with hamburger */}
+      <View style={styles.topBar}>
+        <HamburgerBtn onPress={openDrawer} />
+        <Text style={styles.topBarTitle}>Settings</Text>
+        <View style={{ width: 34 }} />
+      </View>
+
       {/* Segmented control */}
       <View style={styles.segRow}>
         {([
@@ -555,6 +622,38 @@ export default function SettingsScreen() {
         {/* ── Profile ──────────────────────────────────────── */}
         {activeTab === 'profile' && (
           <>
+            {/* ── Avatar ── */}
+            <View style={styles.avatarSection}>
+              <Pressable onPress={uploadAvatar} disabled={avatarUploading} style={styles.avatarWrap}>
+                {editedProfile.avatar_url ? (
+                  <Image source={{ uri: editedProfile.avatar_url }} style={styles.avatarImg} />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <Ionicons name="person-outline" size={36} color={C.text3} />
+                  </View>
+                )}
+                <View style={styles.avatarEditBadge}>
+                  {avatarUploading
+                    ? <Ionicons name="hourglass-outline" size={14} color="#fff" />
+                    : <Ionicons name="camera-outline" size={14} color="#fff" />}
+                </View>
+              </Pressable>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.avatarName}>{editedProfile.name ?? 'Your name'}</Text>
+                <Pressable onPress={uploadAvatar} disabled={avatarUploading}>
+                  <Text style={styles.avatarChangeText}>{avatarUploading ? 'Uploading…' : 'Change photo'}</Text>
+                </Pressable>
+                {editedProfile.avatar_url && (
+                  <Pressable onPress={() => Alert.alert('Remove photo?', '', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Remove', style: 'destructive', onPress: removeAvatar },
+                  ])}>
+                    <Text style={styles.avatarRemoveText}>Remove photo</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+
             <View style={styles.stravaRow}>
               <View>
                 <Text style={styles.stravaLabel}>Strava</Text>
@@ -1277,6 +1376,9 @@ export default function SettingsScreen() {
 
       </ScrollView>
       </KeyboardAvoidingView>
+        </>
+        )}
+      </AppDrawer>
 
       {/* Full-screen preset editor */}
       <Modal visible={presetDraft !== null} animationType="slide" onRequestClose={() => setPresetDraft(null)}>
@@ -1700,6 +1802,18 @@ function ZoneCard({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
+
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
+  topBarTitle: { fontSize: 15, fontWeight: '700', color: C.text1 },
+
+  avatarSection: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 20, marginTop: 4 },
+  avatarWrap: { position: 'relative' },
+  avatarImg: { width: 76, height: 76, borderRadius: 38, backgroundColor: C.surface2 },
+  avatarPlaceholder: { width: 76, height: 76, borderRadius: 38, backgroundColor: C.surface2, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
+  avatarEditBadge: { position: 'absolute', bottom: 0, right: 0, width: 24, height: 24, borderRadius: 12, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: C.surface },
+  avatarName: { fontSize: 17, fontWeight: '800', color: C.text1, marginBottom: 4 },
+  avatarChangeText: { fontSize: 13, color: C.accent2, fontWeight: '600', marginBottom: 2 },
+  avatarRemoveText: { fontSize: 12, color: C.danger, fontWeight: '500', marginTop: 2 },
 
   segRow: {
     flexDirection: 'row', margin: 16, marginBottom: 0,
