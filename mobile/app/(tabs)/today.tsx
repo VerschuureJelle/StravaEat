@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { supabase } from '../../lib/supabase'
 import { W as C } from '../../lib/themeWarm'
+import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import { COMMON_FOOD_CATEGORIES } from '../../lib/commonFoods'
 import type { CommonFood } from '../../lib/commonFoods'
 import type { FoodLog, MealTemplate, MealPreset, MealPresetItem } from '../../types'
@@ -285,14 +286,15 @@ export default function TodayScreen() {
 
   return (
     <SafeAreaView style={st.container} edges={['top']}>
+      <AppDrawer>
+        {openDrawer => (
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={st.scroll} keyboardShouldPersistTaps="handled">
 
           {/* ── Top bar ── */}
           <View style={st.topBar}>
-            <View>
-              <Text style={st.topDate}>{dateLabel}</Text>
-            </View>
+            <HamburgerBtn onPress={openDrawer} />
+            <Text style={st.topDate}>{dateLabel}</Text>
             <Pressable onPress={() => router.push('/(tabs)/settings')} hitSlop={8}>
               {avatarUrl ? (
                 <Image source={{ uri: avatarUrl }} style={st.avatar} />
@@ -560,6 +562,8 @@ export default function TodayScreen() {
           <View style={{ height: 32 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+        )}
+      </AppDrawer>
 
       {/* ── Modals ── */}
 
@@ -781,9 +785,9 @@ const st = StyleSheet.create({
   // Top bar
   topBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4,
+    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4,
   },
-  topDate: { fontSize: 13, color: C.text3, fontWeight: '500' },
+  topDate: { fontSize: 13, color: C.text3, fontWeight: '500', flex: 1, textAlign: 'center' },
   avatar: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: C.border },
   avatarPlaceholder: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: C.surface2,

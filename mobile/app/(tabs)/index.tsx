@@ -10,6 +10,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { notifyWorkoutSynced } from '../../lib/notifications'
 import { W as C } from '../../lib/themeWarm'
+import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import type { Activity } from '../../types'
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
@@ -475,14 +476,33 @@ export default function ActivitiesScreen() {
   if (loading) {
     return (
       <SafeAreaView style={st.container}>
-        {listHeader}
-        <ActivityIndicator style={{ flex: 1 }} size="large" color={C.accent} />
+        <AppDrawer>
+          {openDrawer => (
+            <>
+              <View style={st.topBar}>
+                <HamburgerBtn onPress={openDrawer} />
+                <Text style={st.topBarTitle}>History</Text>
+                <View style={{ width: 34 }} />
+              </View>
+              {listHeader}
+              <ActivityIndicator style={{ flex: 1 }} size="large" color={C.accent} />
+            </>
+          )}
+        </AppDrawer>
       </SafeAreaView>
     )
   }
 
   return (
     <SafeAreaView style={st.container}>
+      <AppDrawer>
+        {openDrawer => (
+          <>
+            <View style={st.topBar}>
+              <HamburgerBtn onPress={openDrawer} />
+              <Text style={st.topBarTitle}>History</Text>
+              <View style={{ width: 34 }} />
+            </View>
       <SectionList
         sections={sections}
         keyExtractor={item => item._k}
@@ -567,12 +587,20 @@ export default function ActivitiesScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+          </>
+        )}
+      </AppDrawer>
     </SafeAreaView>
   )
 }
 
 const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4,
+  },
+  topBarTitle: { fontSize: 15, fontWeight: '700', color: C.text1 },
 
   selectorBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
