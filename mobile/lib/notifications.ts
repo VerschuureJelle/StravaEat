@@ -53,10 +53,13 @@ export async function registerForNotifications(): Promise<void> {
 export async function notifyWorkoutSynced(
   burnedKcal: number,
   newTargetKcal: number | null,
+  hideCalories = false,
 ): Promise<void> {
-  const body = newTargetKcal
-    ? `You burned ${Math.round(burnedKcal)} kcal. Your nutrition target is now ${newTargetKcal.toLocaleString()} kcal today — time to refuel!`
-    : `You burned ${Math.round(burnedKcal)} kcal. Don't forget to refuel!`
+  const body = hideCalories
+    ? 'Great work — your workout has been synced. Well done!'
+    : newTargetKcal
+      ? `You burned ${Math.round(burnedKcal)} kcal. Your nutrition target is now ${newTargetKcal.toLocaleString()} kcal today — time to refuel!`
+      : `You burned ${Math.round(burnedKcal)} kcal. Don't forget to refuel!`
 
   await Notifications.scheduleNotificationAsync({
     content: {

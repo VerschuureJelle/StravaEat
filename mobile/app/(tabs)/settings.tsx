@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, Pressable, ScrollView, Image,
   StyleSheet, Alert, Switch, Modal, InputAccessoryView, Keyboard, Platform, KeyboardAvoidingView,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import * as Linking from 'expo-linking'
@@ -68,6 +68,7 @@ function normalizeType(type: string): string {
 export default function SettingsScreen() {
   const router = useRouter()
   const { mode, setMode } = useAppMode()
+  const insets = useSafeAreaInsets()
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile')
   const [userId, setUserId] = useState<string | null>(null)
 
@@ -106,6 +107,15 @@ export default function SettingsScreen() {
   const [linkPickerMeal, setLinkPickerMeal] = useState<number | null>(null)
   const [foodPickerTargetIdx, setFoodPickerTargetIdx] = useState<number | null>(null)
   const [expandedPresets, setExpandedPresets] = useState<Set<string>>(new Set())
+  const [collapsedMealCards, setCollapsedMealCards] = useState<Set<number>>(new Set())
+
+  function toggleMealCard(index: number) {
+    setCollapsedMealCards(prev => {
+      const next = new Set(prev)
+      next.has(index) ? next.delete(index) : next.add(index)
+      return next
+    })
+  }
 
   function togglePreset(id: string) {
     setExpandedPresets(prev => {
@@ -507,6 +517,15 @@ export default function SettingsScreen() {
     ])
   }
 
+  function removeMealAt(index: number) {
+    if (draftMeals.length <= 1) return
+    const meal = draftMeals[index]
+    Alert.alert('Remove meal?', `Remove "${meal.name}" from your meal plan?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => setDraftMeals(prev => prev.filter((_, i) => i !== index)) },
+    ])
+  }
+
   function updateDraftMeal(index: number, field: 'name' | 'scheduled_time', value: string) {
     setDraftMeals(prev => prev.map((m, i) => i === index ? { ...m, [field]: value } : m))
   }
@@ -550,6 +569,31 @@ export default function SettingsScreen() {
       fat: acc.fat + (parseFloat(it.fat) || 0),
       carb: acc.carb + (parseFloat(it.carb) || 0),
     }), { kcal: 0, protein: 0, fat: 0, carb: 0 })
+  }
+
+  function openPresetEditor(preset: MealPreset) {
+    setPresetDraft({
+      id: preset.id,
+      name: preset.name,
+      items: (preset.items ?? []).map(it => {
+        const m = (it.amount_label ?? '').match(/^(\d+(?:\.\d+)?)\s*(.*)$/)
+        const storedAmt = m ? parseFloat(m[1]) : null
+        const pu = (v: number | null) => (storedAmt && storedAmt > 0 && v != null) ? v / storedAmt : null
+        return {
+          name: it.name,
+          amount: m ? m[1] : (it.amount_label ?? ''),
+          unit: m ? (m[2] || 'g') : 'g',
+          kcal: String(it.kcal),
+          protein: it.protein_g != null ? String(it.protein_g) : '',
+          fat: it.fat_g != null ? String(it.fat_g) : '',
+          carb: it.carb_g != null ? String(it.carb_g) : '',
+          kcalPerUnit: pu(it.kcal),
+          proteinPerUnit: pu(it.protein_g),
+          fatPerUnit: pu(it.fat_g),
+          carbPerUnit: pu(it.carb_g),
+        }
+      }),
+    })
   }
 
   async function savePreset() {
@@ -1303,144 +1347,164 @@ export default function SettingsScreen() {
               </View>
             </View>
 
-            {draftMeals.map((meal, i) => (
+            {draftMeals.map((meal, i) => {
+              const mealCollapsed = collapsedMealCards.has(i)
+              return (
               <View key={i} style={styles.mealCard}>
-                <Text style={styles.mealCardTitle}>Meal {i + 1}</Text>
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Name</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={meal.name}
-                    onChangeText={v => updateDraftMeal(i, 'name', v)}
-                    placeholder={MEAL_DEFAULTS[i]?.name ?? `Meal ${i + 1}`}
-                    placeholderTextColor={C.text3}
-                  />
-                </View>
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Time</Text>
-                  <Pressable
-                    style={[styles.input, styles.timePickerBtn]}
-                    onPress={() => setTimePickerMealIdx(i)}
-                  >
-                    <Ionicons name="time-outline" size={16} color={C.text3} />
-                    <Text style={styles.timePickerBtnText}>{meal.scheduled_time || '–'}</Text>
-                  </Pressable>
-                </View>
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Default kcal (optional)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={meal.kcal != null ? String(meal.kcal) : ''}
-                    onChangeText={v => updateDraftMealKcal(i, v)}
-                    placeholder="e.g. 450"
-                    placeholderTextColor={C.text3}
-                    keyboardType="numeric"
-                  />
-                </View>
-                <Text style={styles.fieldLabel}>Macros (optional)</Text>
-                <View style={styles.mealMacroRow}>
-                  {([
-                    { field: 'protein_g' as const, label: 'Protein g', placeholder: 'e.g. 30' },
-                    { field: 'fat_g' as const,     label: 'Fat g',     placeholder: 'e.g. 15' },
-                    { field: 'carb_g' as const,    label: 'Carbs g',   placeholder: 'e.g. 60' },
-                  ]).map(({ field, label, placeholder }) => (
-                    <View key={field} style={styles.mealMacroField}>
-                      <Text style={styles.mealMacroLabel}>{label}</Text>
-                      <TextInput
-                        style={[styles.input, { marginBottom: 0 }]}
-                        value={meal[field] != null ? String(meal[field]) : ''}
-                        onChangeText={v => updateDraftMealMacro(i, field, v)}
-                        placeholder={placeholder}
-                        placeholderTextColor={C.text3}
-                        keyboardType="decimal-pad"
-                      />
-                    </View>
-                  ))}
-                </View>
-
-                {/* ── Meal presets ── */}
-                <View style={styles.presetSection}>
-                  <Text style={styles.presetSectionLabel}>Presets</Text>
-                  <Text style={styles.presetSectionNote}>
-                    Quick options shown when you log this meal.
-                  </Text>
-
-                  {allPresets.filter(p => (presetLinks[meal.meal_index] ?? []).includes(p.id)).map(preset => {
-                    const items = preset.items ?? []
-                    const total = items.reduce((acc, it) => ({
-                      kcal: acc.kcal + it.kcal,
-                      protein: acc.protein + (it.protein_g ?? 0),
-                      fat: acc.fat + (it.fat_g ?? 0),
-                      carb: acc.carb + (it.carb_g ?? 0),
-                    }), { kcal: 0, protein: 0, fat: 0, carb: 0 })
-                    const isExpanded = expandedPresets.has(preset.id)
-                    return (
-                      <View key={preset.id} style={styles.presetCard}>
-                        <Pressable style={styles.presetCardHeader} onPress={() => togglePreset(preset.id)}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.presetName}>{preset.name}</Text>
-                            {!isExpanded && (
-                              <Text style={styles.presetCollapsedMeta}>
-                                {hideCalories ? '' : `${total.kcal} kcal · `}{items.length} ingredient{items.length !== 1 ? 's' : ''}
-                              </Text>
-                            )}
-                          </View>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                            <Pressable onPress={() => togglePresetLink(meal.meal_index, preset.id)} hitSlop={10}>
-                              <Ionicons name="close-circle-outline" size={16} color={C.danger} />
-                            </Pressable>
-                            <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.text3} />
-                          </View>
-                        </Pressable>
-
-                        {isExpanded && (
-                          <>
-                            {items.map(item => (
-                              <View key={item.id} style={styles.ingredientRow}>
-                                <Text style={styles.ingredientLabel}>
-                                  {item.amount_label ? `${item.amount_label}  ` : ''}{item.name}
-                                </Text>
-                                {!hideCalories && <Text style={styles.ingredientKcal}>{item.kcal} kcal</Text>}
-                              </View>
-                            ))}
-                            {!hideCalories && (
-                              <View style={styles.presetTotalRow}>
-                                <Text style={styles.presetTotalLabel}>Total</Text>
-                                <Text style={styles.presetTotalValue}>
-                                  {total.kcal} kcal
-                                  {total.protein > 0 ? ` · P ${total.protein.toFixed(0)}g` : ''}
-                                  {total.fat > 0 ? ` · F ${total.fat.toFixed(0)}g` : ''}
-                                  {total.carb > 0 ? ` · C ${total.carb.toFixed(0)}g` : ''}
-                                </Text>
-                              </View>
-                            )}
-                          </>
-                        )}
-                      </View>
-                    )
-                  })}
-
-                  <View style={styles.presetBtnRow}>
-                    {allPresets.length > 0 && (
-                      <Pressable
-                        style={styles.addPresetBtn}
-                        onPress={() => setLinkPickerMeal(meal.meal_index)}
-                      >
-                        <Ionicons name="link-outline" size={16} color={C.accent2} />
-                        <Text style={[styles.addPresetBtnText, { color: C.accent2 }]}>Link preset</Text>
+                <Pressable style={styles.mealCardHeader} onPress={() => toggleMealCard(i)}>
+                  <Text style={styles.mealCardTitle}>{meal.name || `Meal ${i + 1}`}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    {draftMeals.length > 1 && (
+                      <Pressable onPress={e => { e.stopPropagation?.(); removeMealAt(i) }} hitSlop={10}>
+                        <Ionicons name="trash-outline" size={16} color={C.danger} />
                       </Pressable>
                     )}
-                    <Pressable
-                      style={styles.addPresetBtn}
-                      onPress={() => setPresetDraft({ autoLinkMealIndex: meal.meal_index, name: '', items: [emptyDraftItem()] })}
-                    >
-                      <Ionicons name="add-circle-outline" size={16} color={C.accent} />
-                      <Text style={styles.addPresetBtnText}>New preset</Text>
-                    </Pressable>
+                    <Ionicons name={mealCollapsed ? 'chevron-down' : 'chevron-up'} size={16} color={C.text3} />
                   </View>
-                </View>
+                </Pressable>
+                {!mealCollapsed && (
+                  <>
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>Name</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={meal.name}
+                        onChangeText={v => updateDraftMeal(i, 'name', v)}
+                        placeholder={MEAL_DEFAULTS[i]?.name ?? `Meal ${i + 1}`}
+                        placeholderTextColor={C.text3}
+                      />
+                    </View>
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>Time</Text>
+                      <Pressable
+                        style={[styles.input, styles.timePickerBtn]}
+                        onPress={() => setTimePickerMealIdx(i)}
+                      >
+                        <Ionicons name="time-outline" size={16} color={C.text3} />
+                        <Text style={styles.timePickerBtnText}>{meal.scheduled_time || '–'}</Text>
+                      </Pressable>
+                    </View>
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>Default kcal (optional)</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={meal.kcal != null ? String(meal.kcal) : ''}
+                        onChangeText={v => updateDraftMealKcal(i, v)}
+                        placeholder="e.g. 450"
+                        placeholderTextColor={C.text3}
+                        keyboardType="numeric"
+                      />
+                    </View>
+                    <Text style={styles.fieldLabel}>Macros (optional)</Text>
+                    <View style={styles.mealMacroRow}>
+                      {([
+                        { field: 'protein_g' as const, label: 'Protein g', placeholder: 'e.g. 30' },
+                        { field: 'fat_g' as const,     label: 'Fat g',     placeholder: 'e.g. 15' },
+                        { field: 'carb_g' as const,    label: 'Carbs g',   placeholder: 'e.g. 60' },
+                      ]).map(({ field, label, placeholder }) => (
+                        <View key={field} style={styles.mealMacroField}>
+                          <Text style={styles.mealMacroLabel}>{label}</Text>
+                          <TextInput
+                            style={[styles.input, { marginBottom: 0 }]}
+                            value={meal[field] != null ? String(meal[field]) : ''}
+                            onChangeText={v => updateDraftMealMacro(i, field, v)}
+                            placeholder={placeholder}
+                            placeholderTextColor={C.text3}
+                            keyboardType="decimal-pad"
+                          />
+                        </View>
+                      ))}
+                    </View>
+
+                    {/* ── Meal presets ── */}
+                    <View style={styles.presetSection}>
+                      <Text style={styles.presetSectionLabel}>Presets</Text>
+                      <Text style={styles.presetSectionNote}>
+                        Quick options shown when you log this meal.
+                      </Text>
+
+                      {allPresets.filter(p => (presetLinks[meal.meal_index] ?? []).includes(p.id)).map(preset => {
+                        const items = preset.items ?? []
+                        const total = items.reduce((acc, it) => ({
+                          kcal: acc.kcal + it.kcal,
+                          protein: acc.protein + (it.protein_g ?? 0),
+                          fat: acc.fat + (it.fat_g ?? 0),
+                          carb: acc.carb + (it.carb_g ?? 0),
+                        }), { kcal: 0, protein: 0, fat: 0, carb: 0 })
+                        const isExpanded = expandedPresets.has(preset.id)
+                        return (
+                          <View key={preset.id} style={styles.presetCard}>
+                            <Pressable style={styles.presetCardHeader} onPress={() => togglePreset(preset.id)}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.presetName}>{preset.name}</Text>
+                                {!isExpanded && (
+                                  <Text style={styles.presetCollapsedMeta}>
+                                    {hideCalories ? '' : `${total.kcal} kcal · `}{items.length} ingredient{items.length !== 1 ? 's' : ''}
+                                  </Text>
+                                )}
+                              </View>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                <Pressable onPress={() => openPresetEditor(preset)} hitSlop={10}>
+                                  <Ionicons name="pencil-outline" size={16} color={C.accent2} />
+                                </Pressable>
+                                <Pressable onPress={() => togglePresetLink(meal.meal_index, preset.id)} hitSlop={10}>
+                                  <Ionicons name="close-circle-outline" size={16} color={C.danger} />
+                                </Pressable>
+                                <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.text3} />
+                              </View>
+                            </Pressable>
+
+                            {isExpanded && (
+                              <>
+                                {items.map(item => (
+                                  <View key={item.id} style={styles.ingredientRow}>
+                                    <Text style={styles.ingredientLabel}>
+                                      {item.amount_label ? `${item.amount_label}  ` : ''}{item.name}
+                                    </Text>
+                                    {!hideCalories && <Text style={styles.ingredientKcal}>{item.kcal} kcal</Text>}
+                                  </View>
+                                ))}
+                                {!hideCalories && (
+                                  <View style={styles.presetTotalRow}>
+                                    <Text style={styles.presetTotalLabel}>Total</Text>
+                                    <Text style={styles.presetTotalValue}>
+                                      {total.kcal} kcal
+                                      {total.protein > 0 ? ` · P ${total.protein.toFixed(0)}g` : ''}
+                                      {total.fat > 0 ? ` · F ${total.fat.toFixed(0)}g` : ''}
+                                      {total.carb > 0 ? ` · C ${total.carb.toFixed(0)}g` : ''}
+                                    </Text>
+                                  </View>
+                                )}
+                              </>
+                            )}
+                          </View>
+                        )
+                      })}
+
+                      <View style={styles.presetBtnRow}>
+                        {allPresets.length > 0 && (
+                          <Pressable
+                            style={styles.addPresetBtn}
+                            onPress={() => setLinkPickerMeal(meal.meal_index)}
+                          >
+                            <Ionicons name="link-outline" size={16} color={C.accent2} />
+                            <Text style={[styles.addPresetBtnText, { color: C.accent2 }]}>Link preset</Text>
+                          </Pressable>
+                        )}
+                        <Pressable
+                          style={styles.addPresetBtn}
+                          onPress={() => setPresetDraft({ autoLinkMealIndex: meal.meal_index, name: '', items: [emptyDraftItem()] })}
+                        >
+                          <Ionicons name="add-circle-outline" size={16} color={C.accent} />
+                          <Text style={styles.addPresetBtnText}>New preset</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  </>
+                )}
               </View>
-            ))}
+            )
+            })}
 
             {/* ── Global preset management ── */}
             {allPresets.length > 0 && (
@@ -1469,31 +1533,7 @@ export default function SettingsScreen() {
                           </Text>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                          <Pressable
-                            onPress={() => setPresetDraft({
-                              id: preset.id,
-                              name: preset.name,
-                              items: (preset.items ?? []).map(it => {
-                                const m = (it.amount_label ?? '').match(/^(\d+(?:\.\d+)?)\s*(.*)$/)
-                                const storedAmt = m ? parseFloat(m[1]) : null
-                                const pu = (v: number | null) => (storedAmt && storedAmt > 0 && v != null) ? v / storedAmt : null
-                                return {
-                                  name: it.name,
-                                  amount: m ? m[1] : (it.amount_label ?? ''),
-                                  unit: m ? (m[2] || 'g') : 'g',
-                                  kcal: String(it.kcal),
-                                  protein: it.protein_g != null ? String(it.protein_g) : '',
-                                  fat: it.fat_g != null ? String(it.fat_g) : '',
-                                  carb: it.carb_g != null ? String(it.carb_g) : '',
-                                  kcalPerUnit: pu(it.kcal),
-                                  proteinPerUnit: pu(it.protein_g),
-                                  fatPerUnit: pu(it.fat_g),
-                                  carbPerUnit: pu(it.carb_g),
-                                }
-                              }),
-                            })}
-                            hitSlop={10}
-                          >
+                          <Pressable onPress={() => openPresetEditor(preset)} hitSlop={10}>
                             <Ionicons name="pencil-outline" size={16} color={C.accent2} />
                           </Pressable>
                           <Pressable onPress={() => deletePreset(preset)} hitSlop={10}>
@@ -1626,7 +1666,7 @@ export default function SettingsScreen() {
 
       {/* Full-screen preset editor */}
       <Modal visible={presetDraft !== null} animationType="slide" onRequestClose={() => setPresetDraft(null)}>
-        <SafeAreaView style={styles.editorContainer}>
+        <View style={[styles.editorContainer, { paddingTop: insets.top }]}>
           {/* Header — back only, save is at the bottom */}
           <View style={styles.editorHeader}>
             <Pressable onPress={() => setPresetDraft(null)} hitSlop={12}>
@@ -1746,14 +1786,19 @@ export default function SettingsScreen() {
             })()}
           </ScrollView>
 
-          {/* Sticky save button */}
-          <View style={styles.editorFooter}>
-            <Pressable style={styles.editorSaveBtn} onPress={savePreset}>
-              <Text style={styles.editorSaveBtnText}>Save preset</Text>
-            </Pressable>
+          {/* Sticky save / cancel buttons */}
+          <View style={[styles.editorFooter, { paddingBottom: Math.max(12, insets.bottom) }]}>
+            <View style={styles.editorBtnRow}>
+              <Pressable style={styles.editorCancelBtn} onPress={() => setPresetDraft(null)}>
+                <Text style={styles.editorCancelBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={styles.editorSaveBtn} onPress={savePreset}>
+                <Text style={styles.editorSaveBtnText}>Save</Text>
+              </Pressable>
+            </View>
           </View>
           </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
 
         {/* iOS keyboard Done toolbar */}
         {Platform.OS === 'ios' && (
@@ -2203,10 +2248,8 @@ const styles = StyleSheet.create({
   mealCountBtnDisabled: { opacity: 0.35 },
   mealCountNum: { fontSize: 22, fontWeight: '800', color: C.text1, minWidth: 24, textAlign: 'center' },
   mealCard: { backgroundColor: C.surface, borderRadius: 12, padding: 14, marginBottom: 12 },
-  mealCardTitle: {
-    fontSize: 11, fontWeight: '700', color: C.text3,
-    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10,
-  },
+  mealCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 2 },
+  mealCardTitle: { fontSize: 13, fontWeight: '700', color: C.text1 },
   mealMacroRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
   mealMacroField: { flex: 1 },
   mealMacroLabel: { fontSize: 10, fontWeight: '600', color: C.text3, marginBottom: 4 },
@@ -2301,11 +2344,16 @@ const styles = StyleSheet.create({
   },
   editorAddBtnText: { fontSize: 13, fontWeight: '700', color: C.accent2 },
   editorFooter: {
-    paddingHorizontal: 16, paddingTop: 10, paddingBottom: 8,
+    paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12,
     borderTopWidth: 1, borderTopColor: C.divider, backgroundColor: C.bg,
   },
+  editorBtnRow: { flexDirection: 'row', gap: 10 },
+  editorCancelBtn: {
+    flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingVertical: 15, alignItems: 'center',
+  },
+  editorCancelBtnText: { fontSize: 16, fontWeight: '700', color: C.text2 },
   editorSaveBtn: {
-    backgroundColor: C.accent, borderRadius: 12, paddingVertical: 15, alignItems: 'center',
+    flex: 1, backgroundColor: C.accent, borderRadius: 12, paddingVertical: 15, alignItems: 'center',
   },
   editorSaveBtnText: { fontSize: 16, fontWeight: '800', color: C.white },
   keyboardDoneBar: {

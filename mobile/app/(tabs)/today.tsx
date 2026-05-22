@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, Pressable, TextInput,
   Modal, Alert, Platform, KeyboardAvoidingView, ActivityIndicator, Image,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -86,6 +86,8 @@ export default function TodayScreen() {
   const [foodName, setFoodName] = useState('')
   const [foodKcal, setFoodKcal] = useState('')
   const [foodProtein, setFoodProtein] = useState('')
+  const [foodFat, setFoodFat] = useState('')
+  const [foodCarb, setFoodCarb] = useState('')
   const [adding, setAdding] = useState(false)
 
   // Food picker
@@ -98,6 +100,8 @@ export default function TodayScreen() {
   const [allPresets, setAllPresets] = useState<MealPreset[]>([])
   const [showMealBuilder, setShowMealBuilder] = useState(false)
   const [editingPreset, setEditingPreset] = useState<MealPreset | null>(null)
+  const [myMealsExpanded, setMyMealsExpanded] = useState(true)
+  const [todayLogExpanded, setTodayLogExpanded] = useState(true)
 
   const lastLoadRef = useRef<number>(0)
 
@@ -121,6 +125,14 @@ export default function TodayScreen() {
   // ── Load ───────────────────────────────────────────────────────────────────
 
   useFocusEffect(useCallback(() => { if (Date.now() - lastLoadRef.current > 60_000) load() }, []))
+
+  useFocusEffect(useCallback(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      supabase.from('users').select('hide_calories').eq('id', user.id).single()
+        .then(({ data }) => { if (data) setHideCalories(data.hide_calories ?? false) })
+    })
+  }, []))
 
   async function load() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -236,8 +248,14 @@ export default function TodayScreen() {
     const k = parseInt(foodKcal)
     if (!foodName.trim() || isNaN(k) || k <= 0) { Alert.alert('Invalid', 'Enter a name and calories.'); return }
     setAdding(true)
-    await addFood(foodName.trim(), k, foodProtein ? parseFloat(foodProtein) : null, null, null, addMealIndex)
-    setFoodName(''); setFoodKcal(''); setFoodProtein('')
+    await addFood(
+      foodName.trim(), k,
+      foodProtein ? parseFloat(foodProtein.replace(',', '.')) : null,
+      foodFat ? parseFloat(foodFat.replace(',', '.')) : null,
+      foodCarb ? parseFloat(foodCarb.replace(',', '.')) : null,
+      addMealIndex,
+    )
+    setFoodName(''); setFoodKcal(''); setFoodProtein(''); setFoodFat(''); setFoodCarb('')
     setShowAddForm(false); setAddMealIndex(null)
     setAdding(false)
   }
@@ -569,35 +587,49 @@ export default function TodayScreen() {
 
           {/* ── My Meals ── */}
           <View style={st.card}>
-            <View style={st.cardHeader}>
+            <Pressable style={st.cardHeader} onPress={() => setMyMealsExpanded(v => !v)}>
               <Text style={st.cardTitle}>My Meals</Text>
-              <Pressable style={st.addBtn} onPress={() => setShowMealBuilder(true)}>
-                <Ionicons name="add" size={16} color="#fff" />
-                <Text style={st.addBtnText}>New</Text>
-              </Pressable>
-            </View>
-            {allPresets.length === 0 && (
-              <Text style={st.emptyNote}>No meal presets yet — tap New to build one.</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Pressable style={st.addBtn} onPress={e => { e.stopPropagation?.(); setShowMealBuilder(true) }}>
+                  <Ionicons name="add" size={16} color="#fff" />
+                  <Text style={st.addBtnText}>New</Text>
+                </Pressable>
+                <Ionicons
+                  name={myMealsExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={C.text3}
+                />
+              </View>
+            </Pressable>
+            {myMealsExpanded && (
+              <>
+                {allPresets.length === 0 && (
+                  <Text style={st.emptyNote}>No meal presets yet — tap New to build one.</Text>
+                )}
+                {allPresets.map(preset => {
+                  const total = (preset.items ?? []).reduce((s, it) => s + it.kcal, 0)
+                  return (
+                    <View key={preset.id} style={st.mealPresetRow}>
+                      <Pressable style={{ flex: 1 }} onPress={() => logMealBundle(preset)}>
+                        <Text style={st.mealPresetName}>{preset.name}</Text>
+                        <Text style={st.mealPresetMeta}>
+                          {(preset.items ?? []).length} items{!hideCalories ? ` · ${total} kcal` : ''}
+                        </Text>
+                      </Pressable>
+                      <Pressable onPress={() => setEditingPreset(preset)} hitSlop={10} style={{ padding: 6 }}>
+                        <Ionicons name="pencil-outline" size={16} color={C.text3} />
+                      </Pressable>
+                      <Pressable onPress={() => deleteMealPreset(preset)} hitSlop={10} style={{ padding: 6 }}>
+                        <Ionicons name="trash-outline" size={16} color={C.danger} />
+                      </Pressable>
+                      <Pressable onPress={() => logMealBundle(preset)} hitSlop={10} style={{ paddingLeft: 2 }}>
+                        <Ionicons name="add-circle-outline" size={20} color={C.accent2} />
+                      </Pressable>
+                    </View>
+                  )
+                })}
+              </>
             )}
-            {allPresets.map(preset => {
-              const total = (preset.items ?? []).reduce((s, it) => s + it.kcal, 0)
-              return (
-                <View key={preset.id} style={st.mealPresetRow}>
-                  <Pressable style={{ flex: 1 }} onPress={() => logMealBundle(preset)}>
-                    <Text style={st.mealPresetName}>{preset.name}</Text>
-                    <Text style={st.mealPresetMeta}>
-                      {(preset.items ?? []).length} items{!hideCalories ? ` · ${total} kcal` : ''}
-                    </Text>
-                  </Pressable>
-                  <Pressable onPress={() => setEditingPreset(preset)} hitSlop={10} style={{ padding: 6, marginRight: 2 }}>
-                    <Ionicons name="pencil-outline" size={16} color={C.text3} />
-                  </Pressable>
-                  <Pressable onPress={() => logMealBundle(preset)} hitSlop={10}>
-                    <Ionicons name="add-circle-outline" size={20} color={C.accent2} />
-                  </Pressable>
-                </View>
-              )
-            })}
           </View>
 
           {/* ── Quick add ── */}
@@ -640,35 +672,46 @@ export default function TodayScreen() {
 
           {/* ── Today's log ── */}
           <View style={st.card}>
-            <View style={st.cardHeader}>
+            <Pressable style={st.cardHeader} onPress={() => setTodayLogExpanded(v => !v)}>
               <Text style={st.cardTitle}>Today's log</Text>
-              <Pressable style={st.addBtn} onPress={() => { setAddMealIndex(null); setShowAddForm(true) }}>
-                <Ionicons name="add" size={16} color="#fff" />
-                <Text style={st.addBtnText}>Add</Text>
-              </Pressable>
-            </View>
-
-            {loading && <ActivityIndicator color={C.accent2} style={{ marginVertical: 12 }} />}
-            {!loading && logs.length === 0 && <Text style={st.emptyNote}>Nothing logged yet today.</Text>}
-
-            {logs.map((log, i) => (
-              <View key={log.id} style={[st.logRow, i < logs.length - 1 && st.logRowBorder]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={st.logName} numberOfLines={1}>{log.name}</Text>
-                  {log.meal_name && <Text style={st.logMeta}>{log.meal_name}</Text>}
-                </View>
-                {!hideCalories && <Text style={st.logKcal}>{log.kcal} kcal</Text>}
-                <Pressable onPress={() => deleteLog(log.id)} hitSlop={8} style={{ marginLeft: 8 }}>
-                  <Ionicons name="trash-outline" size={15} color={C.danger} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Pressable style={st.addBtn} onPress={e => { e.stopPropagation?.(); setAddMealIndex(null); setShowAddForm(true) }}>
+                  <Ionicons name="add" size={16} color="#fff" />
+                  <Text style={st.addBtnText}>Add</Text>
                 </Pressable>
+                <Ionicons
+                  name={todayLogExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={C.text3}
+                />
               </View>
-            ))}
+            </Pressable>
 
-            {logs.length > 0 && !hideCalories && (
-              <View style={st.logTotal}>
-                <Text style={st.logTotalLabel}>Total eaten</Text>
-                <Text style={st.logTotalValue}>{consumedKcal.toLocaleString()} kcal</Text>
-              </View>
+            {todayLogExpanded && (
+              <>
+                {loading && <ActivityIndicator color={C.accent2} style={{ marginVertical: 12 }} />}
+                {!loading && logs.length === 0 && <Text style={st.emptyNote}>Nothing logged yet today.</Text>}
+
+                {logs.map((log, i) => (
+                  <View key={log.id} style={[st.logRow, i < logs.length - 1 && st.logRowBorder]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={st.logName} numberOfLines={1}>{log.name}</Text>
+                      {log.meal_name && <Text style={st.logMeta}>{log.meal_name}</Text>}
+                    </View>
+                    {!hideCalories && <Text style={st.logKcal}>{log.kcal} kcal</Text>}
+                    <Pressable onPress={() => deleteLog(log.id)} hitSlop={8} style={{ marginLeft: 8 }}>
+                      <Ionicons name="trash-outline" size={15} color={C.danger} />
+                    </Pressable>
+                  </View>
+                ))}
+
+                {logs.length > 0 && !hideCalories && (
+                  <View style={st.logTotal}>
+                    <Text style={st.logTotalLabel}>Total eaten</Text>
+                    <Text style={st.logTotalValue}>{consumedKcal.toLocaleString()} kcal</Text>
+                  </View>
+                )}
+              </>
             )}
           </View>
 
@@ -725,9 +768,18 @@ export default function TodayScreen() {
             <TextInput style={st.addFormInput} value={foodKcal} onChangeText={setFoodKcal}
               placeholder="Calories (kcal)" placeholderTextColor={C.text3} keyboardType="numeric"
               returnKeyType="next" />
-            <TextInput style={st.addFormInput} value={foodProtein} onChangeText={setFoodProtein}
-              placeholder="Protein g (optional)" placeholderTextColor={C.text3} keyboardType="decimal-pad"
-              returnKeyType="done" onSubmitEditing={submitAddForm} />
+            <View style={st.addFormMacroRow}>
+              <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={foodProtein}
+                onChangeText={v => setFoodProtein(v.replace(',', '.'))}
+                placeholder="Protein g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
+              <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={foodFat}
+                onChangeText={v => setFoodFat(v.replace(',', '.'))}
+                placeholder="Fat g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
+              <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={foodCarb}
+                onChangeText={v => setFoodCarb(v.replace(',', '.'))}
+                placeholder="Carbs g" placeholderTextColor={C.text3} keyboardType="decimal-pad"
+                returnKeyType="done" onSubmitEditing={submitAddForm} />
+            </View>
             <Pressable style={[st.addFormBtn, adding && { opacity: 0.6 }]} onPress={submitAddForm} disabled={adding}>
               <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
             </Pressable>
@@ -834,7 +886,7 @@ function QuickAddModal({ food, hideCalories, onAdd, onClose }: {
             <TextInput
               style={st.qtyInput}
               value={qty}
-              onChangeText={setQty}
+              onChangeText={v => setQty(v.replace(',', '.'))}
               keyboardType="decimal-pad"
               returnKeyType="done"
               autoFocus
@@ -948,12 +1000,15 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
   onClose: () => void
 }) {
   const [mealName, setMealName] = useState('')
-  const [items, setItems] = useState<{ name: string; kcal: number; protein_g: number | null }[]>([])
+  const [items, setItems] = useState<{ name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null }[]>([])
   const [itemSearch, setItemSearch] = useState('')
   const [pendingFood, setPendingFood] = useState<{ name: string; kcal: number; protein_g?: number | null } | null>(null)
   const [pendingQty, setPendingQty] = useState('1')
   const [itemName, setItemName] = useState('')
   const [itemKcal, setItemKcal] = useState('')
+  const [itemProtein, setItemProtein] = useState('')
+  const [itemFat, setItemFat] = useState('')
+  const [itemCarb, setItemCarb] = useState('')
   const [saving, setSaving] = useState(false)
   const [selectedSlots, setSelectedSlots] = useState<Set<number>>(new Set())
   const [scanMode, setScanMode] = useState(false)
@@ -962,11 +1017,12 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
   const [scanAmount, setScanAmount] = useState('100')
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const lastScannedRef = useRef<string | null>(null)
+  const insets = useSafeAreaInsets()
 
   useEffect(() => {
     if (editPreset) {
       setMealName(editPreset.name)
-      setItems((editPreset.items ?? []).map(it => ({ name: it.name, kcal: it.kcal, protein_g: it.protein_g ?? null })))
+      setItems((editPreset.items ?? []).map(it => ({ name: it.name, kcal: it.kcal, protein_g: it.protein_g ?? null, fat_g: it.fat_g ?? null, carb_g: it.carb_g ?? null })))
       setSelectedSlots(new Set(initialSlots ?? []))
     }
   }, [editPreset?.id])
@@ -1008,8 +1064,13 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
   function addManual() {
     const k = parseInt(itemKcal)
     if (!itemName.trim() || isNaN(k) || k <= 0) return
-    setItems(prev => [...prev, { name: itemName.trim(), kcal: k, protein_g: null }])
-    setItemName(''); setItemKcal('')
+    setItems(prev => [...prev, {
+      name: itemName.trim(), kcal: k,
+      protein_g: itemProtein ? parseFloat(itemProtein.replace(',', '.')) : null,
+      fat_g: itemFat ? parseFloat(itemFat.replace(',', '.')) : null,
+      carb_g: itemCarb ? parseFloat(itemCarb.replace(',', '.')) : null,
+    }])
+    setItemName(''); setItemKcal(''); setItemProtein(''); setItemFat(''); setItemCarb('')
   }
 
   function toggleSlot(index: number) {
@@ -1066,7 +1127,7 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
         supabase.from('meal_preset_items').delete().eq('preset_id', editPreset.id),
       ])
       await supabase.from('meal_preset_items').insert(
-        items.map((it, i) => ({ preset_id: editPreset.id, name: it.name, kcal: it.kcal, protein_g: it.protein_g, sort_order: i }))
+        items.map((it, i) => ({ preset_id: editPreset.id, name: it.name, kcal: it.kcal, protein_g: it.protein_g, fat_g: it.fat_g, carb_g: it.carb_g, sort_order: i }))
       )
       await supabase.from('meal_slot_presets').delete().eq('preset_id', editPreset.id).eq('user_id', userId)
       if (selectedSlots.size > 0) {
@@ -1081,7 +1142,7 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
       if (!preset) { setSaving(false); return }
       await Promise.all([
         supabase.from('meal_preset_items').insert(
-          items.map((it, i) => ({ preset_id: preset.id, name: it.name, kcal: it.kcal, protein_g: it.protein_g, sort_order: i }))
+          items.map((it, i) => ({ preset_id: preset.id, name: it.name, kcal: it.kcal, protein_g: it.protein_g, fat_g: it.fat_g, carb_g: it.carb_g, sort_order: i }))
         ),
         selectedSlots.size > 0
           ? supabase.from('meal_slot_presets').insert(
@@ -1099,7 +1160,7 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top', 'bottom']}>
+      <View style={[{ flex: 1, backgroundColor: C.bg }, { paddingTop: insets.top }]}>
         <View style={st.builderHeader}>
           <Text style={st.builderHeaderTitle}>{editPreset ? 'Edit meal' : 'Build a meal'}</Text>
           <Pressable onPress={onClose} hitSlop={12}>
@@ -1257,7 +1318,7 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
                       <TextInput
                         style={st.builderPendingInput}
                         value={pendingQty}
-                        onChangeText={setPendingQty}
+                        onChangeText={v => setPendingQty(v.replace(',', '.'))}
                         keyboardType="decimal-pad"
                         returnKeyType="done"
                         autoFocus
@@ -1299,6 +1360,35 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
                   placeholder="kcal"
                   placeholderTextColor={C.text3}
                   keyboardType="numeric"
+                  returnKeyType="next"
+                />
+              </View>
+              <View style={st.builderAddRow}>
+                <TextInput
+                  style={[st.addFormInput, { flex: 1 }]}
+                  value={itemProtein}
+                  onChangeText={v => setItemProtein(v.replace(',', '.'))}
+                  placeholder="Prot g"
+                  placeholderTextColor={C.text3}
+                  keyboardType="decimal-pad"
+                  returnKeyType="next"
+                />
+                <TextInput
+                  style={[st.addFormInput, { flex: 1 }]}
+                  value={itemFat}
+                  onChangeText={v => setItemFat(v.replace(',', '.'))}
+                  placeholder="Fat g"
+                  placeholderTextColor={C.text3}
+                  keyboardType="decimal-pad"
+                  returnKeyType="next"
+                />
+                <TextInput
+                  style={[st.addFormInput, { flex: 1 }]}
+                  value={itemCarb}
+                  onChangeText={v => setItemCarb(v.replace(',', '.'))}
+                  placeholder="Carbs g"
+                  placeholderTextColor={C.text3}
+                  keyboardType="decimal-pad"
                   returnKeyType="done"
                   onSubmitEditing={addManual}
                 />
@@ -1322,17 +1412,26 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
                 </>
               )}
 
-              <Pressable
-                style={[st.addFormBtn, (saving || !mealName.trim() || items.length === 0) && { opacity: 0.4 }]}
-                onPress={save}
-                disabled={saving || !mealName.trim() || items.length === 0}
-              >
-                <Text style={st.addFormBtnText}>{saving ? 'Saving…' : 'Save meal'}</Text>
-              </Pressable>
             </ScrollView>
           </KeyboardAvoidingView>
         )}
-      </SafeAreaView>
+
+        {/* Sticky footer: Cancel + Save */}
+        {!scanMode && (
+          <View style={[st.builderFooter, { paddingBottom: Math.max(16, insets.bottom) }]}>
+            <Pressable style={st.builderCancelBtn} onPress={onClose}>
+              <Text style={st.builderCancelBtnText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[st.builderSaveBtn, (saving || !mealName.trim() || items.length === 0) && { opacity: 0.4 }]}
+              onPress={save}
+              disabled={saving || !mealName.trim() || items.length === 0}
+            >
+              <Text style={st.builderSaveBtnText}>{saving ? 'Saving…' : 'Save meal'}</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
     </Modal>
   )
 }
@@ -1465,6 +1564,8 @@ const st = StyleSheet.create({
   addFormSheet: { backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36, gap: 10 },
   addFormTitle: { fontSize: 16, fontWeight: '800', color: C.text1, marginBottom: 4 },
   addFormInput: { borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14, color: C.text1, backgroundColor: C.surface2 },
+  addFormMacroRow: { flexDirection: 'row', gap: 8 },
+  addFormMacroInput: { flex: 1, paddingHorizontal: 10 },
   addFormBtn: { backgroundColor: C.accent, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   addFormBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
   qtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -1519,4 +1620,10 @@ const st = StyleSheet.create({
   builderPendingKcal: { flex: 1, fontSize: 13, color: C.accent2, fontWeight: '600' },
   builderAddRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   builderAddBtn: { backgroundColor: C.accent2, borderRadius: 10, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+
+  builderFooter: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider, backgroundColor: C.bg },
+  builderCancelBtn: { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  builderCancelBtnText: { fontSize: 15, fontWeight: '700', color: C.text2 },
+  builderSaveBtn: { flex: 1, backgroundColor: C.accent, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  builderSaveBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 })

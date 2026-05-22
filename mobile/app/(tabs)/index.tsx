@@ -4,7 +4,7 @@ import {
   RefreshControl, Alert, ActivityIndicator, Modal, TextInput,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -304,6 +304,7 @@ export default function ActivitiesScreen() {
   const [customStart, setCustomStart] = useState<string | null>(null)
   const [customEnd, setCustomEnd] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [hideCalories, setHideCalories] = useState(false)
 
   const isTotal = period === 'total'
   const isFixed = !isTotal && period !== 'custom'
@@ -330,6 +331,14 @@ export default function ActivitiesScreen() {
     setLoading(true)
     fetchActivities(period, anchor, monthsBack, customStart, customEnd).finally(() => setLoading(false))
   }, [period, anchor, monthsBack, customStart, customEnd, fetchActivities])
+
+  useFocusEffect(useCallback(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      supabase.from('users').select('hide_calories').eq('id', user.id).single()
+        .then(({ data }) => { if (data) setHideCalories(data.hide_calories ?? false) })
+    })
+  }, []))
 
   const syncStrava = useCallback(async () => {
     setSyncing(true)
@@ -370,13 +379,14 @@ export default function ActivitiesScreen() {
       const [actsRes, profileRes] = await Promise.all([
         supabase.from('activities').select('total_kcal').eq('user_id', session.user.id)
           .gte('date', todayStr).not('total_kcal', 'is', null),
-        supabase.from('users').select('daily_kcal_target').eq('id', session.user.id).single(),
+        supabase.from('users').select('daily_kcal_target, hide_calories').eq('id', session.user.id).single(),
       ])
       const burnedToday = (actsRes.data ?? []).reduce((s: number, a: any) => s + (a.total_kcal ?? 0), 0)
       if (burnedToday > 0) {
         const baseline = profileRes.data?.daily_kcal_target ?? null
         const newTarget = baseline != null ? baseline + Math.round(burnedToday) : null
-        notifyWorkoutSynced(burnedToday, newTarget)
+        const hideKcal = profileRes.data?.hide_calories ?? false
+        notifyWorkoutSynced(burnedToday, newTarget, hideKcal)
       }
     } catch (err: any) {
       Alert.alert('Sync failed', err.message ?? 'Something went wrong')
@@ -578,9 +588,9 @@ export default function ActivitiesScreen() {
                 </View>
               </View>
               <View style={st.cardRight}>
-                {a.total_kcal != null
+                {!hideCalories && (a.total_kcal != null
                   ? <><Text style={st.kcal}>{Math.round(a.total_kcal)}</Text><Text style={st.kcalLbl}>kcal</Text></>
-                  : <Text style={st.noData}>—</Text>}
+                  : <Text style={st.noData}>—</Text>)}
                 <Pressable
                   style={st.deleteBtn}
                   onPress={e => { e.stopPropagation?.(); deleteActivity(a.id) }}
