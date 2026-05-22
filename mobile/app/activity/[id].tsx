@@ -1,12 +1,24 @@
 import { useEffect, useState } from 'react'
-import { View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator } from 'react-native'
+import { View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, useWindowDimensions } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import MapView, { Polyline } from 'react-native-maps'
 import { Ionicons } from '@expo/vector-icons'
+import Svg, { Polyline as SvgPolyline, Line, Text as SvgText, Rect } from 'react-native-svg'
 import { supabase } from '../../lib/supabase'
 import { W as C } from '../../lib/themeWarm'
 import type { ActivityWithZones, Lap } from '../../types'
+
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
+
+type HrStreamData = {
+  sample_count: number
+  expected_samples: number
+  min_hr: number
+  max_hr: number
+  avg_hr: number
+  stream: number[]
+}
 
 const ZONE_COLORS = [C.swim, C.success, C.warning, C.run, C.danger]
 
@@ -67,8 +79,34 @@ function formatLapSpeed(lap: Lap, activityType: string): string | null {
 export default function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const router = useRouter()
+  const { width } = useWindowDimensions()
   const [activity, setActivity] = useState<ActivityWithZones | null>(null)
   const [loading, setLoading] = useState(true)
+  const [hrStream, setHrStream] = useState<HrStreamData | null>(null)
+  const [loadingStream, setLoadingStream] = useState(false)
+  const [streamError, setStreamError] = useState<string | null>(null)
+
+  async function loadHrStream() {
+    if (!activity?.strava_activity_id) return
+    setLoadingStream(true)
+    setStreamError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not signed in')
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/hr-stream`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strava_activity_id: activity.strava_activity_id }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+      setHrStream(json)
+    } catch (e: any) {
+      setStreamError(e.message ?? 'Failed to load HR stream')
+    } finally {
+      setLoadingStream(false)
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -278,8 +316,192 @@ export default function ActivityDetailScreen() {
             })}
           </>
         )}
+        {/* HR Stream diagnostic */}
+        <View style={styles.streamSection}>
+          <View style={styles.streamHeader}>
+            <Text style={styles.sectionTitle}>HR stream</Text>
+            {!hrStream && (
+              <Pressable
+                style={[styles.loadStreamBtn, loadingStream && { opacity: 0.5 }]}
+                onPress={loadHrStream}
+                disabled={loadingStream}
+              >
+                {loadingStream
+                  ? <ActivityIndicator size="small" color={C.accent} />
+                  : <Text style={styles.loadStreamBtnText}>Load from Strava</Text>
+                }
+              </Pressable>
+            )}
+          </View>
+
+          {streamError && (
+            <Text style={styles.streamError}>{streamError}</Text>
+          )}
+
+          {hrStream && (() => {
+            const truncated = hrStream.sample_count < hrStream.expected_samples * 0.9
+            const coveragePct = Math.round((hrStream.sample_count / Math.max(hrStream.expected_samples, 1)) * 100)
+            const zones = sortedSplits.map(s => s.zone).sort((a, b) => a.zone_number - b.zone_number)
+
+            return (
+              <>
+                {truncated && (
+                  <View style={styles.streamWarn}>
+                    <Ionicons name="warning-outline" size={15} color={C.warning} />
+                    <Text style={styles.streamWarnText}>
+                      Only {hrStream.sample_count} of {hrStream.expected_samples} expected samples received ({coveragePct}%). Strava returned a truncated HR stream — this is the main reason kcal is low.
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.streamStats}>
+                  <View style={styles.streamStat}>
+                    <Text style={[styles.streamStatVal, truncated && { color: C.warning }]}>
+                      {hrStream.sample_count}
+                    </Text>
+                    <Text style={styles.streamStatLbl}>samples</Text>
+                  </View>
+                  <View style={styles.streamStat}>
+                    <Text style={styles.streamStatVal}>{hrStream.expected_samples}</Text>
+                    <Text style={styles.streamStatLbl}>expected</Text>
+                  </View>
+                  <View style={styles.streamStat}>
+                    <Text style={styles.streamStatVal}>{hrStream.min_hr}</Text>
+                    <Text style={styles.streamStatLbl}>min bpm</Text>
+                  </View>
+                  <View style={styles.streamStat}>
+                    <Text style={styles.streamStatVal}>{hrStream.max_hr}</Text>
+                    <Text style={styles.streamStatLbl}>max bpm</Text>
+                  </View>
+                  <View style={styles.streamStat}>
+                    <Text style={styles.streamStatVal}>{hrStream.avg_hr}</Text>
+                    <Text style={styles.streamStatLbl}>avg bpm</Text>
+                  </View>
+                </View>
+
+                {hrStream.stream.length >= 2 && (
+                  <HrSparkline
+                    stream={hrStream.stream}
+                    zones={zones}
+                    width={width - 32}
+                  />
+                )}
+              </>
+            )
+          })()}
+        </View>
       </ScrollView>
     </SafeAreaView>
+  )
+}
+
+const ZONE_COLORS_CHART = ['#64B5F6', '#81C784', '#FFD54F', '#FF8A65', '#EF5350']
+
+function HrSparkline({
+  stream, zones, width,
+}: {
+  stream: number[]
+  zones: Array<{ zone_number: number; min_bpm: number; max_bpm: number }>
+  width: number
+}) {
+  const H = 160
+  const PAD = { top: 16, right: 12, bottom: 28, left: 40 }
+  const chartW = Math.max(width - PAD.left - PAD.right, 1)
+  const chartH = H - PAD.top - PAD.bottom
+
+  // Downsample to max 400 points for performance
+  const MAX = 400
+  const sampled = stream.length <= MAX
+    ? stream
+    : Array.from({ length: MAX }, (_, i) => stream[Math.round(i * (stream.length - 1) / (MAX - 1))])
+
+  const hrMin = Math.min(...sampled) - 5
+  const hrMax = Math.max(...sampled) + 5
+  const hrRange = hrMax - hrMin || 1
+
+  const toX = (i: number) => PAD.left + (i / (sampled.length - 1)) * chartW
+  const toY = (hr: number) => PAD.top + chartH - ((hr - hrMin) / hrRange) * chartH
+
+  const points = sampled.map((hr, i) => `${toX(i).toFixed(1)},${toY(hr).toFixed(1)}`).join(' ')
+
+  // Y-axis ticks
+  const tickStep = hrRange > 60 ? 20 : hrRange > 30 ? 10 : 5
+  const firstTick = Math.ceil(hrMin / tickStep) * tickStep
+  const ticks: number[] = []
+  for (let t = firstTick; t <= hrMax; t += tickStep) ticks.push(t)
+
+  return (
+    <View style={{ marginTop: 12 }}>
+      <Svg width={width} height={H}>
+        {/* Zone bands */}
+        {zones.map((z, i) => {
+          const yTop = toY(Math.min(z.max_bpm, hrMax + 5))
+          const yBot = toY(Math.max(z.min_bpm, hrMin - 5))
+          const h = Math.max(yBot - yTop, 0)
+          if (h <= 0) return null
+          return (
+            <Rect
+              key={z.zone_number}
+              x={PAD.left} y={yTop}
+              width={chartW} height={h}
+              fill={ZONE_COLORS_CHART[i % ZONE_COLORS_CHART.length]}
+              opacity={0.12}
+            />
+          )
+        })}
+        {/* Zone boundary lines */}
+        {zones.map(z => {
+          if (z.min_bpm <= hrMin) return null
+          const y = toY(z.min_bpm)
+          if (y < PAD.top || y > PAD.top + chartH) return null
+          return (
+            <Line key={`zl-${z.zone_number}`}
+              x1={PAD.left} y1={y} x2={PAD.left + chartW} y2={y}
+              stroke={ZONE_COLORS_CHART[(z.zone_number - 1) % ZONE_COLORS_CHART.length]}
+              strokeWidth={1} strokeDasharray="3 3" opacity={0.6}
+            />
+          )
+        })}
+        {/* Y grid + labels */}
+        {ticks.map(t => {
+          const y = toY(t)
+          if (y < PAD.top || y > PAD.top + chartH) return null
+          return (
+            <Line key={`g-${t}`}
+              x1={PAD.left} y1={y} x2={PAD.left + chartW} y2={y}
+              stroke={C.surface3 ?? C.surface2} strokeWidth={1} opacity={0.5}
+            />
+          )
+        })}
+        {ticks.map(t => {
+          const y = toY(t)
+          if (y < PAD.top || y > PAD.top + chartH) return null
+          return (
+            <SvgText key={`yt-${t}`} x={PAD.left - 4} y={y + 4}
+              fontSize={9} fill={C.text3} textAnchor="end">{t}</SvgText>
+          )
+        })}
+        {/* HR line */}
+        <SvgPolyline points={points} fill="none" stroke={C.accent} strokeWidth={1.5} strokeLinejoin="round" />
+        {/* X axis labels: start / middle / end time */}
+        {[0, 0.5, 1].map(f => {
+          const sec = Math.round(f * (stream.length - 1))
+          const label = sec >= 3600
+            ? `${Math.floor(sec / 3600)}h${Math.floor((sec % 3600) / 60)}m`
+            : `${Math.floor(sec / 60)}m`
+          const x = PAD.left + f * chartW
+          return (
+            <SvgText key={`xt-${f}`} x={x} y={H - 4}
+              fontSize={9} fill={C.text3} textAnchor="middle">{label}</SvgText>
+          )
+        })}
+        {/* Axes */}
+        <Line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top + chartH}
+          stroke={C.border} strokeWidth={1} />
+        <Line x1={PAD.left} y1={PAD.top + chartH} x2={PAD.left + chartW} y2={PAD.top + chartH}
+          stroke={C.border} strokeWidth={1} />
+      </Svg>
+    </View>
   )
 }
 
@@ -342,4 +564,26 @@ const styles = StyleSheet.create({
   lapDuration: { fontSize: 13, fontWeight: '600', color: C.text2 },
   errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   errorText: { color: C.text3 },
+
+  streamSection: { marginTop: 28 },
+  streamHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  loadStreamBtn: {
+    backgroundColor: C.accentBg, borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 7,
+  },
+  loadStreamBtnText: { fontSize: 13, fontWeight: '700', color: C.accent },
+  streamError: { fontSize: 13, color: C.danger, marginBottom: 8 },
+  streamWarn: {
+    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+    backgroundColor: C.warningBg ?? C.surface2, borderRadius: 10,
+    padding: 12, marginBottom: 12, borderWidth: 1, borderColor: C.warningBorder ?? C.border,
+  },
+  streamWarnText: { flex: 1, fontSize: 13, color: C.warning, lineHeight: 18 },
+  streamStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  streamStat: {
+    flex: 1, minWidth: 56, backgroundColor: C.surface, borderRadius: 8,
+    padding: 10, alignItems: 'center', borderWidth: 1, borderColor: C.border,
+  },
+  streamStatVal: { fontSize: 18, fontWeight: '800', color: C.text1 },
+  streamStatLbl: { fontSize: 10, color: C.text3, fontWeight: '600', marginTop: 2 },
 })

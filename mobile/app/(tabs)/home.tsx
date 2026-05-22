@@ -198,6 +198,14 @@ function getSportIcon(type: string): string {
   return 'lightning-bolt'
 }
 
+function getSportGradient(type: string): [string, string] {
+  if (/swim/i.test(type))                      return ['#7DD3F8', '#0284C7']
+  if (/run|jog/i.test(type))                   return ['#FCA5A5', '#DC2626']
+  if (/walk/i.test(type))                       return ['#FED7AA', '#EA580C']
+  if (/ride|bike|cycling|virtual/i.test(type)) return ['#86EFAC', '#16A34A']
+  return ['#CBD5E1', '#64748B']
+}
+
 // ─── training load helpers ────────────────────────────────────────────────
 
 function computeTSS(duration_sec: number, avg_hr: number, max_hr: number): number {
@@ -845,14 +853,17 @@ function PlannedWorkoutList({ workouts, fuelingSettings, onPeriod, periodSeverit
         const fuelSetting = fuelingSettings.find(f => f.sport_type.toLowerCase() === w.sport_type.toLowerCase())
         const rec = calcFuelingRec(adjustedDuration, fuelSetting)
 
+        const gradient = getSportGradient(w.sport_type)
         return (
-          <View key={w.id} style={[pw.card, { borderLeftColor: isAI ? C.accent2 : color }]}>
+          <View key={w.id} style={pw.card}>
+            <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={pw.cardBar} />
+            <View style={pw.cardBody}>
             <View style={pw.row}>
               {isAI
                 ? <Ionicons name="sparkles-outline" size={15} color={C.accent2} />
-                : <MaterialCommunityIcons name={icon as any} size={17} color={color} />
+                : <MaterialCommunityIcons name={icon as any} size={17} color={C.text3} />
               }
-              <Text style={[pw.sport, { color: isAI ? C.accent2 : C.text1 }]}>{w.sport_type}</Text>
+              <Text style={pw.sport}>{w.sport_type}</Text>
               {isAI && (
                 <View style={[pw.aiBadge, { backgroundColor: C.accent2Bg }]}>
                   <Text style={[pw.aiBadgeText, { color: C.accent2 }]}>AI Coach</Text>
@@ -933,13 +944,14 @@ function PlannedWorkoutList({ workouts, fuelingSettings, onPeriod, periodSeverit
             {/* Voedingsaanbeveling tijdens training */}
             {rec && (
               <View style={pw.recBox}>
-                <Ionicons name="nutrition-outline" size={14} color={color} style={{ marginTop: 1 }} />
+                <Ionicons name="nutrition-outline" size={14} color={C.text3} style={{ marginTop: 1 }} />
                 <Text style={[pw.recText, { color: C.text1 }]}>
                   <Text style={{ fontWeight: '700' }}>Eet tijdens training: </Text>
                   {rec.totalCarbs}g koolhydraten ({rec.carbs_per_interval_g}g per {rec.interval_min} min)
                 </Text>
               </View>
             )}
+            </View>
           </View>
         )
       })}
@@ -1281,11 +1293,14 @@ const mo = StyleSheet.create({
 
 const pw = StyleSheet.create({
   card: {
-    borderLeftWidth: 4, borderRadius: 12, backgroundColor: C.surface2,
-    padding: 14, borderWidth: 1, borderColor: C.border,
+    flexDirection: 'row', alignItems: 'stretch',
+    borderRadius: 12, backgroundColor: C.surface2,
+    borderWidth: 1, borderColor: C.border, overflow: 'hidden',
   },
+  cardBar: { width: 5 },
+  cardBody: { flex: 1, padding: 14 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  sport: { fontSize: 15, fontWeight: '700', textTransform: 'capitalize', flex: 1 },
+  sport: { fontSize: 15, fontWeight: '700', textTransform: 'capitalize', flex: 1, color: C.text1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   chipText: { fontSize: 12, fontWeight: '700' },

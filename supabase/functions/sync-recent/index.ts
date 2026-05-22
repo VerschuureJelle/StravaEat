@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
     }
 
     const [streamRes, lapsRes] = await Promise.all([
-      fetch(`${STRAVA_API}/activities/${act.id}/streams?keys=heartrate&key_by_type=true`,
+      fetch(`${STRAVA_API}/activities/${act.id}/streams?keys=heartrate,time&key_by_type=true`,
         { headers: { Authorization: `Bearer ${accessToken}` } }),
       fetch(`${STRAVA_API}/activities/${act.id}/laps`,
         { headers: { Authorization: `Bearer ${accessToken}` } }),
@@ -124,6 +124,25 @@ Deno.serve(async (req) => {
     ])
 
     const hrStream: number[] | null = streamBody?.heartrate?.data ?? null
+    const timeStream: number[] | null = streamBody?.time?.data ?? null
+
+    // Build per-sample durations so variable-rate recordings (e.g. Garmin Smart Recording)
+    // are weighted correctly instead of always counting as 1 second each.
+    function buildDurations(times: number[], totalSec: number): number[] {
+      const n = times.length
+      if (n === 0) return []
+      if (n === 1) return [totalSec]
+      return times.map((t, i) => {
+        if (i < n - 1) return times[i + 1] - t
+        const remaining = totalSec - t
+        return remaining > 0 ? remaining : times[n - 1] - times[n - 2]
+      })
+    }
+
+    const durations: number[] | null =
+      timeStream && timeStream.length === hrStream?.length
+        ? buildDurations(timeStream, act.elapsed_time)
+        : null
 
     const { data: activity } = await supabase
       .from('activities')
@@ -179,24 +198,39 @@ Deno.serve(async (req) => {
     const sportBurnPts = (burnSchema ?? []).filter(p => p.sport_type === effectiveSport)
     const useCustom = method === 'custom' && sportBurnPts.length >= 2
 
+    // Resolve zones for this sport: sport-specific zones take priority over 'default'
+    const sportSpecificZones = zones.filter(z => (z.sport_type ?? 'default') === act.type)
+    const activeZones = (sportSpecificZones.length >= 5 ? sportSpecificZones : zones.filter(z => (z.sport_type ?? 'default') === 'default'))
+      .sort((a, b) => a.zone_number - b.zone_number)
+
+    if (activeZones.length === 0) { results.push({ strava_id: act.id, reason: 'no_zones_configured' }); continue }
+
+    // Zone lookup with open-ended boundaries: below Z1 → Z1, above Z5 → Z5
+    function findZone(bpm: number) {
+      const z = activeZones.find(z => bpm >= z.min_bpm && bpm < z.max_bpm)
+      if (z) return z
+      return bpm < activeZones[0].min_bpm ? activeZones[0] : activeZones[activeZones.length - 1]
+    }
+
     // Calculate per zone
     const zoneStats: Record<string, { sec: number; kcal: number; fat: number; carb: number }> = {}
 
-    for (const bpm of hrStream) {
-      const zone = zones.find(z => bpm >= z.min_bpm && bpm < z.max_bpm)
-      if (!zone) continue
+    for (let i = 0; i < hrStream.length; i++) {
+      const bpm = hrStream[i]
+      // Use time-stream delta if available; fall back to 1s per sample
+      const dur = durations ? durations[i] : 1
+
+      const zone = findZone(bpm)
       if (!zoneStats[zone.id]) zoneStats[zone.id] = { sec: 0, kcal: 0, fat: 0, carb: 0 }
-      zoneStats[zone.id].sec += 1
+      zoneStats[zone.id].sec += dur
 
       if (useCustom) {
-        // Interpolate burn schema (per_hour → per_second ÷ 3600)
         const rate = interpolateBurn(bpm, sportBurnPts as BurnPoint[])
-        zoneStats[zone.id].kcal += rate.kcal / 3600
-        zoneStats[zone.id].fat  += rate.fat  / 3600
-        zoneStats[zone.id].carb += rate.carb / 3600
+        zoneStats[zone.id].kcal += rate.kcal * dur / 3600
+        zoneStats[zone.id].fat  += rate.fat  * dur / 3600
+        zoneStats[zone.id].carb += rate.carb * dur / 3600
       } else {
-        // Standard: MET × weight × hours
-        zoneStats[zone.id].kcal += (zone.met_value * weightKg) / 3600
+        zoneStats[zone.id].kcal += (zone.met_value * weightKg) * dur / 3600
       }
     }
 

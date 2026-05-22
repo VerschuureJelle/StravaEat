@@ -54,6 +54,12 @@
           "color": "#FC4C02",
           "sounds": []
         }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "StravaEat needs calendar access to sync your planned workouts."
+        }
       ]
     ],
     "extra": {

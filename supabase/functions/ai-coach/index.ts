@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
     const safePeriodSeverity = ['minor', 'medium', 'severe'].includes(period_severity) ? period_severity : null
 
     const [profileRes, zonesRes, activitiesRes] = await Promise.all([
-      supabase.from('users').select('weight_kg, sport_history').eq('id', user.id).single(),
+      supabase.from('users').select('weight_kg, sport_history, onboarding_data').eq('id', user.id).single(),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('activities')
         .select('type, distance_m, duration_sec')
@@ -85,12 +85,56 @@ Deno.serve(async (req) => {
       .map(z => `  Zone ${z.zone_number} — ${z.name}: ${z.min_bpm}–${z.max_bpm} bpm (MET ${z.met_value})`)
       .join('\n')
 
+    const od = (profile as any)?.onboarding_data ?? {}
+
+    const focusLabel: Record<string, string> = {
+      performance: 'peak performance and race fueling',
+      energy:      'sustained energy levels and recovery',
+      composition: 'body composition',
+      balanced:    'a balanced mix of performance, energy, and health',
+    }
+    const dietLabels: Record<string, string> = {
+      high_protein: 'high protein', vegetarian: 'vegetarian', vegan: 'vegan',
+      gluten_free: 'gluten-free', dairy_free: 'dairy-free',
+    }
+    const goalLabels: Record<string, string> = {
+      fueling: 'fueling training properly', timing: 'eating at the right times',
+      planning: 'workout planning', energy: 'keeping energy levels up',
+      recovery: 'supporting recovery', period: 'managing load around menstrual cycle',
+      food_relationship: 'building a healthier food relationship',
+    }
+
+    const dietaryPrefs: string[] = (od.dietary_prefs ?? []).filter((v: string) => v !== 'none')
+    const appGoals: string[] = od.app_goals ?? []
+    const underfueling: string = od.underfueling_history ?? ''
+    const appFocus: string = od.app_focus ?? ''
+    const wantsPeriodSupport = appGoals.includes('period')
+
+    const onboardingContext = [
+      appFocus && focusLabel[appFocus]
+        ? `- Preferred focus: ${focusLabel[appFocus]}`
+        : null,
+      appGoals.length > 0
+        ? `- Goals: ${appGoals.map((g: string) => goalLabels[g] ?? g).join(', ')}`
+        : null,
+      dietaryPrefs.length > 0
+        ? `- Dietary preferences: ${dietaryPrefs.map((d: string) => dietLabels[d] ?? d).join(', ')} — factor this into any nutrition advice`
+        : null,
+      (underfueling === 'occasionally' || underfueling === 'frequently')
+        ? `- IMPORTANT: This athlete has a history of intentional underfueling. Never suggest very low calorie intake, caloric restriction for performance, or eating less than needed to fuel training. Always err on the side of adequate fueling.`
+        : null,
+      wantsPeriodSupport
+        ? `- This athlete specifically wants support managing training load around their menstrual cycle. Be proactive about mentioning easy days and recovery when relevant.`
+        : null,
+    ].filter(Boolean).join('\n')
+
     const systemPrompt = `You are an expert endurance coach. You create detailed, personalized training plans.
 
 Athlete profile:
 - Weight: ${profile?.weight_kg ?? 'unknown'} kg
 - Experience level: ${profile?.sport_history ?? 'unknown'}
 ${sport ? `- Focus sport: ${sport}` : ''}
+${onboardingContext ? onboardingContext : ''}
 
 Heart rate zones:
 ${zonesText || '  (no zones configured)'}
@@ -124,7 +168,7 @@ ${safePeriodSeverity === 'severe'
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-opus-4-7',
+        model: 'claude-sonnet-4-6',
         max_tokens: 1024,
         system: systemPrompt,
         // User input is isolated in its own turn, clearly separated from system context

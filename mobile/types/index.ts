@@ -83,6 +83,7 @@ export interface HeartRateZone {
   min_bpm: number
   max_bpm: number
   met_value: number
+  sport_type: string
   created_at: string
 }
 

@@ -8,10 +8,11 @@ import { supabase } from '../lib/supabase'
 import { W as C } from '../lib/themeWarm'
 
 const NAV_ITEMS = [
-  { label: 'Today',    icon: 'calendar-outline'  as const, route: '/(tabs)/today'    },
-  { label: 'History',  icon: 'flash-outline'      as const, route: '/(tabs)/'         },
-  { label: 'Planner',  icon: 'calculator-outline' as const, route: '/(tabs)/planner'  },
-  { label: 'Settings', icon: 'settings-outline'   as const, route: '/(tabs)/settings' },
+  { label: 'Today',     icon: 'calendar-outline'  as const, route: '/(tabs)/today'     },
+  { label: 'History',   icon: 'flash-outline'      as const, route: '/(tabs)/'          },
+  { label: 'Planner',   icon: 'calculator-outline' as const, route: '/(tabs)/planner'   },
+  { label: 'Calendars', icon: 'calendar-clear-outline' as const, route: '/(tabs)/calendar' },
+  { label: 'Settings',  icon: 'settings-outline'   as const, route: '/(tabs)/settings'  },
 ]
 
 function DrawerContent({ userName, avatarUrl, onNav, onClose }: {

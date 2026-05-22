@@ -10,6 +10,9 @@ import * as Linking from 'expo-linking'
 import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '../../lib/supabase'
 import { initiateStravaOAuth } from '../../lib/stravaAuth'
+import { initiateGoogleCalOAuth } from '../../lib/googleCalAuth'
+import { initiateMicrosoftCalOAuth } from '../../lib/microsoftCalAuth'
+import { requestAppleCalPermission, isAppleCalConnected, disconnectAppleCal } from '../../lib/appleCalAuth'
 import { useAppMode } from '../../contexts/AppModeContext'
 import { W as C } from '../../lib/themeWarm'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
@@ -75,8 +78,10 @@ export default function SettingsScreen() {
   const [avatarUploading, setAvatarUploading] = useState(false)
 
   // Zones
-  const [zones, setZones] = useState<HeartRateZone[]>([])
+  const [allZones, setAllZones] = useState<HeartRateZone[]>([])
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null)
+  const [selectedZoneSport, setSelectedZoneSport] = useState('default')
+  const [customizingSport, setCustomizingSport] = useState(false)
 
   // Sport energy (based on actual activity types from Strava)
   const [activitySports, setActivitySports] = useState<string[]>([])
@@ -119,6 +124,10 @@ export default function SettingsScreen() {
   const [onPeriod, setOnPeriod] = useState(false)
   const [periodSeverity, setPeriodSeverity] = useState<PeriodSeverity>('minor')
 
+  // Calendar connections
+  const [calDisconnecting, setCalDisconnecting] = useState<'google' | 'microsoft' | null>(null)
+  const [appleCalConnected, setAppleCalConnected] = useState(false)
+
   // Display preferences
   const [hideCalories, setHideCalories] = useState(false)
 
@@ -126,8 +135,10 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     load()
-    const sub = Linking.addEventListener('url', handleStravaDeepLink)
-    return () => sub.remove()
+    isAppleCalConnected().then(setAppleCalConnected)
+    const stravaListener = Linking.addEventListener('url', handleStravaDeepLink)
+    const calListener = Linking.addEventListener('url', handleCalendarDeepLink)
+    return () => { stravaListener.remove(); calListener.remove() }
   }, [])
 
   async function load() {
@@ -154,7 +165,7 @@ export default function SettingsScreen() {
       setPeriodSeverity(profileRes.data.period_severity ?? 'minor')
       setHideCalories(profileRes.data.hide_calories ?? false)
     }
-    setZones(zonesRes.data ?? [])
+    setAllZones(zonesRes.data ?? [])
 
     // Merge Strava activity types + planner user sports for energy section
     const sportSet = new Set<string>(
@@ -233,6 +244,35 @@ export default function SettingsScreen() {
     } else if (parsed.queryParams?.error) {
       Alert.alert('Connection failed', parsed.queryParams.error as string)
     }
+  }
+
+  async function handleCalendarDeepLink(event: { url: string }) {
+    if (!event.url.startsWith('stravaeat://calendar-auth')) return
+    const parsed = Linking.parse(event.url)
+    const provider = parsed.queryParams?.provider as string | undefined
+    if (parsed.queryParams?.linked === 'true') {
+      await load()
+      Alert.alert('Connected', `${provider === 'google' ? 'Google Calendar' : 'Outlook'} linked successfully.`)
+    } else if (parsed.queryParams?.error) {
+      Alert.alert('Connection failed', parsed.queryParams.error as string)
+    }
+  }
+
+  async function disconnectCalendar(provider: 'google' | 'microsoft') {
+    Alert.alert(
+      `Disconnect ${provider === 'google' ? 'Google Calendar' : 'Outlook'}?`,
+      'Planned workouts already synced will remain in your calendar.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Disconnect', style: 'destructive', onPress: async () => {
+          setCalDisconnecting(provider)
+          const { error } = await supabase.functions.invoke('cal-disconnect', { body: { provider } })
+          setCalDisconnecting(null)
+          if (error) { Alert.alert('Error', 'Could not disconnect. Try again.'); return }
+          await load()
+        }},
+      ],
+    )
   }
 
   const handleConnectStrava = () => initiateStravaOAuth()
@@ -319,6 +359,46 @@ export default function SettingsScreen() {
       .eq('id', zone.id)
     if (error) Alert.alert('Error', error.message)
     else setEditingZoneId(null)
+  }
+
+  async function customizeSportZones(sport: string) {
+    if (!userId) return
+    setCustomizingSport(true)
+    const defaults = allZones.filter(z => (z.sport_type ?? 'default') === 'default')
+    const { data, error } = await supabase.from('heart_rate_zones').insert(
+      defaults.map(z => ({
+        user_id: userId,
+        zone_number: z.zone_number,
+        name: z.name,
+        min_bpm: z.min_bpm,
+        max_bpm: z.max_bpm,
+        met_value: z.met_value,
+        sport_type: sport,
+      })),
+    ).select()
+    setCustomizingSport(false)
+    if (error) { Alert.alert('Error', error.message); return }
+    setAllZones(prev => [...prev, ...(data ?? [])])
+  }
+
+  function resetSportZones(sport: string) {
+    Alert.alert(
+      `Reset ${sport} zones?`,
+      'Custom zones for this sport will be deleted. Default zones will be used instead.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset', style: 'destructive',
+          onPress: async () => {
+            const ids = allZones.filter(z => (z.sport_type ?? 'default') === sport).map(z => z.id)
+            const { error } = await supabase.from('heart_rate_zones').delete().in('id', ids)
+            if (error) { Alert.alert('Error', error.message); return }
+            setAllZones(prev => prev.filter(z => !ids.includes(z.id)))
+            setSelectedZoneSport('default')
+          },
+        },
+      ],
+    )
   }
 
   async function saveSportConfig(sport: string, mode: SportMode, linkedTo: string | null) {
@@ -673,6 +753,100 @@ export default function SettingsScreen() {
               </Pressable>
             </View>
 
+            <Text style={[styles.sectionHeader, { marginTop: 24 }]}>Calendars</Text>
+            <Text style={styles.sectionNote}>Planned workouts sync as all-day events.</Text>
+
+            <View style={styles.stravaRow}>
+              <View>
+                <Text style={styles.stravaLabel}>Google Calendar</Text>
+                <Text style={styles.stravaStatus}>
+                  {(savedProfile as any).google_cal_refresh_token ? 'Connected' : 'Not connected'}
+                </Text>
+              </View>
+              {(savedProfile as any).google_cal_refresh_token ? (
+                <Pressable
+                  style={[styles.stravaBtn, { backgroundColor: C.surface2 }]}
+                  onPress={() => disconnectCalendar('google')}
+                  disabled={calDisconnecting === 'google'}
+                >
+                  <Text style={[styles.stravaBtnText, { color: C.text2 }]}>
+                    {calDisconnecting === 'google' ? '…' : 'Disconnect'}
+                  </Text>
+                </Pressable>
+              ) : (
+                <Pressable style={styles.stravaBtn} onPress={async () => {
+                  const result = await initiateGoogleCalOAuth()
+                  if (result === 'linked') { await load(); Alert.alert('Connected', 'Google Calendar linked.') }
+                  else if (result !== 'cancelled') Alert.alert('Connection failed', result)
+                }}>
+                  <Text style={styles.stravaBtnText}>Connect</Text>
+                </Pressable>
+              )}
+            </View>
+
+            <View style={styles.stravaRow}>
+              <View>
+                <Text style={styles.stravaLabel}>Outlook / Microsoft</Text>
+                <Text style={styles.stravaStatus}>
+                  {(savedProfile as any).microsoft_cal_refresh_token ? 'Connected' : 'Not connected'}
+                </Text>
+              </View>
+              {(savedProfile as any).microsoft_cal_refresh_token ? (
+                <Pressable
+                  style={[styles.stravaBtn, { backgroundColor: C.surface2 }]}
+                  onPress={() => disconnectCalendar('microsoft')}
+                  disabled={calDisconnecting === 'microsoft'}
+                >
+                  <Text style={[styles.stravaBtnText, { color: C.text2 }]}>
+                    {calDisconnecting === 'microsoft' ? '…' : 'Disconnect'}
+                  </Text>
+                </Pressable>
+              ) : (
+                <Pressable style={styles.stravaBtn} onPress={async () => {
+                  const result = await initiateMicrosoftCalOAuth()
+                  if (result === 'linked') { await load(); Alert.alert('Connected', 'Outlook Calendar linked.') }
+                  else if (result === 'error') Alert.alert('Connection failed', 'Could not link Outlook Calendar.')
+                }}>
+                  <Text style={styles.stravaBtnText}>Connect</Text>
+                </Pressable>
+              )}
+            </View>
+
+            <View style={styles.stravaRow}>
+              <View>
+                <Text style={styles.stravaLabel}>Apple Calendar</Text>
+                <Text style={styles.stravaStatus}>{appleCalConnected ? 'Connected' : 'Not connected'}</Text>
+              </View>
+              {appleCalConnected ? (
+                <Pressable
+                  style={[styles.stravaBtn, { backgroundColor: C.surface2 }]}
+                  onPress={async () => {
+                    Alert.alert(
+                      'Disconnect Apple Calendar?',
+                      'Planned workouts already added will remain in your calendar.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Disconnect', style: 'destructive', onPress: async () => {
+                          await disconnectAppleCal()
+                          setAppleCalConnected(false)
+                        }},
+                      ],
+                    )
+                  }}
+                >
+                  <Text style={[styles.stravaBtnText, { color: C.text2 }]}>Disconnect</Text>
+                </Pressable>
+              ) : (
+                <Pressable style={styles.stravaBtn} onPress={async () => {
+                  const granted = await requestAppleCalPermission()
+                  if (granted) { setAppleCalConnected(true); Alert.alert('Connected', 'Apple Calendar linked.') }
+                  else Alert.alert('Permission denied', 'Allow calendar access in Settings → Privacy → Calendars.')
+                }}>
+                  <Text style={styles.stravaBtnText}>Connect</Text>
+                </Pressable>
+              )}
+            </View>
+
             {profileField('Name', 'name')}
             {profileField('Age', 'age', true)}
             {profileField('Weight (kg)', 'weight_kg', true)}
@@ -680,6 +854,21 @@ export default function SettingsScreen() {
             {profileField('Max Heart Rate (bpm)', 'max_hr', true)}
             {profileField('Resting Heart Rate (bpm)', 'resting_hr', true)}
             {profileField('FTP (watts, cycling)', 'ftp_watts', true)}
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Preferred workout time (HH:MM)</Text>
+              <TextInput
+                style={styles.input}
+                value={(editedProfile as any).preferred_workout_time ?? '07:00'}
+                keyboardType="numbers-and-punctuation"
+                placeholderTextColor={C.text3}
+                placeholder="07:00"
+                onChangeText={v =>
+                  setEditedProfile(p => ({ ...p, preferred_workout_time: v } as any))
+                }
+              />
+              <Text style={styles.prefNote}>Planned workouts are added to your calendar starting at this time.</Text>
+            </View>
 
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>Daily calorie minimum (kcal)</Text>
@@ -886,22 +1075,71 @@ export default function SettingsScreen() {
         )}
 
         {/* ── HR Zones ─────────────────────────────────────── */}
-        {activeTab === 'zones' && (
+        {activeTab === 'zones' && (() => {
+          const displayedZones = allZones
+            .filter(z => (z.sport_type ?? 'default') === selectedZoneSport)
+            .sort((a, b) => a.zone_number - b.zone_number)
+          return (
           <>
             <Text style={styles.sectionHeader}>Zones</Text>
-            <Text style={styles.sectionNote}>Changes apply to future syncs only.</Text>
+            <Text style={styles.sectionNote}>
+              Changes apply to future syncs only. Zone 1 catches all low HR; Zone 5 catches all high HR.
+            </Text>
 
-            {zones.map(zone => (
-              <ZoneCard
-                key={zone.id}
-                zone={zone}
-                isEditing={editingZoneId === zone.id}
-                onEdit={() => setEditingZoneId(zone.id)}
-                onSave={saveZone}
-                onCancel={() => setEditingZoneId(null)}
-                onChange={updated => setZones(prev => prev.map(z => z.id === updated.id ? updated : z))}
-              />
-            ))}
+            {/* Sport selector */}
+            <ScrollView
+              horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.zoneSportRow}
+            >
+              {(['default', ...activitySports]).map(sport => (
+                <Pressable
+                  key={sport}
+                  style={[styles.zoneSportPill, selectedZoneSport === sport && styles.zoneSportPillActive]}
+                  onPress={() => { setSelectedZoneSport(sport); setEditingZoneId(null) }}
+                >
+                  <Text style={[styles.zoneSportPillText, selectedZoneSport === sport && styles.zoneSportPillTextActive]}>
+                    {sport === 'default' ? 'Default' : sport}
+                    {sport !== 'default' && allZones.some(z => (z.sport_type ?? 'default') === sport) && ' ✦'}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            {displayedZones.length > 0 ? (
+              <>
+                {selectedZoneSport !== 'default' && (
+                  <Pressable style={styles.resetZonesBtn} onPress={() => resetSportZones(selectedZoneSport)}>
+                    <Text style={styles.resetZonesBtnText}>Reset {selectedZoneSport} to default zones</Text>
+                  </Pressable>
+                )}
+                {displayedZones.map(zone => (
+                  <ZoneCard
+                    key={zone.id}
+                    zone={zone}
+                    isEditing={editingZoneId === zone.id}
+                    onEdit={() => setEditingZoneId(zone.id)}
+                    onSave={saveZone}
+                    onCancel={() => setEditingZoneId(null)}
+                    onChange={updated => setAllZones(prev => prev.map(z => z.id === updated.id ? updated : z))}
+                  />
+                ))}
+              </>
+            ) : (
+              <View style={styles.noZonesBox}>
+                <Text style={styles.sectionNote}>
+                  No custom zones for {selectedZoneSport}. Default zones are used.
+                </Text>
+                <Pressable
+                  style={[styles.customizeZonesBtn, customizingSport && { opacity: 0.5 }]}
+                  onPress={() => customizeSportZones(selectedZoneSport)}
+                  disabled={customizingSport}
+                >
+                  <Text style={styles.customizeZonesBtnText}>
+                    {customizingSport ? 'Creating…' : `Customize zones for ${selectedZoneSport}`}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
 
             {/* Energy method per sport */}
             {activitySports.length > 0 && (
@@ -1024,7 +1262,8 @@ export default function SettingsScreen() {
               </Pressable>
             </View>
           </>
-        )}
+          )
+        })()}
 
         {/* ── Meal Plan ────────────────────────────────────── */}
         {activeTab === 'meals' && (
@@ -1866,6 +2105,22 @@ const styles = StyleSheet.create({
   signOutText: { color: C.text3, fontSize: 14 },
 
   // Zone cards
+  zoneSportRow: { paddingHorizontal: 0, paddingVertical: 10, gap: 8, flexDirection: 'row' },
+  zoneSportPill: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: C.surface2, borderWidth: 1, borderColor: C.border,
+  },
+  zoneSportPillActive: { backgroundColor: C.accent, borderColor: C.accent },
+  zoneSportPillText: { fontSize: 13, fontWeight: '600', color: C.text2 },
+  zoneSportPillTextActive: { color: C.white },
+  noZonesBox: { paddingVertical: 16, gap: 12, alignItems: 'flex-start' },
+  customizeZonesBtn: {
+    backgroundColor: C.accentBg, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9,
+  },
+  customizeZonesBtnText: { fontSize: 14, fontWeight: '700', color: C.accent },
+  resetZonesBtn: { marginBottom: 8, alignSelf: 'flex-start' },
+  resetZonesBtnText: { fontSize: 13, color: C.danger, fontWeight: '600' },
+
   zoneCard: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 14, marginBottom: 8, borderRadius: 10, backgroundColor: C.surface,

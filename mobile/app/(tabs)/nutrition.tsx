@@ -133,7 +133,7 @@ function getSportColor(type: string): string {
   if (/run|jog/i.test(type)) return C.run
   if (/walk/i.test(type)) return C.walk
   if (/ride|bike|cycling|virtual/i.test(type)) return C.ride
-  return C.walk
+  return C.sport
 }
 
 function getSportIcon(type: string): string {
@@ -230,6 +230,7 @@ export default function NutritionScreen() {
   const [nutritionLoading, setNutritionLoading] = useState(true)
   const [foodName, setFoodName] = useState('')
   const [foodKcal, setFoodKcal] = useState('')
+  const [foodServings, setFoodServings] = useState('1')
   const [foodProtein, setFoodProtein] = useState('')
   const [foodFat, setFoodFat] = useState('')
   const [foodCarb, setFoodCarb] = useState('')
@@ -271,6 +272,8 @@ export default function NutritionScreen() {
   const [profileAge, setProfileAge] = useState<number | null>(null)
   const [profileSex, setProfileSex] = useState<'male' | 'female' | 'other' | null>(null)
   const [activityLevel, setActivityLevel] = useState<ActivityLevel>('sedentary')
+  const [activityFromOnboarding, setActivityFromOnboarding] = useState(false)
+  const [hasCustomBurnSchema, setHasCustomBurnSchema] = useState(false)
   const [showActivityQuiz, setShowActivityQuiz] = useState(false)
   const [showRedsWarning, setShowRedsWarning] = useState(false)
   const [estimateMethod, setEstimateMethod] = useState<'mifflin' | 'katch'>('mifflin')
@@ -367,8 +370,8 @@ export default function NutritionScreen() {
 
   async function loadNutrition(uid: string) {
     setNutritionLoading(true)
-    const [profileRes, actsRes, plannedRes, logsRes, customFoodsRes] = await Promise.all([
-      supabase.from('users').select('daily_kcal_target, weight_kg, height_cm, age, sex, goal_protein_g, goal_fat_g, goal_carb_g').eq('id', uid).single(),
+    const [profileRes, actsRes, plannedRes, logsRes, customFoodsRes, burnSchemaRes] = await Promise.all([
+      supabase.from('users').select('daily_kcal_target, weight_kg, height_cm, age, sex, goal_protein_g, goal_fat_g, goal_carb_g, onboarding_data').eq('id', uid).single(),
       supabase.from('activities').select('id, name, type, total_kcal')
         .eq('user_id', uid).gte('date', todayStr).not('total_kcal', 'is', null),
       supabase.from('planned_workouts').select('target_kcal')
@@ -376,6 +379,7 @@ export default function NutritionScreen() {
       supabase.from('food_logs').select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at')
         .eq('user_id', uid).eq('date', todayStr).order('logged_at'),
       supabase.from('custom_foods').select('id, name, kcal, protein_g, fat_g, carb_g, category').eq('user_id', uid).order('name'),
+      supabase.from('sport_energy_settings').select('method').eq('user_id', uid).eq('method', 'custom').limit(1),
     ])
     setBaseline(profileRes.data?.daily_kcal_target ?? null)
     setGoalProtein(profileRes.data?.goal_protein_g ?? null)
@@ -390,6 +394,18 @@ export default function NutritionScreen() {
     setPlannedKcal(Math.round((plannedRes.data ?? []).reduce((s: number, p: any) => s + p.target_kcal, 0)))
     setLogs(logsRes.data ?? [])
     setCustomFoods(customFoodsRes.data ?? [])
+    setHasCustomBurnSchema((burnSchemaRes.data?.length ?? 0) > 0)
+
+    // Pre-populate activity level from onboarding training_frequency
+    const freq = (profileRes.data?.onboarding_data as any)?.training_frequency
+    const mapped: ActivityLevel =
+      freq === '1_2' ? 'light' :
+      freq === '3_4' ? 'moderate' :
+      freq === '5_6' ? 'active' :
+      freq === '7+'  ? 'very_active' : 'sedentary'
+    setActivityLevel(mapped)
+    setActivityFromOnboarding(!!freq)
+
     setNutritionLoading(false)
   }
 
@@ -446,24 +462,30 @@ export default function NutritionScreen() {
   }
 
   async function addEntry() {
-    const kcal = parseInt(foodKcal)
+    const kcalPer = parseInt(foodKcal)
+    const servings = Math.max(1, parseFloat(foodServings) || 1)
     if (!foodName.trim()) { Alert.alert('Missing name', 'Enter a food name.'); return }
-    if (isNaN(kcal) || kcal <= 0) { Alert.alert('Invalid kcal', 'Enter a positive calorie amount.'); return }
-    if (kcal > 5000) { Alert.alert('Invalid kcal', 'Enter a value of 5000 kcal or less.'); return }
+    if (isNaN(kcalPer) || kcalPer <= 0) { Alert.alert('Invalid kcal', 'Enter a positive calorie amount.'); return }
+    if (kcalPer * servings > 10000) { Alert.alert('Invalid kcal', 'Total calories exceed 10 000 kcal.'); return }
     if (!userId) return
     setAdding(true)
-    const protein = foodProtein ? Math.min(Math.max(parseFloat(foodProtein), 0), 500) : null
-    const fat = foodFat ? Math.min(Math.max(parseFloat(foodFat), 0), 500) : null
-    const carb = foodCarb ? Math.min(Math.max(parseFloat(foodCarb), 0), 500) : null
+    const kcal = Math.round(kcalPer * servings)
+    const rawProtein = foodProtein ? Math.min(Math.max(parseFloat(foodProtein), 0), 500) : null
+    const rawFat     = foodFat     ? Math.min(Math.max(parseFloat(foodFat), 0), 500) : null
+    const rawCarb    = foodCarb    ? Math.min(Math.max(parseFloat(foodCarb), 0), 500) : null
+    const protein = rawProtein != null ? Math.round(rawProtein * servings * 10) / 10 : null
+    const fat     = rawFat     != null ? Math.round(rawFat     * servings * 10) / 10 : null
+    const carb    = rawCarb    != null ? Math.round(rawCarb    * servings * 10) / 10 : null
+    const name = servings !== 1 ? `${servings % 1 === 0 ? servings : servings.toFixed(1)}× ${foodName.trim()}` : foodName.trim()
     const { data: inserted, error } = await supabase.from('food_logs').insert({
-      user_id: userId, date: todayStr, name: foodName.trim(), kcal,
+      user_id: userId, date: todayStr, name, kcal,
       protein_g: isNaN(protein as number) ? null : protein,
       fat_g: isNaN(fat as number) ? null : fat,
       carb_g: isNaN(carb as number) ? null : carb,
     }).select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').single()
     setAdding(false)
     if (error) { Alert.alert('Error', error.message); return }
-    setFoodName(''); setFoodKcal(''); setFoodProtein(''); setFoodFat(''); setFoodCarb('')
+    setFoodName(''); setFoodKcal(''); setFoodServings('1'); setFoodProtein(''); setFoodFat(''); setFoodCarb('')
     if (inserted) setLogs(prev => [...prev, inserted as FoodLog])
   }
 
@@ -786,10 +808,10 @@ export default function NutritionScreen() {
               <View style={st.cardLabelRow}>
                 <Text style={st.cardLabel}>Log food</Text>
                 <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                  {(foodName || foodKcal || foodProtein || foodFat || foodCarb) ? (
+                  {(foodName || foodKcal || foodServings !== '1' || foodProtein || foodFat || foodCarb) ? (
                     <Pressable
                       hitSlop={8}
-                      onPress={() => { setFoodName(''); setFoodKcal(''); setFoodProtein(''); setFoodFat(''); setFoodCarb('') }}
+                      onPress={() => { setFoodName(''); setFoodKcal(''); setFoodServings('1'); setFoodProtein(''); setFoodFat(''); setFoodCarb('') }}
                       style={st.clearFormBtn}
                     >
                       <Ionicons name="close-circle" size={13} color={C.text3} />
@@ -815,6 +837,18 @@ export default function NutritionScreen() {
                 returnKeyType="next"
               />
               <View style={st.addRow}>
+                <View style={st.servingsWrap}>
+                  <TextInput
+                    style={[st.input, st.servingsInput]}
+                    value={foodServings}
+                    onChangeText={setFoodServings}
+                    placeholder="1"
+                    placeholderTextColor={C.text3}
+                    keyboardType="decimal-pad"
+                    selectTextOnFocus
+                  />
+                  <Text style={st.servingsLabel}>×</Text>
+                </View>
                 <View style={st.macroInputWrap}>
                   <TextInput
                     style={[st.input, st.macroInput]}
@@ -964,23 +998,41 @@ export default function NutritionScreen() {
               {!nutritionLoading && logs.length === 0 && (
                 <Text style={st.emptyNote}>No food logged yet. Add your first entry above.</Text>
               )}
-              {logs.map((log, i) => (
-                <View key={log.id} style={[st.logRow, i < logs.length - 1 && st.logRowBorder]}>
-                  <View style={st.logLeft}>
-                    <Text style={st.logName} numberOfLines={1}>{log.name}</Text>
-                    <Text style={st.logMeta}>
-                      {formatTime(log.logged_at)}
-                      {log.protein_g != null ? ` · P ${log.protein_g}g` : ''}
-                      {log.fat_g != null ? ` · F ${log.fat_g}g` : ''}
-                      {log.carb_g != null ? ` · C ${log.carb_g}g` : ''}
-                    </Text>
+              {(() => {
+                if (logs.length === 0) return null
+                const renderLogRow = (log: FoodLog, i: number, arr: FoodLog[]) => (
+                  <View key={log.id} style={[st.logRow, i < arr.length - 1 && st.logRowBorder]}>
+                    <View style={st.logLeft}>
+                      <Text style={st.logName} numberOfLines={1}>{log.name}</Text>
+                      <Text style={st.logMeta}>
+                        {formatTime(log.logged_at)}
+                        {log.protein_g != null ? ` · P ${log.protein_g}g` : ''}
+                        {log.fat_g != null ? ` · F ${log.fat_g}g` : ''}
+                        {log.carb_g != null ? ` · C ${log.carb_g}g` : ''}
+                      </Text>
+                    </View>
+                    <Text style={st.logKcal}>{log.kcal} kcal</Text>
+                    <Pressable onPress={() => deleteEntry(log.id)} hitSlop={10} style={st.deleteBtn}>
+                      <Ionicons name="trash-outline" size={16} color={C.text3} />
+                    </Pressable>
                   </View>
-                  <Text style={st.logKcal}>{log.kcal} kcal</Text>
-                  <Pressable onPress={() => deleteEntry(log.id)} hitSlop={10} style={st.deleteBtn}>
-                    <Ionicons name="trash-outline" size={16} color={C.text3} />
-                  </Pressable>
-                </View>
-              ))}
+                )
+                if (meals.length === 0) return logs.map((log, i) => renderLogRow(log, i, logs))
+                const mealIndexSet = new Set(meals.map(m => m.meal_index))
+                const groups: { label: string; items: FoodLog[] }[] = []
+                for (const meal of meals) {
+                  const items = logs.filter(l => l.meal_index === meal.meal_index)
+                  if (items.length > 0) groups.push({ label: meal.name, items })
+                }
+                const extra = logs.filter(l => l.meal_index === null || !mealIndexSet.has(l.meal_index))
+                if (extra.length > 0) groups.push({ label: 'Extra', items: extra })
+                return groups.map((group, gi) => (
+                  <View key={group.label} style={gi > 0 ? st.logGroupSection : undefined}>
+                    <Text style={st.logGroupLabel}>{group.label}</Text>
+                    {group.items.map((log, i) => renderLogRow(log, i, group.items))}
+                  </View>
+                ))
+              })()}
               {logs.length > 0 && (() => {
                 const totalP = logs.reduce((s, l) => s + (l.protein_g ?? 0), 0)
                 const totalF = logs.reduce((s, l) => s + (l.fat_g ?? 0), 0)
@@ -1177,6 +1229,32 @@ export default function NutritionScreen() {
                 </Text>
               </View>
 
+              {/* Activity level selector */}
+              <View style={st.calcActivityHeader}>
+                <Text style={st.calcActivityLabel}>Activity level</Text>
+                <Pressable onPress={() => setShowActivityQuiz(true)} hitSlop={8}>
+                  <Text style={st.helpBtnText}>Not sure?</Text>
+                </Pressable>
+              </View>
+              {activityFromOnboarding && (
+                <Text style={st.onboardingLevelNote}>Pre-filled from your onboarding answers — adjust if needed.</Text>
+              )}
+              <View style={st.activityChipsRow}>
+                {ACTIVITY_LEVELS.map(level => {
+                  const sel = activityLevel === level.key
+                  return (
+                    <Pressable
+                      key={level.key}
+                      style={[st.activityChip, sel && st.activityChipActive]}
+                      onPress={() => { setActivityLevel(level.key); setActivityFromOnboarding(false) }}
+                    >
+                      <Text style={[st.activityChipLabel, sel && st.activityChipLabelActive]}>{level.label}</Text>
+                      <Text style={st.activityChipDetail}>{level.detail}</Text>
+                    </Pressable>
+                  )
+                })}
+              </View>
+
               {/* Katch-McArdle: fat % input */}
               {estimateMethod === 'katch' && (
                 <>
@@ -1249,7 +1327,7 @@ export default function NutritionScreen() {
                       <Text style={st.calcBreakdownValue}>{result.bmr.toLocaleString()} kcal</Text>
                     </View>
                     <View style={st.calcBreakdownRow}>
-                      <Text style={st.calcBreakdownLabel}>Sedentary baseline multiplier</Text>
+                      <Text style={st.calcBreakdownLabel}>{selectedLevel.label} multiplier</Text>
                       <Text style={st.calcBreakdownValue}>× {selectedLevel.factor}</Text>
                     </View>
                     <View style={[st.calcBreakdownRow, st.calcBreakdownTotal]}>
@@ -1257,6 +1335,13 @@ export default function NutritionScreen() {
                       <Text style={st.calcTotalValue}>{result.tdee.toLocaleString()} kcal</Text>
                     </View>
                   </View>
+
+                  {hasCustomBurnSchema && (
+                    <View style={st.customSchemaNote}>
+                      <Ionicons name="checkmark-circle-outline" size={13} color={C.accent} />
+                      <Text style={st.customSchemaNoteText}>You have a custom burn schema — your workout calories are tracked precisely. This baseline covers rest-day needs only; workouts are added on top.</Text>
+                    </View>
+                  )}
 
                   <Pressable
                     style={st.useTargetBtn}
@@ -2316,6 +2401,8 @@ const st = StyleSheet.create({
   quickAddRowName: { fontSize: 13, color: C.text1, flex: 1 },
   quickAddRowKcal: { fontSize: 12, color: C.text3, fontWeight: '600', marginLeft: 8 },
   emptyNote: { fontSize: 14, color: C.text3, textAlign: 'center', paddingVertical: 16, fontStyle: 'italic' },
+  logGroupLabel: { fontSize: 11, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2, marginTop: 2 },
+  logGroupSection: { marginTop: 10, borderTopWidth: 1, borderTopColor: C.divider, paddingTop: 10 },
   logRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10 },
   logRowBorder: { borderBottomWidth: 1, borderBottomColor: C.divider },
   logLeft: { flex: 1 },
@@ -2449,6 +2536,10 @@ const st = StyleSheet.create({
   },
   infoPopupTitle: { fontSize: 13, fontWeight: '800', color: C.text1, marginBottom: 4 },
   infoPopupText: { fontSize: 12, color: C.text2, lineHeight: 18 },
+  onboardingLevelNote: { fontSize: 11, color: C.accent, fontStyle: 'italic', marginBottom: 8, marginTop: -4 },
+  activityChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  customSchemaNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: C.accent + '12', borderRadius: 8, padding: 10, marginBottom: 10 },
+  customSchemaNoteText: { flex: 1, fontSize: 12, color: C.accent, lineHeight: 17 },
   activityChip: {
     paddingHorizontal: 11, paddingVertical: 8, borderRadius: 10,
     borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface,
@@ -2472,6 +2563,9 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
   },
   useTargetBtnText: { color: C.white, fontWeight: '800', fontSize: 14 },
+  servingsWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  servingsInput: { width: 44, textAlign: 'center' },
+  servingsLabel: { fontSize: 16, fontWeight: '700', color: C.text2 },
   clearFormBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.border },
   clearFormBtnText: { fontSize: 12, color: C.text3, fontWeight: '600' },
 })

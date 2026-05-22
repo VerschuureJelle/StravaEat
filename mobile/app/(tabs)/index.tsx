@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import { supabase } from '../../lib/supabase'
 import { notifyWorkoutSynced } from '../../lib/notifications'
 import { W as C } from '../../lib/themeWarm'
@@ -39,7 +40,15 @@ function getSportColor(type: string): string {
   if (/run|jog/i.test(type)) return C.run
   if (/walk/i.test(type)) return C.walk
   if (/ride|bike|cycling|virtual/i.test(type)) return C.ride
-  return C.walk
+  return C.sport
+}
+
+function getSportGradient(type: string): [string, string] {
+  if (/swim/i.test(type))                       return ['#7DD3F8', '#0284C7']
+  if (/run|jog/i.test(type))                    return ['#FCA5A5', '#DC2626']
+  if (/walk/i.test(type))                        return ['#FED7AA', '#EA580C']
+  if (/ride|bike|cycling|virtual/i.test(type))  return ['#86EFAC', '#16A34A']
+  return ['#CBD5E1', '#64748B']
 }
 
 function getSportIcon(type: string): string {
@@ -160,17 +169,20 @@ function SummaryCard({ activities }: { activities: Activity[] }) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={sumSt.row}>
       {sortSportEntries(Object.entries(byType)).map(([type, s]) => {
-        const color = getSportColor(type)
         const icon = getSportIcon(type)
+        const gradient = getSportGradient(type)
         return (
-          <View key={type} style={[sumSt.card, { borderTopColor: color }]}>
-            <View style={sumSt.typeRow}>
-              <MaterialCommunityIcons name={icon as any} size={13} color={color} style={{ marginRight: 4 }} />
-              <Text style={[sumSt.type, { color }]}>{type}</Text>
+          <View key={type} style={sumSt.card}>
+            <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={sumSt.cardBar} />
+            <View style={sumSt.cardBody}>
+              <View style={sumSt.typeRow}>
+                <MaterialCommunityIcons name={icon as any} size={13} color={C.text3} style={{ marginRight: 4 }} />
+                <Text style={sumSt.type}>{type}</Text>
+              </View>
+              <Text style={sumSt.line}>{formatDuration(s.sec)}</Text>
+              {s.distM > 0 && <Text style={sumSt.line}>{formatDist(type, s.distM)}</Text>}
+              {s.elevM > 0 && !/swim/i.test(type) && <Text style={sumSt.line}>+{Math.round(s.elevM)} m</Text>}
             </View>
-            <Text style={sumSt.line}>{formatDuration(s.sec)}</Text>
-            {s.distM > 0 && <Text style={sumSt.line}>{formatDist(type, s.distM)}</Text>}
-            {s.elevM > 0 && !/swim/i.test(type) && <Text style={sumSt.line}>+{Math.round(s.elevM)} m</Text>}
           </View>
         )
       })}
@@ -179,9 +191,11 @@ function SummaryCard({ activities }: { activities: Activity[] }) {
 }
 const sumSt = StyleSheet.create({
   row: { paddingHorizontal: 16, paddingVertical: 10, gap: 10 },
-  card: { backgroundColor: C.surface, borderRadius: 10, padding: 12, minWidth: 100, borderTopWidth: 3, borderWidth: 1, borderColor: C.border },
+  card: { backgroundColor: C.surface, borderRadius: 10, minWidth: 100, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
+  cardBar: { height: 4 },
+  cardBody: { padding: 12 },
   typeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  type: { fontSize: 12, fontWeight: '700' },
+  type: { fontSize: 12, fontWeight: '700', color: C.text1 },
   line: { fontSize: 12, color: C.text2, marginTop: 1 },
 })
 
@@ -289,6 +303,7 @@ export default function ActivitiesScreen() {
   const [customEndText, setCustomEndText] = useState('')
   const [customStart, setCustomStart] = useState<string | null>(null)
   const [customEnd, setCustomEnd] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const isTotal = period === 'total'
   const isFixed = !isTotal && period !== 'custom'
@@ -367,6 +382,26 @@ export default function ActivitiesScreen() {
       Alert.alert('Sync failed', err.message ?? 'Something went wrong')
     } finally { setSyncing(false) }
   }, [period, anchor, monthsBack, customStart, customEnd, fetchActivities])
+
+  function deleteActivity(id: string) {
+    Alert.alert(
+      'Remove activity?',
+      'It will be removed from StravaEat. It will reappear on your next Strava sync.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove', style: 'destructive',
+          onPress: async () => {
+            setDeletingId(id)
+            const { error } = await supabase.from('activities').delete().eq('id', id)
+            setDeletingId(null)
+            if (error) { Alert.alert('Error', error.message); return }
+            setActivities(prev => prev.filter(a => a.id !== id))
+          },
+        },
+      ],
+    )
+  }
 
   function selectPeriod(p: Period) {
     setPeriod(p)
@@ -528,14 +563,15 @@ export default function ActivitiesScreen() {
             return <View style={st.dayHeader}><Text style={st.dayHeaderText}>{item.label}</Text></View>
           }
           const a = item.act
-          const color = getSportColor(a.type)
           const icon = getSportIcon(a.type)
+          const gradient = getSportGradient(a.type)
           return (
-            <Pressable style={[st.card, { borderLeftColor: color }]} onPress={() => router.push(`/activity/${a.id}`)}>
+            <Pressable style={st.card} onPress={() => router.push(`/activity/${a.id}`)}>
+              <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={st.cardBar} />
               <View style={st.cardLeft}>
                 <Text style={st.actName} numberOfLines={1}>{a.name}</Text>
                 <View style={st.actMetaRow}>
-                  <MaterialCommunityIcons name={icon as any} size={12} color={color} style={{ marginRight: 4 }} />
+                  <MaterialCommunityIcons name={icon as any} size={12} color={C.text3} style={{ marginRight: 4 }} />
                   <Text style={st.actMeta}>
                     {normalizeType(a.type)}{a.distance_m ? ` · ${formatDist(a.type, a.distance_m)}` : ''} · {formatDuration(a.duration_sec)}
                   </Text>
@@ -545,6 +581,13 @@ export default function ActivitiesScreen() {
                 {a.total_kcal != null
                   ? <><Text style={st.kcal}>{Math.round(a.total_kcal)}</Text><Text style={st.kcalLbl}>kcal</Text></>
                   : <Text style={st.noData}>—</Text>}
+                <Pressable
+                  style={st.deleteBtn}
+                  onPress={e => { e.stopPropagation?.(); deleteActivity(a.id) }}
+                  hitSlop={8}
+                >
+                  <Ionicons name="trash-outline" size={14} color={C.text4} />
+                </Pressable>
               </View>
             </Pressable>
           )
@@ -642,16 +685,19 @@ const st = StyleSheet.create({
   dayHeaderText: { fontSize: 12, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.8 },
 
   card: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 14, marginHorizontal: 16, marginBottom: 8,
+    flexDirection: 'row', alignItems: 'stretch',
+    marginHorizontal: 16, marginBottom: 8,
     borderRadius: 12, backgroundColor: C.surface,
-    borderLeftWidth: 4,
+    overflow: 'hidden',
+    borderWidth: 1, borderColor: C.border,
   },
-  cardLeft: { flex: 1, marginRight: 12 },
+  cardBar: { width: 5 },
+  cardLeft: { flex: 1, marginRight: 12, paddingVertical: 14, paddingLeft: 12 },
   actName: { fontSize: 15, fontWeight: '700', marginBottom: 4, color: C.text1 },
   actMetaRow: { flexDirection: 'row', alignItems: 'center' },
   actMeta: { fontSize: 13, color: C.text2 },
-  cardRight: { alignItems: 'flex-end' },
+  cardRight: { alignItems: 'flex-end', gap: 6, paddingVertical: 14, paddingRight: 14 },
+  deleteBtn: { padding: 2 },
   kcal: { fontSize: 20, fontWeight: '800', color: C.accent },
   kcalLbl: { fontSize: 11, color: C.accent, fontWeight: '600' },
   noData: { fontSize: 20, color: C.text4, fontWeight: '300' },

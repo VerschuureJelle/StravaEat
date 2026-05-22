@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView, Modal,
   StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
+import { addWorkoutToAppleCal, removeWorkoutFromAppleCal } from '../../lib/appleCalAuth'
 import { W as C } from '../../lib/themeWarm'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import { getZoneAdjustment, SEVERITY_LABELS } from '../../lib/periodConfig'
@@ -33,7 +34,7 @@ function getSportColor(type: string): string {
   if (/run|jog/i.test(type)) return C.run
   if (/walk/i.test(type)) return C.walk
   if (/ride|bike|cycling|virtual/i.test(type)) return C.ride
-  return C.walk
+  return C.sport
 }
 
 function getSportIcon(type: string): string {
@@ -191,6 +192,8 @@ export default function PlannerScreen() {
   const [userId, setUserId] = useState<string | null>(null)
   const [weightKg, setWeightKg] = useState<number | null>(null)
   const [ftpWatts, setFtpWatts] = useState<number | null>(null)
+  const [preferredWorkoutTime, setPreferredWorkoutTime] = useState<string>('07:00')
+  const onboardingApplied = useRef(false)
 
   const [sports, setSports] = useState<string[]>([])
   const [selectedSport, setSelectedSport] = useState<string>('')
@@ -263,7 +266,7 @@ export default function PlannerScreen() {
     const todayStr = localDate()
 
     const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes, userSportsRes, programRes] = await Promise.all([
-      supabase.from('users').select('weight_kg, ftp_watts, on_period, period_severity').eq('id', user.id).single(),
+      supabase.from('users').select('weight_kg, ftp_watts, on_period, period_severity, onboarding_data, preferred_workout_time').eq('id', user.id).single(),
       supabase.from('activities').select('type, distance_m, duration_sec').eq('user_id', user.id),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
@@ -275,6 +278,7 @@ export default function PlannerScreen() {
 
     setWeightKg(profileRes.data?.weight_kg ?? null)
     setFtpWatts(profileRes.data?.ftp_watts ?? null)
+    setPreferredWorkoutTime((profileRes.data as any)?.preferred_workout_time ?? '07:00')
     setOnPeriod(profileRes.data?.on_period ?? false)
     setPeriodSeverity(profileRes.data?.period_severity ?? 'minor')
     setZones(zonesRes.data ?? [])
@@ -294,6 +298,32 @@ export default function PlannerScreen() {
     }
     setSports(sportList)
     setSelectedSport(prev => (sportList.includes(prev) ? prev : (sportList[0] ?? '')))
+
+    // Apply onboarding Q1 preferences once on first load
+    if (!onboardingApplied.current) {
+      onboardingApplied.current = true
+      const od = (profileRes.data as any)?.onboarding_data ?? {}
+      const goalToProgramType: Record<string, ProgramType> = {
+        running_5k: '5k', running_10k: '10k', running_half: 'half_marathon',
+        running_marathon: 'marathon', cycling: 'cycling', swimming: 'swim',
+        triathlon: 'marathon', strength: 'strength',
+      }
+      const goalToSport: Record<string, string> = {
+        running_5k: 'Run', running_10k: 'Run', running_half: 'Run',
+        running_marathon: 'Run', cycling: 'Ride', swimming: 'Swim',
+        triathlon: 'Run', strength: 'Strength Training', fitness: 'Run',
+      }
+      const goal: string = od.training_goal ?? ''
+      if (goal && goalToProgramType[goal]) {
+        setProgramType(goalToProgramType[goal])
+      }
+      if (goal && goalToSport[goal]) {
+        const mappedSport = goalToSport[goal]
+        const match = sportList.find(s => s.toLowerCase() === mappedSport.toLowerCase())
+          ?? sportList.find(s => s.toLowerCase().startsWith(mappedSport.toLowerCase().split(' ')[0]))
+        if (match) setSelectedSport(match)
+      }
+    }
 
     const speedMap: Record<string, number> = {}
     for (const sport of sportList) {
@@ -344,6 +374,8 @@ export default function PlannerScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         setDeletingPlanId(id)
+        supabase.functions.invoke('cal-push-workout', { body: { workout_id: id, action: 'delete' } }).catch(() => {})
+        removeWorkoutFromAppleCal(id).catch(() => {})
         await supabase.from('planned_workouts').delete().eq('id', id)
         setTodayPlans(prev => prev.filter(p => p.id !== id))
         setDeletingPlanId(null)
@@ -427,16 +459,20 @@ export default function PlannerScreen() {
       .map(s => `${s.label} (~${s.kcal} kcal, ${formatDuration(s.durationMin)})`)
       .join('\n')
     setSaving(true)
-    const { error } = await supabase.from('planned_workouts').insert({
+    const { data: newWorkout, error } = await supabase.from('planned_workouts').insert({
       user_id: userId,
       sport_type: selectedSport,
       target_kcal: segResult.totalKcal,
       target_duration_min: segResult.totalDurationMin,
       planned_for: localDate(),
       workout_description: description,
-    })
+    }).select('id').single()
     setSaving(false)
     if (error) { Alert.alert('Error', error.message); return }
+    if (newWorkout?.id) {
+      supabase.functions.invoke('cal-push-workout', { body: { workout_id: newWorkout.id, action: 'create' } }).catch(() => {})
+      addWorkoutToAppleCal(newWorkout.id, `${selectedSport} workout`, localDate(), segResult.totalDurationMin, preferredWorkoutTime).catch(() => {})
+    }
     Alert.alert('Planned!', `${selectedSport} workout (${segResult.totalKcal} kcal) added to today.`)
     load()
   }
@@ -476,15 +512,19 @@ export default function PlannerScreen() {
     const kcal = aiResult.estimated_kcal
     if (!kcal) { Alert.alert('No estimate', 'The AI response did not include a kcal estimate.'); return }
     setSaving(true)
-    const { error } = await supabase.from('planned_workouts').insert({
+    const { data: newWorkout, error } = await supabase.from('planned_workouts').insert({
       user_id: userId,
       sport_type: selectedSport || 'General',
       target_kcal: kcal,
       planned_for: localDate(),
       workout_description: aiResult.plan,
-    })
+    }).select('id').single()
     setSaving(false)
     if (error) { Alert.alert('Error', error.message); return }
+    if (newWorkout?.id) {
+      supabase.functions.invoke('cal-push-workout', { body: { workout_id: newWorkout.id, action: 'create' } }).catch(() => {})
+      addWorkoutToAppleCal(newWorkout.id, `${selectedSport || 'Workout'} — AI Plan`, localDate(), undefined, preferredWorkoutTime).catch(() => {})
+    }
     Alert.alert('Planned!', "AI workout added to today's plan.")
     load()
   }

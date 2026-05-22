@@ -27,3 +27,36 @@ verify_jwt = true
 
 [functions.sync-recent]
 verify_jwt = true
+
+[functions.google-cal-callback]
+verify_jwt = false
+
+[functions.microsoft-cal-callback]
+verify_jwt = false
+
+[functions.cal-webhook-receiver]
+verify_jwt = false
+
+[functions.cal-push-workout]
+verify_jwt = true
+
+[functions.cal-create-event]
+verify_jwt = true
+
+[functions.cal-delete-event]
+verify_jwt = true
+
+[functions.cal-update-event]
+verify_jwt = true
+
+[functions.hr-stream]
+verify_jwt = true
+
+[functions.cal-disconnect]
+verify_jwt = true
+
+[functions.cal-renew-subscriptions]
+verify_jwt = false
+
+[functions.cal-get-events]
+verify_jwt = true
