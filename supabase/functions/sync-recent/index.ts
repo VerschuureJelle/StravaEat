@@ -53,11 +53,21 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authError } = await userClient.auth.getUser()
   if (authError || !user) return jsonErr('Unauthorized', 401)
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('strava_access_token, strava_refresh_token, strava_token_expires_at, weight_kg')
-    .eq('id', user.id)
-    .single()
+  // Atomically claim a sync slot. claim_strava_sync() is an atomic
+  // UPDATE that only returns the profile if no other sync has run in
+  // the last 120 seconds — protects the per-app Strava quota against
+  // concurrent or rapid-fire invocations from buggy or stale clients.
+  const { data: claimedRows } = await supabase.rpc('claim_strava_sync', {
+    p_user_id: user.id,
+    p_cooldown_sec: 120,
+  })
+
+  if (!claimedRows || claimedRows.length === 0) {
+    return new Response(JSON.stringify({ synced: 0, cached: true }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  const profile = claimedRows[0]
 
   if (!profile?.strava_access_token) {
     return new Response(JSON.stringify({ error: 'strava_not_connected' }), {
