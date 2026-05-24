@@ -128,11 +128,25 @@ Deno.serve(async (req) => {
     supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
     supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
     supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
-    supabase.from('activities').select('strava_activity_id').eq('user_id', user.id).in('strava_activity_id', stravaIds),
+    supabase.from('activities').select('strava_activity_id, total_kcal, synced_at').eq('user_id', user.id).in('strava_activity_id', stravaIds),
   ])
 
-  // Activities already in the DB don't need stream/laps re-fetched
-  const alreadySynced = new Set((existingRows ?? []).map((r: any) => r.strava_activity_id))
+  // Activities count as "already synced" only if they have kcal computed,
+  // OR they're older than 3 days (give up on backfilling — likely no HR).
+  // Reason: Strava's streams endpoint can return empty for a few minutes
+  // after upload, leaving us with a row that has null total_kcal. Without
+  // this retry, those activities would be permanently stuck without kcal
+  // and would be hidden from the Today screen (which filters out null kcal).
+  const RETRY_NULL_KCAL_DAYS = 3
+  const retryCutoffMs = Date.now() - RETRY_NULL_KCAL_DAYS * 86400 * 1000
+  const alreadySynced = new Set(
+    (existingRows ?? [])
+      .filter((r: any) =>
+        r.total_kcal != null ||
+        (r.synced_at && new Date(r.synced_at).getTime() < retryCutoffMs)
+      )
+      .map((r: any) => r.strava_activity_id)
+  )
 
   const weightKg = profile.weight_kg ?? 0
   const results = []
