@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import {
   View, Text, TextInput, Pressable, ScrollView,
@@ -6,7 +6,8 @@ import {
   Keyboard, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useFocusEffect, useRouter } from 'expo-router'
+import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
+import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
@@ -37,6 +38,9 @@ interface DayData {
   consumed: number
   burned: number
   target: number | null
+  protein_g: number
+  fat_g: number
+  carb_g: number
 }
 
 type SubTab = 'nutrition' | 'meals' | 'week' | 'estimate'
@@ -86,7 +90,7 @@ function nAdvance(period: Exclude<NutriPeriod, 'total' | 'custom'>, anchor: Date
 }
 function nNavLabel(period: Exclude<NutriPeriod, 'total' | 'custom'>, anchor: Date): string {
   const start = nStartOf(period, anchor), end = nEndOf(period, start)
-  const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString(undefined, o)
+  const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString('en-GB', o)
   switch (period) {
     case 'week': return `${fmt(start, { day: 'numeric', month: 'short' })} – ${fmt(end, { day: 'numeric', month: 'short', year: 'numeric' })}`
     case 'month': return fmt(start, { month: 'long', year: 'numeric' })
@@ -112,10 +116,10 @@ function generateDays(startStr: string, endStr: string): DayData[] {
     result.push({
       dateStr,
       dayLabel: SHORT_DAYS[cur.getDay()],
-      fullDate: cur.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
+      fullDate: cur.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
       isToday: dateStr === todayStr,
       isFuture: dateStr > todayStr,
-      consumed: 0, burned: 0, target: null,
+      consumed: 0, burned: 0, target: null, protein_g: 0, fat_g: 0, carb_g: 0,
     })
     cur.setDate(cur.getDate() + 1)
   }
@@ -145,7 +149,7 @@ function getSportIcon(type: string): string {
 }
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
 
@@ -216,7 +220,7 @@ interface MealItem {
 
 export default function NutritionScreen() {
   const router = useRouter()
-  const [subTab, setSubTab] = useState<SubTab>('nutrition')
+  const [subTab, setSubTab] = useState<SubTab>('week')
   const [userId, setUserId] = useState<string | null>(null)
 
   // ── Nutrition state ──────────────────────────────────────────────────────────
@@ -292,9 +296,11 @@ export default function NutritionScreen() {
   const allMealsDone = meals.length > 0 && checkedCount === meals.length
   const barColor = remaining != null && remaining < 0 ? C.danger : C.accent
 
-  useFocusEffect(useCallback(() => {
-    if (Date.now() - lastLoadRef.current > 60_000) loadAll()
-  }, []))
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setUserId(user.id)
+    })
+  }, [])
 
   async function openScanner() {
     if (!cameraPermission?.granted) {
@@ -636,732 +642,21 @@ export default function NutritionScreen() {
   }
 
   return (
-    <SafeAreaView style={st.container}>
-      {/* Sub-tab selector */}
-      <View style={st.segRow}>
-        {([
-          { key: 'nutrition', label: 'Today' },
-          { key: 'meals', label: 'Meals' },
-          { key: 'week', label: 'Week' },
-          { key: 'estimate', label: 'Estimate' },
-        ] as const).map(tab => (
-          <Pressable
-            key={tab.key}
-            style={[st.segBtn, subTab === tab.key && st.segBtnActive]}
-            onPress={() => setSubTab(tab.key)}
-          >
-            <Text style={[st.segText, subTab === tab.key && st.segTextActive]}>{tab.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {pickerMeal && (
-        <MealPresetPickerModal
-          meal={pickerMeal}
-          presets={presetsMap[pickerMeal.meal_index] ?? []}
-          onSelect={preset => confirmMealLogWithPreset(pickerMeal, preset)}
-          onCustom={() => { setPickerMeal(null); confirmMealLog(pickerMeal) }}
-          onManage={() => { setPickerMeal(null); router.push('/(tabs)/settings') }}
-          onClose={() => setPickerMeal(null)}
-        />
-      )}
-
-      <BarcodeScannerModal
-        visible={scannerVisible}
-        loading={scanLoading}
-        result={scanResult}
-        onBarcodeScanned={handleBarcodeScan}
-        onApply={applyScanResult}
-        onRetry={() => { lastScannedRef.current = null; setScanResult(null) }}
-        onClose={() => { setScannerVisible(false); setScanResult(null) }}
-        onSaveToMyFoods={(category, unitSizeG) => saveScanResultToMyFoods(category, unitSizeG)}
-      />
-
-      <CustomFoodsModal
-        visible={customFoodsModalVisible}
-        foods={customFoods}
-        onAdd={addFromCustomFood}
-        onDelete={deleteCustomFood}
-        onUpdateCategory={updateCustomFoodCategory}
-        onClose={() => setCustomFoodsModalVisible(false)}
-      />
-
-      <CalorieQuizModal
-        visible={showActivityQuiz}
-        onApply={level => { setActivityLevel(level); setShowActivityQuiz(false) }}
-        onClose={() => setShowActivityQuiz(false)}
-      />
-
-      <QuickAddQtyModal
-        food={quickAddItem}
-        qty={quickAddQty}
-        onQtyChange={setQuickAddQty}
-        onConfirm={(name, kcal, protein, fat, carb) => {
-          setFoodName(name)
-          setFoodKcal(String(kcal))
-          setFoodProtein(protein)
-          setFoodFat(fat)
-          setFoodCarb(carb)
-          setQuickAddItem(null)
-        }}
-        onClose={() => setQuickAddItem(null)}
-      />
-
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
-        <Text style={st.screenTitle}>Nutrition</Text>
-
-        {/* ── TODAY'S LOG ──────────────────────────────────────────────────── */}
-        {subTab === 'nutrition' && (
+    <SafeAreaView style={st.container} edges={['top']}>
+      <AppDrawer>
+        {openDrawer => (
           <>
-            {/* Progress card */}
-            <View style={st.card}>
-              <Text style={st.cardLabel}>Today's intake</Text>
-              <View style={st.progressRow}>
-                <Text style={st.consumedNum}>{consumed.toLocaleString()}</Text>
-                {target != null && <Text style={st.targetNum}> / {target.toLocaleString()} kcal</Text>}
-              </View>
-              {target != null && (
-                <View style={st.barTrack}>
-                  <View style={[st.barFill, { width: `${Math.round(progress * 100)}%` as any, backgroundColor: barColor }]} />
-                </View>
-              )}
-              <View style={st.progressMeta}>
-                {remaining != null && !editingTarget && (
-                  <Text style={[st.remainingText, remaining < 0 && st.overText]}>
-                    {remaining < 0
-                      ? `${Math.abs(remaining).toLocaleString()} kcal over target`
-                      : `${remaining.toLocaleString()} kcal remaining`}
-                  </Text>
-                )}
-                {editingTarget ? (
-                  <View style={st.targetEditRow}>
-                    <TextInput
-                      style={st.targetEditInput}
-                      value={targetInput}
-                      onChangeText={setTargetInput}
-                      placeholder={baseline != null ? String(baseline) : 'e.g. 2200'}
-                      placeholderTextColor={C.text3}
-                      keyboardType="numeric"
-                      autoFocus
-                      returnKeyType="done"
-                      onSubmitEditing={saveTarget}
-                    />
-                    <Text style={st.targetEditUnit}>kcal / day</Text>
-                    <Pressable style={st.targetSaveBtn} onPress={saveTarget}>
-                      <Text style={st.targetSaveBtnText}>Save</Text>
-                    </Pressable>
-                    <Pressable onPress={() => { setEditingTarget(false); setTargetInput('') }}>
-                      <Ionicons name="close-outline" size={20} color={C.text3} />
-                    </Pressable>
-                  </View>
-                ) : (
-                  <Pressable
-                    style={st.targetEditTrigger}
-                    onPress={() => { setTargetInput(baseline != null ? String(baseline) : ''); setEditingTarget(true) }}
-                  >
-                    <Ionicons name="pencil-outline" size={12} color={C.text3} />
-                    <Text style={st.targetEditTriggerText}>
-                      {baseline == null ? 'Set daily calorie target' : 'Edit target'}
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
-              {target != null && (
-                <View style={st.breakdownRow}>
-                  {baseline != null && (
-                    <View style={st.breakdownChip}>
-                      <Ionicons name="body-outline" size={11} color={C.text2} />
-                      <Text style={st.breakdownText}>{baseline.toLocaleString()} baseline</Text>
-                    </View>
-                  )}
-                  {burnedKcal > 0 && (
-                    <View style={st.breakdownChip}>
-                      <Ionicons name="flame-outline" size={11} color={C.accent} />
-                      <Text style={[st.breakdownText, { color: C.accent }]}>+{Math.round(burnedKcal)} burned</Text>
-                    </View>
-                  )}
-                  {plannedKcal > 0 && (
-                    <View style={st.breakdownChip}>
-                      <Ionicons name="calendar-outline" size={11} color={C.accent2} />
-                      <Text style={[st.breakdownText, { color: C.accent2 }]}>+{plannedKcal} planned</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-              {activities.length > 0 && (
-                <View style={st.activityRow}>
-                  {activities.map(a => (
-                    <View key={a.id} style={[st.activityPill, { backgroundColor: getSportColor(a.type) + '18' }]}>
-                      <MaterialCommunityIcons name={getSportIcon(a.type) as any} size={11} color={getSportColor(a.type)} />
-                      <Text style={[st.activityPillText, { color: getSportColor(a.type) }]}>
-                        {a.name} · {Math.round(a.total_kcal)} kcal
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
+            <View style={st.topBar}>
+              <HamburgerBtn onPress={openDrawer} />
+              <Text style={st.topBarTitle}>Food log</Text>
+              <View style={{ width: 40 }} />
             </View>
-
-            {/* Log food */}
-            <View style={st.card}>
-              <View style={st.cardLabelRow}>
-                <Text style={st.cardLabel}>Log food</Text>
-                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                  {(foodName || foodKcal || foodServings !== '1' || foodProtein || foodFat || foodCarb) ? (
-                    <Pressable
-                      hitSlop={8}
-                      onPress={() => { setFoodName(''); setFoodKcal(''); setFoodServings('1'); setFoodProtein(''); setFoodFat(''); setFoodCarb('') }}
-                      style={st.clearFormBtn}
-                    >
-                      <Ionicons name="close-circle" size={13} color={C.text3} />
-                      <Text style={st.clearFormBtnText}>Clear</Text>
-                    </Pressable>
-                  ) : null}
-                  <Pressable onPress={openScanner} style={[st.myFoodsBtn, { backgroundColor: 'rgba(126,87,194,0.12)' }]}>
-                    <Ionicons name="barcode-outline" size={13} color="#7E57C2" />
-                    <Text style={[st.myFoodsBtnText, { color: '#7E57C2' }]}>Scan</Text>
-                  </Pressable>
-                  <Pressable onPress={() => setCustomFoodsModalVisible(true)} style={st.myFoodsBtn}>
-                    <Ionicons name="bookmark-outline" size={13} color={C.accent} />
-                    <Text style={st.myFoodsBtnText}>My Foods</Text>
-                  </Pressable>
-                </View>
-              </View>
-              <TextInput
-                style={st.input}
-                value={foodName}
-                onChangeText={setFoodName}
-                placeholder="Food name (e.g. Oatmeal with banana)"
-                placeholderTextColor={C.text3}
-                returnKeyType="next"
-              />
-              <View style={st.addRow}>
-                <View style={st.servingsWrap}>
-                  <TextInput
-                    style={[st.input, st.servingsInput]}
-                    value={foodServings}
-                    onChangeText={setFoodServings}
-                    placeholder="1"
-                    placeholderTextColor={C.text3}
-                    keyboardType="decimal-pad"
-                    selectTextOnFocus
-                  />
-                  <Text style={st.servingsLabel}>×</Text>
-                </View>
-                <View style={st.macroInputWrap}>
-                  <TextInput
-                    style={[st.input, st.macroInput]}
-                    value={foodKcal}
-                    onChangeText={setFoodKcal}
-                    placeholder="kcal *"
-                    placeholderTextColor={C.text3}
-                    keyboardType="numeric"
-                  />
-                </View>
-                <View style={st.macroInputWrap}>
-                  <TextInput
-                    style={[st.input, st.macroInput]}
-                    value={foodProtein}
-                    onChangeText={setFoodProtein}
-                    placeholder="protein g"
-                    placeholderTextColor={C.text3}
-                    keyboardType="decimal-pad"
-                  />
-                </View>
-                <Pressable
-                  style={[st.addBtn, adding && { opacity: 0.5 }]}
-                  onPress={addEntry}
-                  disabled={adding}
-                >
-                  {adding
-                    ? <ActivityIndicator size="small" color={C.white} />
-                    : <Ionicons name="add" size={22} color={C.white} />
-                  }
-                </Pressable>
-              </View>
-              <View style={st.addRow}>
-                <View style={st.macroInputWrap}>
-                  <TextInput
-                    style={[st.input, st.macroInput]}
-                    value={foodFat}
-                    onChangeText={setFoodFat}
-                    placeholder="fat g"
-                    placeholderTextColor={C.text3}
-                    keyboardType="decimal-pad"
-                  />
-                </View>
-                <View style={st.macroInputWrap}>
-                  <TextInput
-                    style={[st.input, st.macroInput]}
-                    value={foodCarb}
-                    onChangeText={setFoodCarb}
-                    placeholder="carb g"
-                    placeholderTextColor={C.text3}
-                    keyboardType="decimal-pad"
-                  />
-                </View>
-                <Pressable
-                  style={[st.addBtn, st.saveTemplateBtn]}
-                  onPress={saveAsCustomFood}
-                  hitSlop={4}
-                >
-                  <Ionicons name="bookmark-outline" size={20} color={C.text2} />
-                </Pressable>
-              </View>
-            </View>
-
-            {/* Common foods quick-add */}
-            <View style={st.card}>
-              <Text style={st.cardLabel}>Quick add</Text>
-              <View style={st.quickAddSearchRow}>
-                <Ionicons name="search-outline" size={15} color={C.text3} />
-                <TextInput
-                  style={st.quickAddSearchInput}
-                  value={quickAddSearch}
-                  onChangeText={setQuickAddSearch}
-                  placeholder="Search foods…"
-                  placeholderTextColor={C.text3}
-                  returnKeyType="search"
-                  clearButtonMode="while-editing"
-                />
-              </View>
-              {(() => {
-                const knownCats = new Set(COMMON_FOOD_CATEGORIES.map(c => c.category))
-                const mergedCats: { category: string; items: CommonFood[] }[] = COMMON_FOOD_CATEGORIES.map(cat => ({
-                  category: cat.category,
-                  items: [
-                    ...customFoods.filter(f => f.category === cat.category) as CommonFood[],
-                    ...cat.items,
-                  ],
-                }))
-                const extraCatNames = [...new Set(customFoods.filter(f => f.category && !knownCats.has(f.category!)).map(f => f.category!))]
-                const extraCats = extraCatNames.map(cat => ({
-                  category: cat,
-                  items: customFoods.filter(f => f.category === cat) as CommonFood[],
-                }))
-                const allCats = [...extraCats, ...mergedCats]
-
-                if (quickAddSearch.trim()) {
-                  const q = quickAddSearch.trim().toLowerCase()
-                  const matches = allCats.flatMap(c => c.items).filter(f => f.name.toLowerCase().includes(q))
-                  if (matches.length === 0) {
-                    return <Text style={st.quickAddNote}>No results for "{quickAddSearch}"</Text>
-                  }
-                  return matches.map((food, i) => (
-                    <Pressable
-                      key={food.name + i}
-                      style={[st.quickAddRow, i < matches.length - 1 && st.quickAddRowBorder]}
-                      onPress={() => { setQuickAddItem(food); setQuickAddQty('1') }}
-                    >
-                      <Text style={st.quickAddRowName}>{food.name}</Text>
-                      <Text style={st.quickAddRowKcal}>{food.kcal} kcal</Text>
-                    </Pressable>
-                  ))
-                }
-
-                return allCats.map(cat => {
-                  const isOpen = expandedCategories.has(cat.category)
-                  return (
-                    <View key={cat.category} style={st.quickAddCategory}>
-                      <Pressable
-                        style={st.quickAddCategoryHeader}
-                        onPress={() => setExpandedCategories(prev => {
-                          const next = new Set(prev)
-                          isOpen ? next.delete(cat.category) : next.add(cat.category)
-                          return next
-                        })}
-                      >
-                        <Text style={st.quickAddCategoryLabel}>{cat.category}</Text>
-                        <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={14} color={C.text3} />
-                      </Pressable>
-                      {isOpen && cat.items.map((food, i) => (
-                        <Pressable
-                          key={food.name + i}
-                          style={[st.quickAddRow, i < cat.items.length - 1 && st.quickAddRowBorder]}
-                          onPress={() => { setQuickAddItem(food); setQuickAddQty('1') }}
-                        >
-                          <Text style={st.quickAddRowName}>{food.name}</Text>
-                          <Text style={st.quickAddRowKcal}>{food.kcal} kcal</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  )
-                })
-              })()}
-            </View>
-
-            {/* Food log list */}
-            <View style={st.card}>
-              <Text style={st.cardLabel}>Today's log</Text>
-              {nutritionLoading && <ActivityIndicator color={C.accent} style={{ marginVertical: 12 }} />}
-              {!nutritionLoading && logs.length === 0 && (
-                <Text style={st.emptyNote}>No food logged yet. Add your first entry above.</Text>
-              )}
-              {(() => {
-                if (logs.length === 0) return null
-                const renderLogRow = (log: FoodLog, i: number, arr: FoodLog[]) => (
-                  <View key={log.id} style={[st.logRow, i < arr.length - 1 && st.logRowBorder]}>
-                    <View style={st.logLeft}>
-                      <Text style={st.logName} numberOfLines={1}>{log.name}</Text>
-                      <Text style={st.logMeta}>
-                        {formatTime(log.logged_at)}
-                        {log.protein_g != null ? ` · P ${log.protein_g}g` : ''}
-                        {log.fat_g != null ? ` · F ${log.fat_g}g` : ''}
-                        {log.carb_g != null ? ` · C ${log.carb_g}g` : ''}
-                      </Text>
-                    </View>
-                    <Text style={st.logKcal}>{log.kcal} kcal</Text>
-                    <Pressable onPress={() => deleteEntry(log.id)} hitSlop={10} style={st.deleteBtn}>
-                      <Ionicons name="trash-outline" size={16} color={C.text3} />
-                    </Pressable>
-                  </View>
-                )
-                if (meals.length === 0) return logs.map((log, i) => renderLogRow(log, i, logs))
-                const mealIndexSet = new Set(meals.map(m => m.meal_index))
-                const groups: { label: string; items: FoodLog[] }[] = []
-                for (const meal of meals) {
-                  const items = logs.filter(l => l.meal_index === meal.meal_index)
-                  if (items.length > 0) groups.push({ label: meal.name, items })
-                }
-                const extra = logs.filter(l => l.meal_index === null || !mealIndexSet.has(l.meal_index))
-                if (extra.length > 0) groups.push({ label: 'Extra', items: extra })
-                return groups.map((group, gi) => (
-                  <View key={group.label} style={gi > 0 ? st.logGroupSection : undefined}>
-                    <Text style={st.logGroupLabel}>{group.label}</Text>
-                    {group.items.map((log, i) => renderLogRow(log, i, group.items))}
-                  </View>
-                ))
-              })()}
-              {logs.length > 0 && (() => {
-                const totalP = logs.reduce((s, l) => s + (l.protein_g ?? 0), 0)
-                const totalF = logs.reduce((s, l) => s + (l.fat_g ?? 0), 0)
-                const totalC = logs.reduce((s, l) => s + (l.carb_g ?? 0), 0)
-                const macros = [
-                  { label: 'Protein', color: C.accent, consumed: totalP, goal: effectiveProteinGoal },
-                  { label: 'Fat', color: C.walk, consumed: totalF, goal: effectiveFatGoal },
-                  { label: 'Carbs', color: C.accent2, consumed: totalC, goal: effectiveCarbGoal },
-                ].filter(m => m.consumed > 0 || m.goal != null)
-                return (
-                  <>
-                    {macros.length > 0 && (
-                      <View style={st.macroProgressSection}>
-                        {macros.map(m => (
-                          <View key={m.label} style={st.macroProgressRow}>
-                            <Text style={[st.macroProgressLabel, { color: m.color }]}>{m.label}</Text>
-                            {m.goal != null ? (
-                              <View style={st.macroProgressBarTrack}>
-                                <View style={[st.macroProgressBarFill, {
-                                  width: `${Math.min((m.consumed / m.goal) * 100, 100)}%` as any,
-                                  backgroundColor: m.color,
-                                }]} />
-                              </View>
-                            ) : (
-                              <View style={{ flex: 1 }} />
-                            )}
-                            <Text style={[st.macroProgressValue, m.goal != null && m.consumed > m.goal && { color: C.danger }]}>
-                              {Math.round(m.consumed)}g{m.goal != null ? ` / ${m.goal}g` : ''}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-                    <View style={st.totalRow}>
-                      <Text style={st.totalLabel}>Total</Text>
-                      <Text style={st.totalValue}>{consumed.toLocaleString()} kcal</Text>
-                    </View>
-                  </>
-                )
-              })()}
-            </View>
+            <ScrollView contentContainerStyle={st.histContent}>
+              <HistoryView userId={userId} />
+            </ScrollView>
           </>
         )}
-
-        {/* ── MEAL PLAN ────────────────────────────────────────────────────── */}
-        {subTab === 'meals' && (
-          <>
-            {meals.length > 0 && (
-              <View style={[st.card, allMealsDone && { backgroundColor: 'rgba(76,175,80,0.1)', borderColor: 'rgba(76,175,80,0.2)' }]}>
-                {allMealsDone ? (
-                  <View style={st.doneRow}>
-                    <Ionicons name="checkmark-circle" size={22} color={C.success} />
-                    <Text style={st.doneText}>All meals done for today!</Text>
-                  </View>
-                ) : (
-                  <>
-                    <View style={st.mealProgressLabelRow}>
-                      <Text style={st.mealProgressLabel}>{checkedCount} of {meals.length} meals eaten</Text>
-                      <Text style={st.mealProgressPct}>{Math.round((checkedCount / meals.length) * 100)}%</Text>
-                    </View>
-                    <View style={st.barTrack}>
-                      <View style={[st.barFill, { width: `${(checkedCount / meals.length) * 100}%` as any, backgroundColor: C.accent }]} />
-                    </View>
-                  </>
-                )}
-              </View>
-            )}
-
-            {mealsLoading && <ActivityIndicator color={C.accent} style={{ marginVertical: 12 }} />}
-
-            {!mealsLoading && meals.length === 0 && (
-              <View style={st.mealEmptyBox}>
-                <Ionicons name="restaurant-outline" size={52} color={C.text3} />
-                <Text style={st.mealEmptyTitle}>No meal plan set up</Text>
-                <Text style={st.emptyNote}>
-                  Go to Settings → Meal Plan to configure your daily meals and times.
-                </Text>
-              </View>
-            )}
-
-            {meals.map(meal => {
-              const overdue = !meal.checked && isOverdue(meal.scheduled_time)
-              const isChecking = checking === meal.meal_index
-              return (
-                <Pressable
-                  key={meal.meal_index}
-                  style={[st.mealCard, meal.checked && st.mealCardChecked, overdue && st.mealCardOverdue]}
-                  onPress={() => handleMealTap(meal)}
-                  disabled={isChecking}
-                >
-                  <View style={[st.checkbox, meal.checked && st.checkboxChecked]}>
-                    {isChecking
-                      ? <ActivityIndicator size="small" color={meal.checked ? C.white : C.accent} />
-                      : meal.checked
-                        ? <Ionicons name="checkmark" size={16} color={C.white} />
-                        : null
-                    }
-                  </View>
-                  <View style={st.mealInfo}>
-                    <Text style={[st.mealName, meal.checked && st.mealNameChecked]}>{meal.name}</Text>
-                    <View style={st.mealMetaRow}>
-                      <Ionicons name="time-outline" size={13} color={overdue ? C.danger : C.text2} />
-                      <Text style={[st.mealTime, overdue && st.mealTimeOverdue]}>{meal.scheduled_time}</Text>
-                      {overdue && (
-                        <View style={st.overdueTag}>
-                          <Text style={st.overdueTagText}>overdue</Text>
-                        </View>
-                      )}
-                      {meal.checked && <Text style={st.checkedLabel}>done</Text>}
-                    </View>
-                    {(meal.protein_g != null || meal.fat_g != null || meal.carb_g != null) && (
-                      <Text style={st.mealMacroMeta}>
-                        {[
-                          meal.protein_g != null && `P ${meal.protein_g}g`,
-                          meal.fat_g     != null && `F ${meal.fat_g}g`,
-                          meal.carb_g    != null && `C ${meal.carb_g}g`,
-                        ].filter(Boolean).join(' · ')}
-                      </Text>
-                    )}
-                  </View>
-                  {!meal.checked ? (
-                    <TextInput
-                      style={st.mealKcalInput}
-                      value={mealKcalInputs[meal.meal_index] ?? ''}
-                      onChangeText={v => setMealKcalInputs(prev => ({ ...prev, [meal.meal_index]: v }))}
-                      placeholder={meal.kcal != null ? String(meal.kcal) : 'kcal'}
-                      placeholderTextColor={C.text3}
-                      keyboardType="numeric"
-                    />
-                  ) : (
-                    <Text style={st.mealKcalBadge}>
-                      {mealKcalInputs[meal.meal_index] ? `${mealKcalInputs[meal.meal_index]} kcal` : ''}
-                    </Text>
-                  )}
-                </Pressable>
-              )
-            })}
-          </>
-        )}
-
-        {/* ── HISTORY ──────────────────────────────────────────────────────── */}
-        {subTab === 'week' && (
-          <HistoryView userId={userId} />
-        )}
-
-        {/* ── CALORIC INTAKE ESTIMATE ──────────────────────────────────────── */}
-        {subTab === 'estimate' && (() => {
-          const selectedLevel = ACTIVITY_LEVELS.find(l => l.key === activityLevel)!
-          const fatPct = parseFloat(fatPctInput)
-          const katchHasData = !!profileWeight && !isNaN(fatPct) && fatPct > 0 && fatPct < 100
-          const mifflinHasData = !!(profileWeight && profileHeight && profileAge && profileSex)
-          const hasData = estimateMethod === 'katch' ? katchHasData : mifflinHasData
-
-          const mifflinResult = mifflinHasData
-            ? calcMifflinTDEE(profileWeight!, profileHeight!, profileAge!, profileSex!, selectedLevel.factor)
-            : null
-          const katchResult = katchHasData
-            ? calcKatchMcArdleTDEE(profileWeight!, fatPct, selectedLevel.factor)
-            : null
-          const result = estimateMethod === 'katch' ? katchResult : mifflinResult
-
-          const missingMsg = estimateMethod === 'katch'
-            ? (!profileWeight ? 'Fill in your weight in Settings → Profile, then enter your body fat % above.' : 'Enter your body fat percentage above to see your estimate.')
-            : 'Fill in your weight, height, age and sex in Settings → Profile to see your estimate.'
-
-          return (
-            <>
-              <Text style={st.estimateTitle}>Caloric intake estimate</Text>
-
-              {/* Method toggle */}
-              <View style={st.methodToggle}>
-                {(['mifflin', 'katch'] as const).map(m => (
-                  <Pressable
-                    key={m}
-                    style={[st.methodToggleBtn, estimateMethod === m && st.methodToggleBtnActive]}
-                    onPress={() => setEstimateMethod(m)}
-                  >
-                    <Text style={[st.methodToggleBtnText, estimateMethod === m && st.methodToggleBtnTextActive]}>
-                      {m === 'mifflin' ? 'Standard' : 'Advanced'}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <Text style={st.estimateNote}>
-                {estimateMethod === 'mifflin'
-                  ? 'Estimates your rest-day calorie needs from weight, height, age and sex.'
-                  : 'Estimates rest-day calorie needs from lean body mass (weight × fat %). More accurate if you know your body fat %.'}
-              </Text>
-              <View style={st.baselineInfoBox}>
-                <Ionicons name="information-circle-outline" size={15} color={C.accent2} />
-                <Text style={st.baselineInfoText}>
-                  This gives you your <Text style={{ fontWeight: '700' }}>rest-day baseline</Text> — calories burned just by being alive and moving normally. Workout calories from Strava are added on top automatically, so do not add exercise here.
-                </Text>
-              </View>
-
-              {/* Activity level selector */}
-              <View style={st.calcActivityHeader}>
-                <Text style={st.calcActivityLabel}>Activity level</Text>
-                <Pressable onPress={() => setShowActivityQuiz(true)} hitSlop={8}>
-                  <Text style={st.helpBtnText}>Not sure?</Text>
-                </Pressable>
-              </View>
-              {activityFromOnboarding && (
-                <Text style={st.onboardingLevelNote}>Pre-filled from your onboarding answers — adjust if needed.</Text>
-              )}
-              <View style={st.activityChipsRow}>
-                {ACTIVITY_LEVELS.map(level => {
-                  const sel = activityLevel === level.key
-                  return (
-                    <Pressable
-                      key={level.key}
-                      style={[st.activityChip, sel && st.activityChipActive]}
-                      onPress={() => { setActivityLevel(level.key); setActivityFromOnboarding(false) }}
-                    >
-                      <Text style={[st.activityChipLabel, sel && st.activityChipLabelActive]}>{level.label}</Text>
-                      <Text style={st.activityChipDetail}>{level.detail}</Text>
-                    </Pressable>
-                  )
-                })}
-              </View>
-
-              {/* Katch-McArdle: fat % input */}
-              {estimateMethod === 'katch' && (
-                <>
-                  <View style={st.fatPctRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={st.fatPctLabel}>Body fat %</Text>
-                      <Pressable
-                        onPress={() => setShowRedsWarning(v => !v)}
-                        hitSlop={10}
-                        style={st.redsInfoBtn}
-                      >
-                        <Text style={st.redsInfoBtnText}>i</Text>
-                      </Pressable>
-                    </View>
-                    <TextInput
-                      style={st.fatPctInput}
-                      value={fatPctInput}
-                      onChangeText={setFatPctInput}
-                      keyboardType="decimal-pad"
-                      placeholder="e.g. 18"
-                      placeholderTextColor={C.text3}
-                      returnKeyType="done"
-                      onSubmitEditing={Keyboard.dismiss}
-                    />
-                  </View>
-                  {showRedsWarning && (
-                    <View style={st.redsWarningBox}>
-                      <Ionicons name="warning-outline" size={15} color="#FFA726" />
-                      <Text style={st.redsWarningText}>
-                        Body fat below <Text style={{ fontWeight: '700' }}>8% (men)</Text> or <Text style={{ fontWeight: '700' }}>12% (women)</Text> raises the risk of Relative Energy Deficiency in Sport (RED-S) — a condition where low energy availability disrupts hormones, bone health, and recovery. If you're in this range, consider increasing your caloric intake and consulting a sports dietitian.
-                      </Text>
-                    </View>
-                  )}
-                  {(() => {
-                    const pct = parseFloat(fatPctInput)
-                    const threshold = profileSex === 'female' ? 12 : 8
-                    if (!isNaN(pct) && pct > 0 && pct < threshold) {
-                      return (
-                        <View style={st.redsAlertBox}>
-                          <Ionicons name="warning" size={15} color="#EF5350" />
-                          <Text style={st.redsAlertText}>
-                            Your body fat % is below the {profileSex === 'female' ? '12%' : '8%'} threshold. You may be at risk of RED-S — consider eating more to support your training.
-                          </Text>
-                        </View>
-                      )
-                    }
-                    return null
-                  })()}
-                </>
-              )}
-
-              {!hasData && (
-                <View style={st.estimateWarning}>
-                  <Ionicons name="information-circle-outline" size={18} color={C.accent2} />
-                  <Text style={st.estimateWarningText}>{missingMsg}</Text>
-                </View>
-              )}
-
-              {hasData && result && (
-                <View style={st.calcCard}>
-                  <View style={st.calcBreakdown}>
-                    {estimateMethod === 'katch' && (
-                      <View style={st.calcBreakdownRow}>
-                        <Text style={st.calcBreakdownLabel}>Lean body mass</Text>
-                        <Text style={st.calcBreakdownValue}>{(katchResult!.lbm).toFixed(1)} kg</Text>
-                      </View>
-                    )}
-                    <View style={st.calcBreakdownRow}>
-                      <Text style={st.calcBreakdownLabel}>Basal metabolic rate (at rest)</Text>
-                      <Text style={st.calcBreakdownValue}>{result.bmr.toLocaleString()} kcal</Text>
-                    </View>
-                    <View style={st.calcBreakdownRow}>
-                      <Text style={st.calcBreakdownLabel}>{selectedLevel.label} multiplier</Text>
-                      <Text style={st.calcBreakdownValue}>× {selectedLevel.factor}</Text>
-                    </View>
-                    <View style={[st.calcBreakdownRow, st.calcBreakdownTotal]}>
-                      <Text style={st.calcTotalLabel}>Baseline (rest day)</Text>
-                      <Text style={st.calcTotalValue}>{result.tdee.toLocaleString()} kcal</Text>
-                    </View>
-                  </View>
-
-                  {hasCustomBurnSchema && (
-                    <View style={st.customSchemaNote}>
-                      <Ionicons name="checkmark-circle-outline" size={13} color={C.accent} />
-                      <Text style={st.customSchemaNoteText}>You have a custom burn schema — your workout calories are tracked precisely. This baseline covers rest-day needs only; workouts are added on top.</Text>
-                    </View>
-                  )}
-
-                  <Pressable
-                    style={st.useTargetBtn}
-                    onPress={async () => {
-                      if (!userId) return
-                      await supabase.from('users').update({ daily_kcal_target: result.tdee }).eq('id', userId)
-                      setBaseline(result.tdee)
-                      Alert.alert('Baseline updated', `Daily baseline set to ${result.tdee.toLocaleString()} kcal. Workout calories from Strava will be added on top.`)
-                    }}
-                  >
-                    <Ionicons name="checkmark-circle-outline" size={16} color={C.white} />
-                    <Text style={st.useTargetBtnText}>Use {result.tdee.toLocaleString()} kcal as baseline</Text>
-                  </Pressable>
-                </View>
-              )}
-            </>
-          )
-        })()}
-      </ScrollView>
-      </KeyboardAvoidingView>
+      </AppDrawer>
     </SafeAreaView>
   )
 }
@@ -1466,7 +761,10 @@ const mp = StyleSheet.create({
 
 // ─── History view ──────────────────────────────────────────────────────────
 
-function DayRow({ day, last }: { day: DayData; last: boolean }) {
+function DayRow({ day, last, hideCalories, expanded, onPress }: {
+  day: DayData; last: boolean; hideCalories: boolean
+  expanded: boolean; onPress: () => void
+}) {
   const ratio = day.target && day.consumed > 0 ? day.consumed / day.target : 0
   const isMet = ratio >= 0.9 && ratio <= 1.15
   const isOver = ratio > 1.15
@@ -1478,8 +776,12 @@ function DayRow({ day, last }: { day: DayData; last: boolean }) {
     : isUnder ? C.warning
     : C.surface3
   const fillPct = day.isFuture ? 0 : Math.min(ratio, 1) * 100
+  const hasMacros = !day.isFuture && day.consumed > 0 && (day.protein_g > 0 || day.fat_g > 0 || day.carb_g > 0)
   return (
-    <View style={[hv.dayRow, !last && { borderBottomWidth: 1, borderBottomColor: C.divider }]}>
+    <Pressable
+      onPress={hasMacros && !hideCalories ? onPress : undefined}
+      style={[hv.dayRow, !last && { borderBottomWidth: 1, borderBottomColor: C.divider }]}
+    >
       <View style={hv.dayLabelCol}>
         <Text style={[hv.dayName, day.isToday && { color: C.accent, fontWeight: '800' }]}>{day.dayLabel}</Text>
         <Text style={hv.dayDate}>{day.fullDate}</Text>
@@ -1489,12 +791,25 @@ function DayRow({ day, last }: { day: DayData; last: boolean }) {
           <View style={[hv.barFill, { width: `${fillPct}%` as any, backgroundColor: barColor }]} />
           {isOver && <View style={[hv.barOverflow, { backgroundColor: C.danger }]} />}
         </View>
-        <View style={hv.dayNumbers}>
-          <Text style={[hv.dayConsumed, (day.isFuture || day.consumed === 0) && { color: C.text3 }]}>
-            {day.isFuture || day.consumed === 0 ? '—' : day.consumed.toLocaleString()}
-          </Text>
-          {day.target != null && <Text style={hv.dayTarget}>/ {day.target.toLocaleString()} kcal</Text>}
-        </View>
+        {!hideCalories && (
+          <>
+            <View style={hv.dayNumbers}>
+              <Text style={[hv.dayConsumed, (day.isFuture || day.consumed === 0) && { color: C.text3 }]}>
+                {day.isFuture || day.consumed === 0 ? '—' : day.consumed.toLocaleString()}
+              </Text>
+              {day.target != null && <Text style={hv.dayTarget}>/ {day.target.toLocaleString()} kcal</Text>}
+            </View>
+            {hasMacros && expanded && (
+              <View style={hv.dayMacros}>
+                <Text style={hv.dayMacroChip}>{Math.round(day.protein_g)} P</Text>
+                <Text style={hv.dayMacroDot}>·</Text>
+                <Text style={hv.dayMacroChip}>{Math.round(day.fat_g)} F</Text>
+                <Text style={hv.dayMacroDot}>·</Text>
+                <Text style={hv.dayMacroChip}>{Math.round(day.carb_g)} C</Text>
+              </View>
+            )}
+          </>
+        )}
       </View>
       <View style={hv.statusCol}>
         {day.isToday && <View style={[hv.statusDot, { backgroundColor: C.accent }]} />}
@@ -1503,7 +818,7 @@ function DayRow({ day, last }: { day: DayData; last: boolean }) {
         {!day.isToday && isUnder && <Ionicons name="remove-circle" size={18} color={C.warning} />}
         {!day.isToday && !isMet && !isOver && !isUnder && <Ionicons name="ellipse-outline" size={18} color={C.text3} />}
       </View>
-    </View>
+    </Pressable>
   )
 }
 
@@ -1518,6 +833,8 @@ function HistoryView({ userId }: { userId: string | null }) {
   const [customEnd, setCustomEnd] = useState<string | null>(null)
   const [days, setDays] = useState<DayData[]>([])
   const [loading, setLoading] = useState(false)
+  const [hideCalories, setHideCalories] = useState(false)
+  const [expandedDate, setExpandedDate] = useState<string | null>(null)
 
   useEffect(() => {
     if (!userId) return
@@ -1539,16 +856,23 @@ function HistoryView({ userId }: { userId: string | null }) {
       startStr = toDateStr(s); endStr = toDateStr(nEndOf(period, s))
     }
     const [profileRes, foodRes, actsRes] = await Promise.all([
-      supabase.from('users').select('daily_kcal_target').eq('id', userId!).single(),
-      supabase.from('food_logs').select('date, kcal').eq('user_id', userId!)
+      supabase.from('users').select('daily_kcal_target, hide_calories').eq('id', userId!).single(),
+      supabase.from('food_logs').select('date, kcal, protein_g, fat_g, carb_g').eq('user_id', userId!)
         .gte('date', startStr).lte('date', endStr),
       supabase.from('activities').select('date, total_kcal').eq('user_id', userId!)
         .gte('date', `${startStr}T00:00:00`).lte('date', `${endStr}T23:59:59`)
         .not('total_kcal', 'is', null),
     ])
     const baseline: number | null = profileRes.data?.daily_kcal_target ?? null
-    const foodByDate: Record<string, number> = {}
-    for (const row of (foodRes.data ?? [])) foodByDate[row.date] = (foodByDate[row.date] ?? 0) + row.kcal
+    setHideCalories(profileRes.data?.hide_calories ?? false)
+    const foodByDate: Record<string, { kcal: number; protein: number; fat: number; carb: number }> = {}
+    for (const row of (foodRes.data ?? [])) {
+      if (!foodByDate[row.date]) foodByDate[row.date] = { kcal: 0, protein: 0, fat: 0, carb: 0 }
+      foodByDate[row.date].kcal += row.kcal
+      foodByDate[row.date].protein += row.protein_g ?? 0
+      foodByDate[row.date].fat += row.fat_g ?? 0
+      foodByDate[row.date].carb += row.carb_g ?? 0
+    }
     const burnedByDate: Record<string, number> = {}
     for (const row of (actsRes.data ?? [])) {
       const d = (row.date as string).slice(0, 10)
@@ -1556,7 +880,16 @@ function HistoryView({ userId }: { userId: string | null }) {
     }
     const result = generateDays(startStr, endStr).map(day => {
       const burned = Math.round(burnedByDate[day.dateStr] ?? 0)
-      return { ...day, consumed: Math.round(foodByDate[day.dateStr] ?? 0), burned, target: baseline != null ? baseline + burned : null }
+      const fd = foodByDate[day.dateStr]
+      return {
+        ...day,
+        consumed: Math.round(fd?.kcal ?? 0),
+        burned,
+        target: baseline != null ? baseline + burned : null,
+        protein_g: Math.round((fd?.protein ?? 0) * 10) / 10,
+        fat_g: Math.round((fd?.fat ?? 0) * 10) / 10,
+        carb_g: Math.round((fd?.carb ?? 0) * 10) / 10,
+      }
     })
     setDays(result)
     setLoading(false)
@@ -1577,7 +910,7 @@ function HistoryView({ userId }: { userId: string | null }) {
     if (period === 'total') return 'All history'
     if (period === 'custom') {
       if (customStart && customEnd) {
-        const fmt = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+        const fmt = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
         return `${fmt(customStart)} – ${fmt(customEnd)}`
       }
       return 'Custom range'
@@ -1586,16 +919,17 @@ function HistoryView({ userId }: { userId: string | null }) {
   }
 
   const isFixed = period !== 'total' && period !== 'custom'
-  const past = days.filter(d => !d.isFuture && !d.isToday)
   const daysWithData = days.filter(d => !d.isFuture && d.consumed > 0)
   const metCount = daysWithData.filter(d => {
     if (!d.target) return false
     const r = d.consumed / d.target
     return r >= 0.9 && r <= 1.15
   }).length
-  const avgConsumed = daysWithData.length > 0
-    ? Math.round(daysWithData.reduce((s, d) => s + d.consumed, 0) / daysWithData.length)
-    : null
+  const n = daysWithData.length
+  const avgConsumed = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.consumed, 0) / n) : null
+  const avgProtein = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.protein_g, 0) / n) : null
+  const avgFat     = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.fat_g, 0) / n) : null
+  const avgCarb    = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.carb_g, 0) / n) : null
 
   // Group by month for total / custom views
   const monthGroups: { key: string; label: string; days: DayData[] }[] = []
@@ -1610,7 +944,7 @@ function HistoryView({ userId }: { userId: string | null }) {
       const [y, mo] = mk.split('-').map(Number)
       monthGroups.push({
         key: mk,
-        label: new Date(y, mo - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+        label: new Date(y, mo - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
         days: mDays,
       })
     }
@@ -1661,34 +995,69 @@ function HistoryView({ userId }: { userId: string | null }) {
           {/* Summary */}
           {daysWithData.length > 0 && (
             <View style={hv.summaryCard}>
-              <View style={hv.summaryItem}>
-                <Text style={hv.summaryNum}>{metCount}/{daysWithData.length}</Text>
-                <Text style={hv.summaryLabel}>days on target</Text>
-              </View>
-              <View style={hv.summaryDivider} />
-              <View style={hv.summaryItem}>
-                <Text style={hv.summaryNum}>{avgConsumed?.toLocaleString() ?? '—'}</Text>
-                <Text style={hv.summaryLabel}>avg kcal/day</Text>
-              </View>
-              <View style={hv.summaryDivider} />
-              <View style={hv.summaryItem}>
-                <Text style={hv.summaryNum}>{daysWithData.length}</Text>
-                <Text style={hv.summaryLabel}>days logged</Text>
-              </View>
+              {hideCalories ? (
+                <Text style={hv.summaryHiddenMsg}>
+                  {metCount === daysWithData.length
+                    ? `Great week — you hit your target all ${daysWithData.length} logged day${daysWithData.length !== 1 ? 's' : ''}.`
+                    : metCount === 0
+                      ? `You logged ${daysWithData.length} day${daysWithData.length !== 1 ? 's' : ''} this period. Keep going — consistency is key.`
+                      : `You hit your target ${metCount} out of ${daysWithData.length} logged day${daysWithData.length !== 1 ? 's' : ''} this period.`}
+                </Text>
+              ) : (
+                <>
+                  <View style={hv.summaryRow}>
+                    <View style={hv.summaryItem}>
+                      <Text style={hv.summaryNum}>{metCount}/{daysWithData.length}</Text>
+                      <Text style={hv.summaryLabel}>days on target</Text>
+                    </View>
+                    <View style={hv.summaryDivider} />
+                    <View style={hv.summaryItem}>
+                      <Text style={hv.summaryNum}>{avgConsumed?.toLocaleString() ?? '—'}</Text>
+                      <Text style={hv.summaryLabel}>avg kcal/day</Text>
+                    </View>
+                    <View style={hv.summaryDivider} />
+                    <View style={hv.summaryItem}>
+                      <Text style={hv.summaryNum}>{daysWithData.length}</Text>
+                      <Text style={hv.summaryLabel}>days logged</Text>
+                    </View>
+                  </View>
+                  {(avgProtein != null || avgFat != null || avgCarb != null) && (
+                    <>
+                      <View style={hv.summaryMacroDivider} />
+                      <View style={hv.summaryRow}>
+                        <View style={hv.summaryItem}>
+                          <Text style={hv.summaryNum}>{avgProtein ?? '—'}</Text>
+                          <Text style={hv.summaryLabel}>average grams of protein per day</Text>
+                        </View>
+                        <View style={hv.summaryDivider} />
+                        <View style={hv.summaryItem}>
+                          <Text style={hv.summaryNum}>{avgFat ?? '—'}</Text>
+                          <Text style={hv.summaryLabel}>average grams of fat per day</Text>
+                        </View>
+                        <View style={hv.summaryDivider} />
+                        <View style={hv.summaryItem}>
+                          <Text style={hv.summaryNum}>{avgCarb ?? '—'}</Text>
+                          <Text style={hv.summaryLabel}>average grams of carbs per day</Text>
+                        </View>
+                      </View>
+                    </>
+                  )}
+                </>
+              )}
             </View>
           )}
 
           {/* Day rows — flat for week/month/year, grouped by month for total/custom */}
           {isFixed && days.length > 0 && (
             <View style={hv.daysCard}>
-              {days.map((d, i) => <DayRow key={d.dateStr} day={d} last={i === days.length - 1} />)}
+              {days.map((d, i) => <DayRow key={d.dateStr} day={d} last={i === days.length - 1} hideCalories={hideCalories} expanded={expandedDate === d.dateStr} onPress={() => setExpandedDate(p => p === d.dateStr ? null : d.dateStr)} />)}
             </View>
           )}
           {!isFixed && monthGroups.map(g => (
             <View key={g.key}>
               <Text style={hv.monthHeader}>{g.label}</Text>
               <View style={hv.daysCard}>
-                {g.days.map((d, i) => <DayRow key={d.dateStr} day={d} last={i === g.days.length - 1} />)}
+                {g.days.map((d, i) => <DayRow key={d.dateStr} day={d} last={i === g.days.length - 1} hideCalories={hideCalories} expanded={expandedDate === d.dateStr} onPress={() => setExpandedDate(p => p === d.dateStr ? null : d.dateStr)} />)}
               </View>
             </View>
           ))}
@@ -1701,7 +1070,7 @@ function HistoryView({ userId }: { userId: string | null }) {
           )}
 
           {/* Legend */}
-          {(days.length > 0 || past.length > 0) && (
+          {days.length > 0 && (
             <View style={hv.legend}>
               <View style={hv.legendItem}><Ionicons name="checkmark-circle" size={13} color={C.success} /><Text style={hv.legendText}>On target (90–115%)</Text></View>
               <View style={hv.legendItem}><Ionicons name="remove-circle" size={13} color={C.warning} /><Text style={hv.legendText}>Under (&lt;90%)</Text></View>
@@ -1751,14 +1120,18 @@ const hv = StyleSheet.create({
   navBtn: { padding: 6 },
   navArrow: { fontSize: 26, color: C.text2, lineHeight: 30 },
   summaryCard: {
-    flexDirection: 'row', backgroundColor: C.surface, borderRadius: 18,
+    backgroundColor: C.surface, borderRadius: 18,
     padding: 18, borderWidth: 1, borderColor: C.border,
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    gap: 0,
   },
+  summaryRow: { flexDirection: 'row' },
+  summaryMacroDivider: { height: 1, backgroundColor: C.divider, marginVertical: 14 },
   summaryItem: { flex: 1, alignItems: 'center' },
   summaryDivider: { width: 1, backgroundColor: C.border, marginHorizontal: 8 },
   summaryNum: { fontSize: 22, fontWeight: '800', color: C.text1, marginBottom: 2 },
-  summaryLabel: { fontSize: 11, color: C.text3, textAlign: 'center' },
+  summaryLabel:     { fontSize: 11, color: C.text3, textAlign: 'center' },
+  summaryHiddenMsg: { fontSize: 14, color: C.text2, lineHeight: 22, textAlign: 'center', paddingVertical: 4 },
   monthHeader: { fontSize: 16, fontWeight: '800', color: C.text1, paddingVertical: 4 },
   daysCard: {
     backgroundColor: C.surface, borderRadius: 18, paddingHorizontal: 18,
@@ -1776,6 +1149,9 @@ const hv = StyleSheet.create({
   dayNumbers: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
   dayConsumed: { fontSize: 13, fontWeight: '700', color: C.text1 },
   dayTarget: { fontSize: 11, color: C.text3 },
+  dayMacros: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },
+  dayMacroChip: { fontSize: 11, fontWeight: '600' },
+  dayMacroDot: { fontSize: 11, color: C.text3 },
   statusCol: { width: 22, alignItems: 'center' },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   loadMoreBtn: { padding: 14, borderRadius: 10, backgroundColor: C.surface2, alignItems: 'center', borderWidth: 1, borderColor: C.border },
@@ -2308,6 +1684,12 @@ const cf = StyleSheet.create({
 
 const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12,
+  },
+  topBarTitle: { fontSize: 18, fontWeight: '800', color: C.text1 },
+  histContent: { padding: 16, paddingBottom: 40 },
 
   segRow: {
     flexDirection: 'row', marginHorizontal: 16, marginTop: 16, marginBottom: 0,

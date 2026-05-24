@@ -6,13 +6,18 @@ import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { supabase } from '../lib/supabase'
 import { W as C } from '../lib/themeWarm'
+import { useLanguage, LANGUAGES } from '../lib/i18n'
 
 const NAV_ITEMS = [
-  { label: 'Today',     icon: 'calendar-outline'  as const, route: '/(tabs)/today'     },
-  { label: 'History',   icon: 'flash-outline'      as const, route: '/(tabs)/'          },
-  { label: 'Planner',   icon: 'calculator-outline' as const, route: '/(tabs)/planner'   },
-  { label: 'Calendars', icon: 'calendar-clear-outline' as const, route: '/(tabs)/calendar' },
-  { label: 'Settings',  icon: 'settings-outline'   as const, route: '/(tabs)/settings'  },
+  { label: 'Today',     icon: 'calendar-outline'       as const, route: '/(tabs)/today'     },
+  { label: 'History',   icon: 'flash-outline'           as const, route: '/(tabs)/'          },
+  { label: 'Planner',   icon: 'calculator-outline'      as const, route: '/(tabs)/planner'   },
+  { label: 'Calendars', icon: 'calendar-clear-outline'  as const, route: '/(tabs)/calendar'  },
+  { label: 'Settings',  icon: 'settings-outline'        as const, route: '/(tabs)/settings'  },
+]
+
+const FOOD_LOGGER_ITEMS = [
+  { label: 'Week overview', icon: 'bar-chart-outline' as const, route: '/(tabs)/nutrition' },
 ]
 
 function DrawerContent({ userName, avatarUrl, onNav, onClose }: {
@@ -21,6 +26,8 @@ function DrawerContent({ userName, avatarUrl, onNav, onClose }: {
   onNav: (route: string) => void
   onClose: () => void
 }) {
+  const { lang, setLang } = useLanguage()
+
   return (
     <SafeAreaView style={dr.container} edges={['top', 'bottom']}>
       <View style={dr.header}>
@@ -43,6 +50,31 @@ function DrawerContent({ userName, avatarUrl, onNav, onClose }: {
           <Text style={dr.navLabel}>{item.label}</Text>
         </Pressable>
       ))}
+
+      <View style={dr.sectionDivider} />
+      <Text style={dr.sectionLabel}>Food Logger</Text>
+
+      {FOOD_LOGGER_ITEMS.map(item => (
+        <Pressable key={item.route} style={dr.navItem} onPress={() => onNav(item.route)}>
+          <Ionicons name={item.icon} size={20} color="rgba(255,255,255,0.65)" />
+          <Text style={dr.navLabel}>{item.label}</Text>
+        </Pressable>
+      ))}
+
+      <View style={dr.sectionDivider} />
+      <Text style={dr.sectionLabel}>Language</Text>
+      <View style={dr.langRow}>
+        {LANGUAGES.map(l => (
+          <Pressable
+            key={l.code}
+            style={[dr.langBtn, lang === l.code && dr.langBtnActive]}
+            onPress={() => setLang(l.code)}
+          >
+            <Text style={dr.langFlag}>{l.flag}</Text>
+            <Text style={[dr.langLabel, lang === l.code && dr.langLabelActive]}>{l.label}</Text>
+          </Pressable>
+        ))}
+      </View>
 
       <View style={{ flex: 1 }} />
 
@@ -117,11 +149,19 @@ const dr = StyleSheet.create({
   avatarImg:   { width: 56, height: 56, borderRadius: 28, marginBottom: 12, borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)' },
   userName:    { fontSize: 20, fontWeight: '800', color: '#fff', marginBottom: 2 },
   appName:     { fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: '600', letterSpacing: 1.2, textTransform: 'uppercase' },
-  divider:     { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 10 },
+  divider:        { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 10 },
+  sectionDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginTop: 10, marginBottom: 14 },
+  sectionLabel:   { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.35)', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2 },
   navItem:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14 },
   navLabel:    { fontSize: 17, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
   signOut:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 16, marginBottom: 8 },
   signOutText: { fontSize: 15, color: 'rgba(255,255,255,0.35)', fontWeight: '500' },
   hamburger:   { gap: 5, padding: 6 },
   hamLine:     { width: 22, height: 2.5, backgroundColor: C.text1, borderRadius: 1.5 },
+  langRow:     { flexDirection: 'row', gap: 8, marginTop: 6 },
+  langBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.06)' },
+  langBtnActive: { borderColor: 'rgba(255,255,255,0.45)', backgroundColor: 'rgba(255,255,255,0.14)' },
+  langFlag:    { fontSize: 18 },
+  langLabel:   { fontSize: 13, color: 'rgba(255,255,255,0.5)', fontWeight: '500' },
+  langLabelActive: { color: '#fff', fontWeight: '700' },
 })

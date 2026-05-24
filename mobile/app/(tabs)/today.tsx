@@ -9,12 +9,12 @@ import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { supabase } from '../../lib/supabase'
+import { callSyncRecent } from '../../lib/stravaSync'
 import { W as C } from '../../lib/themeWarm'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import { COMMON_FOOD_CATEGORIES } from '../../lib/commonFoods'
 import type { CommonFood } from '../../lib/commonFoods'
 import type { FoodLog, MealTemplate, MealPreset, MealPresetItem } from '../../types'
-import FoodPickerModal from '../../components/FoodPickerModal'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -75,23 +75,11 @@ export default function TodayScreen() {
   const [logs, setLogs] = useState<FoodLog[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Quick add
-  const [quickAddItem, setQuickAddItem] = useState<CommonFood | null>(null)
-  const [quickAddSearch, setQuickAddSearch] = useState('')
   const [customFoods, setCustomFoods] = useState<CustomFood[]>([])
 
-  // Add form
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [addMealIndex, setAddMealIndex] = useState<number | null>(null)
-  const [foodName, setFoodName] = useState('')
-  const [foodKcal, setFoodKcal] = useState('')
-  const [foodProtein, setFoodProtein] = useState('')
-  const [foodFat, setFoodFat] = useState('')
-  const [foodCarb, setFoodCarb] = useState('')
-  const [adding, setAdding] = useState(false)
-
-  // Food picker
-  const [foodPickerVisible, setFoodPickerVisible] = useState(false)
+  // Unified food logger
+  const [showFoodLogger, setShowFoodLogger] = useState(false)
+  const [foodLoggerMealIndex, setFoodLoggerMealIndex] = useState<number | null>(null)
 
   // Calorie modal
   const [calorieModalOpen, setCalorieModalOpen] = useState(false)
@@ -100,8 +88,8 @@ export default function TodayScreen() {
   const [allPresets, setAllPresets] = useState<MealPreset[]>([])
   const [showMealBuilder, setShowMealBuilder] = useState(false)
   const [editingPreset, setEditingPreset] = useState<MealPreset | null>(null)
-  const [myMealsExpanded, setMyMealsExpanded] = useState(true)
-  const [todayLogExpanded, setTodayLogExpanded] = useState(true)
+  const [myMealsExpanded, setMyMealsExpanded] = useState(false)
+  const [todayLogExpanded, setTodayLogExpanded] = useState(false)
 
   const lastLoadRef = useRef<number>(0)
 
@@ -205,12 +193,22 @@ export default function TodayScreen() {
     if (!userId || syncing) return
     setSyncing(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
-      await supabase.functions.invoke('sync-recent', { headers: { Authorization: `Bearer ${session.access_token}` } })
+      const result = await callSyncRecent()
+      if (!result.ok) {
+        if ('skipped' in result) return
+        if (result.error === 'strava_not_connected') {
+          Alert.alert('Strava not connected', 'Link your Strava account in Settings.')
+          return
+        }
+        if (result.error === 'rate_limit') {
+          const mins = result.rateLimitMinutes ?? 15
+          Alert.alert('Strava rate limit', `Too many syncs. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`)
+          return
+        }
+        Alert.alert('Sync failed', result.error ?? 'Could not connect to Strava. Try again.')
+        return
+      }
       await load()
-    } catch {
-      Alert.alert('Sync failed', 'Could not connect to Strava. Try again.')
     } finally {
       setSyncing(false)
     }
@@ -242,22 +240,6 @@ export default function TodayScreen() {
         await supabase.from('food_logs').delete().eq('id', id)
       }},
     ])
-  }
-
-  async function submitAddForm() {
-    const k = parseInt(foodKcal)
-    if (!foodName.trim() || isNaN(k) || k <= 0) { Alert.alert('Invalid', 'Enter a name and calories.'); return }
-    setAdding(true)
-    await addFood(
-      foodName.trim(), k,
-      foodProtein ? parseFloat(foodProtein.replace(',', '.')) : null,
-      foodFat ? parseFloat(foodFat.replace(',', '.')) : null,
-      foodCarb ? parseFloat(foodCarb.replace(',', '.')) : null,
-      addMealIndex,
-    )
-    setFoodName(''); setFoodKcal(''); setFoodProtein(''); setFoodFat(''); setFoodCarb('')
-    setShowAddForm(false); setAddMealIndex(null)
-    setAdding(false)
   }
 
   async function logPreset(preset: MealPreset, meal: MealItem) {
@@ -307,11 +289,6 @@ export default function TodayScreen() {
         m.meal_index === meal.meal_index ? { ...m, checked: meal.checked } : m
       ))
     }
-  }
-
-  async function addFromPicker(food: { name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null; amount_label?: string | null }) {
-    await addFood(food.name, food.kcal, food.protein_g, food.fat_g, food.carb_g, null)
-    setFoodPickerVisible(false)
   }
 
   async function logMealBundle(preset: MealPreset) {
@@ -388,23 +365,6 @@ export default function TodayScreen() {
     return map
   }, [presetsMap])
 
-  const allCats = useMemo(() => {
-    const knownCats = new Set(COMMON_FOOD_CATEGORIES.map(c => c.category))
-    return [
-      ...COMMON_FOOD_CATEGORIES.map(cat => ({
-        category: cat.category,
-        items: [
-          ...customFoods.filter(f => f.category === cat.category) as CommonFood[],
-          ...cat.items,
-        ],
-      })),
-      ...[...new Set(customFoods.filter(f => f.category && !knownCats.has(f.category!)).map(f => f.category!))].map(cat => ({
-        category: cat,
-        items: customFoods.filter(f => f.category === cat) as CommonFood[],
-      })),
-    ]
-  }, [customFoods])
-
   // ── UI ─────────────────────────────────────────────────────────────────────
 
   return (
@@ -446,7 +406,7 @@ export default function TodayScreen() {
           )}
 
           {/* ── Calorie card ── */}
-          <Pressable onPress={() => setCalorieModalOpen(true)} activeOpacity={0.92}>
+          <Pressable onPress={() => !hideCalories && setCalorieModalOpen(true)} activeOpacity={hideCalories ? 1 : 0.92}>
             <LinearGradient
               colors={[C.gradA, C.gradB]}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -459,7 +419,13 @@ export default function TodayScreen() {
                       <View style={st.progressTrack}>
                         <View style={[st.progressFill, { width: `${Math.round(barPct * 100)}%` as any }]} />
                       </View>
-                      <Text style={st.calorieLabelDark}>{status?.text ?? 'kcal today'}</Text>
+                      <Text style={st.calorieLabelDark}>
+                        {consumedKcal > (displayMaxKcal ?? Infinity)
+                          ? 'You\'ve exceeded your daily maximum'
+                          : consumedKcal >= displayKcal
+                            ? 'Daily target reached'
+                            : `You're at ${Math.round(barPct * 100)}% of your daily goal`}
+                      </Text>
                     </>
                   ) : (
                     <>
@@ -469,22 +435,22 @@ export default function TodayScreen() {
                           : (displayKcal - consumedKcal).toLocaleString()}
                       </Text>
                       <Text style={st.calorieLabelDark}>{status?.text ?? ''}</Text>
+                      <View style={st.calorieChips}>
+                        {dailyTarget != null && (
+                          <View style={st.chip}><Text style={st.chipText}>{dailyTarget.toLocaleString()} baseline</Text></View>
+                        )}
+                        {burnedKcal > 0 && (
+                          <View style={st.chip}><Text style={st.chipText}>+{burnedKcal.toLocaleString()} burned</Text></View>
+                        )}
+                        {plannedKcal > 0 && (
+                          <View style={st.chip}><Text style={st.chipText}>+{plannedKcal.toLocaleString()} planned</Text></View>
+                        )}
+                        <View style={[st.chip, st.chipEaten]}>
+                          <Text style={[st.chipText, st.chipEatenText]}>{consumedKcal.toLocaleString()} eaten</Text>
+                        </View>
+                      </View>
                     </>
                   )}
-                  <View style={st.calorieChips}>
-                    {dailyTarget != null && (
-                      <View style={st.chip}><Text style={st.chipText}>{dailyTarget.toLocaleString()} baseline</Text></View>
-                    )}
-                    {burnedKcal > 0 && (
-                      <View style={st.chip}><Text style={st.chipText}>+{burnedKcal.toLocaleString()} burned</Text></View>
-                    )}
-                    {plannedKcal > 0 && (
-                      <View style={st.chip}><Text style={st.chipText}>+{plannedKcal.toLocaleString()} planned</Text></View>
-                    )}
-                    <View style={[st.chip, st.chipEaten]}>
-                      <Text style={[st.chipText, st.chipEatenText]}>{consumedKcal.toLocaleString()} eaten</Text>
-                    </View>
-                  </View>
                 </>
               ) : (
                 <Text style={st.calorieEmpty}>Set a calorie target in Settings →</Text>
@@ -574,7 +540,7 @@ export default function TodayScreen() {
                           <Text style={st.mealActionText}>Preset</Text>
                         </Pressable>
                       )}
-                      <Pressable style={[st.mealActionBtn, st.mealActionBtnCoral]} onPress={() => { setAddMealIndex(meal.meal_index); setShowAddForm(true) }}>
+                      <Pressable style={[st.mealActionBtn, st.mealActionBtnCoral]} onPress={() => { setFoodLoggerMealIndex(meal.meal_index); setShowFoodLogger(true) }}>
                         <Ionicons name="add-outline" size={13} color={C.accent2} />
                         <Text style={[st.mealActionText, { color: C.accent2 }]}>Add food</Text>
                       </Pressable>
@@ -632,50 +598,12 @@ export default function TodayScreen() {
             )}
           </View>
 
-          {/* ── Quick add ── */}
-          <View style={st.card}>
-            <Text style={st.cardTitle}>Quick add</Text>
-            <View style={st.searchRow}>
-              <Ionicons name="search-outline" size={15} color={C.text3} />
-              <TextInput
-                style={st.searchInput}
-                value={quickAddSearch}
-                onChangeText={setQuickAddSearch}
-                placeholder="Search foods…"
-                placeholderTextColor={C.text3}
-                returnKeyType="search"
-                clearButtonMode="while-editing"
-              />
-            </View>
-
-            {quickAddSearch.trim() ? (() => {
-              const q = quickAddSearch.toLowerCase()
-              const hits = allCats.flatMap(c => c.items).filter(f => f.name.toLowerCase().includes(q))
-              if (!hits.length) return <Text style={st.emptyNote}>No results for "{quickAddSearch}"</Text>
-              return hits.map((food, i) => (
-                <Pressable key={food.name + i} style={[st.foodRow, i < hits.length - 1 && st.foodRowBorder]}
-                  onPress={() => setQuickAddItem(food)}>
-                  <Text style={st.foodName}>{food.name}</Text>
-                  {!hideCalories && <Text style={st.foodKcal}>{food.kcal} kcal</Text>}
-                </Pressable>
-              ))
-            })() : allCats.map(cat => (
-              <QuickAddCategory key={cat.category} cat={cat} hideCalories={hideCalories}
-                onSelect={food => setQuickAddItem(food)} />
-            ))}
-
-            <Pressable style={st.browseBtn} onPress={() => setFoodPickerVisible(true)}>
-              <Ionicons name="search-outline" size={14} color={C.accent} />
-              <Text style={st.browseBtnText}>Browse all foods</Text>
-            </Pressable>
-          </View>
-
           {/* ── Today's log ── */}
           <View style={st.card}>
             <Pressable style={st.cardHeader} onPress={() => setTodayLogExpanded(v => !v)}>
               <Text style={st.cardTitle}>Today's log</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Pressable style={st.addBtn} onPress={e => { e.stopPropagation?.(); setAddMealIndex(null); setShowAddForm(true) }}>
+                <Pressable style={st.addBtn} onPress={e => { e.stopPropagation?.(); setFoodLoggerMealIndex(null); setShowFoodLogger(true) }}>
                   <Ionicons name="add" size={16} color="#fff" />
                   <Text style={st.addBtnText}>Add</Text>
                 </Pressable>
@@ -744,57 +672,19 @@ export default function TodayScreen() {
         />
       )}
 
-      {quickAddItem && (
-        <QuickAddModal
-          food={quickAddItem}
-          hideCalories={hideCalories}
-          onAdd={async (kcal, protein, fat, carb) => {
-            await addFood(quickAddItem.name, kcal, protein, fat, carb, null)
-            setQuickAddItem(null)
-          }}
-          onClose={() => setQuickAddItem(null)}
-        />
-      )}
-
-      <Modal visible={showAddForm} transparent animationType="slide" onRequestClose={() => setShowAddForm(false)}>
-        <Pressable style={st.modalOverlay} onPress={() => setShowAddForm(false)} />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ justifyContent: 'flex-end' }}>
-          <View style={st.addFormSheet}>
-            <Text style={st.addFormTitle}>
-              {addMealIndex != null ? `Add to ${meals.find(m => m.meal_index === addMealIndex)?.name ?? 'meal'}` : 'Log food'}
-            </Text>
-            <TextInput style={st.addFormInput} value={foodName} onChangeText={setFoodName}
-              placeholder="Food name" placeholderTextColor={C.text3} returnKeyType="next" />
-            <TextInput style={st.addFormInput} value={foodKcal} onChangeText={setFoodKcal}
-              placeholder="Calories (kcal)" placeholderTextColor={C.text3} keyboardType="numeric"
-              returnKeyType="next" />
-            <View style={st.addFormMacroRow}>
-              <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={foodProtein}
-                onChangeText={v => setFoodProtein(v.replace(',', '.'))}
-                placeholder="Protein g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
-              <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={foodFat}
-                onChangeText={v => setFoodFat(v.replace(',', '.'))}
-                placeholder="Fat g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
-              <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={foodCarb}
-                onChangeText={v => setFoodCarb(v.replace(',', '.'))}
-                placeholder="Carbs g" placeholderTextColor={C.text3} keyboardType="decimal-pad"
-                returnKeyType="done" onSubmitEditing={submitAddForm} />
-            </View>
-            <Pressable style={[st.addFormBtn, adding && { opacity: 0.6 }]} onPress={submitAddForm} disabled={adding}>
-              <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
-            </Pressable>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {userId && (
-        <FoodPickerModal
-          visible={foodPickerVisible}
-          userId={userId}
-          onSelect={food => addFromPicker(food)}
-          onClose={() => setFoodPickerVisible(false)}
-        />
-      )}
+      <UnifiedFoodLogger
+        visible={showFoodLogger}
+        mealIndex={foodLoggerMealIndex}
+        meals={meals}
+        allPresets={allPresets}
+        customFoods={customFoods}
+        hideCalories={hideCalories}
+        onAdd={async (name, kcal, protein, fat, carb) => {
+          await addFood(name, kcal, protein, fat, carb, foodLoggerMealIndex)
+        }}
+        onLogPreset={logMealBundle}
+        onClose={() => { setShowFoodLogger(false); setFoodLoggerMealIndex(null) }}
+      />
 
       {userId && (
         <MealBuilderModal
@@ -837,74 +727,440 @@ function QuickAddCategory({ cat, hideCalories, onSelect }: {
   )
 }
 
-// ─── Quick add qty modal ───────────────────────────────────────────────────────
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseGrams(label: string): number | null {
   const m = label.trim().match(/^(\d+(?:\.\d+)?)\s*(g|ml|kg|l)?$/i)
   return m ? parseFloat(m[1]) : null
 }
 
-function QuickAddModal({ food, hideCalories, onAdd, onClose }: {
-  food: CommonFood & { amount_label?: string | null }
+function defaultServingLabel(food: { name: string; amount_label?: string | null }): string {
+  if (food.amount_label) return food.amount_label
+  const m = food.name.match(/\((\d+(?:\.\d+)?\s*(?:ml|l|g|kg))\)/i)
+  return m ? m[1] : '100g'
+}
+
+// ─── Unified food logger ───────────────────────────────────────────────────────
+
+function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods, hideCalories, onAdd, onLogPreset, onClose }: {
+  visible: boolean
+  mealIndex: number | null
+  meals: MealItem[]
+  allPresets: MealPreset[]
+  customFoods: CustomFood[]
   hideCalories: boolean
-  onAdd: (kcal: number, protein: number | null, fat: number | null, carb: number | null) => void
+  onAdd: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) => Promise<void>
+  onLogPreset: (preset: MealPreset) => Promise<void>
   onClose: () => void
 }) {
-  const defaultLabel = food.amount_label ?? '100g'
-  const [servingLabel, setServingLabel] = useState(defaultLabel)
-  const [qty, setQty] = useState('1')
+  const [tab, setTab] = useState<'search' | 'scan' | 'manual'>('search')
+  const [search, setSearch] = useState('')
+  const [pendingFood, setPendingFood] = useState<(CommonFood & { amount_label?: string | null }) | null>(null)
+  const [servingLabel, setServingLabel] = useState('')
+  const [servingQty, setServingQty] = useState('1')
+  const [scannedProduct, setScannedProduct] = useState<{
+    name: string; kcalPer100g: number
+    proteinPer100g: number | null; fatPer100g: number | null; carbPer100g: number | null
+  } | null>(null)
+  const [scanAmount, setScanAmount] = useState('100')
+  const [scanServings, setScanServings] = useState('1')
+  const [scanLoading, setScanLoading] = useState(false)
+  const lastScannedRef = useRef<string | null>(null)
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions()
+  const [manualName, setManualName] = useState('')
+  const [manualKcal, setManualKcal] = useState('')
+  const [manualProtein, setManualProtein] = useState('')
+  const [manualFat, setManualFat] = useState('')
+  const [manualCarb, setManualCarb] = useState('')
+  const [adding, setAdding] = useState(false)
+  const insets = useSafeAreaInsets()
 
-  const q = parseFloat(qty) || 0
-  const origGrams = parseGrams(defaultLabel)
-  const curGrams = parseGrams(servingLabel)
-  const servingScale = origGrams && curGrams ? curGrams / origGrams : 1
-  const kcal = Math.round(food.kcal * q * servingScale)
-  const protein = food.protein_g != null ? Math.round(food.protein_g * q * servingScale * 10) / 10 : null
+  useEffect(() => {
+    if (!visible) {
+      setTab('search'); setSearch(''); setPendingFood(null)
+      setScannedProduct(null); lastScannedRef.current = null
+      setManualName(''); setManualKcal(''); setManualProtein(''); setManualFat(''); setManualCarb('')
+    }
+  }, [visible])
+
+  const searchResults = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return []
+    const customHits = customFoods.filter(f => f.name.toLowerCase().includes(q))
+    const commonHits = COMMON_FOOD_CATEGORIES.flatMap(c => c.items).filter(f => f.name.toLowerCase().includes(q))
+    return [...customHits, ...commonHits].slice(0, 20) as (CommonFood & { amount_label?: string | null })[]
+  }, [search, customFoods])
+
+  function selectFood(food: CommonFood & { amount_label?: string | null }) {
+    setPendingFood(food)
+    setServingLabel(defaultServingLabel(food))
+    setServingQty('1')
+    setSearch('')
+  }
+
+  async function confirmPending() {
+    if (!pendingFood) return
+    const qty = parseFloat(servingQty) || 0
+    if (qty <= 0) return
+    const origGrams = parseGrams(defaultServingLabel(pendingFood))
+    const curGrams = parseGrams(servingLabel)
+    const scale = origGrams && curGrams ? curGrams / origGrams : 1
+    const kcal = Math.round(pendingFood.kcal * qty * scale)
+    const protein = pendingFood.protein_g != null ? Math.round(pendingFood.protein_g * qty * scale * 10) / 10 : null
+    const fat = pendingFood.fat_g != null ? Math.round(pendingFood.fat_g * qty * scale * 10) / 10 : null
+    const carb = pendingFood.carb_g != null ? Math.round(pendingFood.carb_g * qty * scale * 10) / 10 : null
+    setAdding(true)
+    await onAdd(pendingFood.name, kcal, protein, fat, carb)
+    setAdding(false)
+    setPendingFood(null)
+    onClose()
+  }
+
+  async function handleBarcodeScan({ data }: { data: string }) {
+    if (lastScannedRef.current === data || scanLoading) return
+    lastScannedRef.current = data
+    setScanLoading(true)
+    try {
+      const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${data}.json`)
+      const json = await res.json()
+      if (json.status === 1 && json.product) {
+        const p = json.product
+        const name = p.product_name || p.abbreviated_product_name || 'Unknown product'
+        const n = p.nutriments ?? {}
+        setScannedProduct({
+          name,
+          kcalPer100g: Math.round(n['energy-kcal_100g'] ?? n['energy-kcal'] ?? 0),
+          proteinPer100g: n['proteins_100g'] ?? null,
+          fatPer100g: n['fat_100g'] ?? null,
+          carbPer100g: n['carbohydrates_100g'] ?? null,
+        })
+        setScanAmount('100'); setScanServings('1')
+      } else {
+        Alert.alert('Not found', 'Product not found in the database.')
+        lastScannedRef.current = null
+      }
+    } catch {
+      Alert.alert('Error', 'Could not look up barcode.')
+      lastScannedRef.current = null
+    }
+    setScanLoading(false)
+  }
+
+  async function confirmScan() {
+    if (!scannedProduct) return
+    const g = parseFloat(scanAmount) || 0
+    const servings = parseFloat(scanServings) || 1
+    if (g <= 0) return
+    const r = (g * servings) / 100
+    setAdding(true)
+    await onAdd(
+      scannedProduct.name,
+      Math.round(scannedProduct.kcalPer100g * r),
+      scannedProduct.proteinPer100g != null ? Math.round(scannedProduct.proteinPer100g * r * 10) / 10 : null,
+      scannedProduct.fatPer100g != null ? Math.round(scannedProduct.fatPer100g * r * 10) / 10 : null,
+      scannedProduct.carbPer100g != null ? Math.round(scannedProduct.carbPer100g * r * 10) / 10 : null,
+    )
+    setAdding(false)
+    setScannedProduct(null); lastScannedRef.current = null
+    onClose()
+  }
+
+  async function submitManual() {
+    const k = parseInt(manualKcal)
+    if (!manualName.trim() || isNaN(k) || k <= 0) { Alert.alert('Invalid', 'Enter a name and calories.'); return }
+    setAdding(true)
+    await onAdd(
+      manualName.trim(), k,
+      manualProtein ? parseFloat(manualProtein.replace(',', '.')) : null,
+      manualFat ? parseFloat(manualFat.replace(',', '.')) : null,
+      manualCarb ? parseFloat(manualCarb.replace(',', '.')) : null,
+    )
+    setAdding(false)
+    setManualName(''); setManualKcal(''); setManualProtein(''); setManualFat(''); setManualCarb('')
+    onClose()
+  }
+
+  const isScanningActive = tab === 'scan' && !scannedProduct
+  const mealName = mealIndex != null ? meals.find(m => m.meal_index === mealIndex)?.name ?? 'meal' : null
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={st.modalOverlay} onPress={onClose} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ justifyContent: 'flex-end' }}>
-        <View style={st.addFormSheet}>
-          <Text style={st.addFormTitle}>{food.name}</Text>
-
-          <View style={st.qtyRow}>
-            <Text style={st.qtyLabel}>1 serving =</Text>
-            <TextInput
-              style={st.qtyInput}
-              value={servingLabel}
-              onChangeText={setServingLabel}
-              placeholder="e.g. 100g"
-              placeholderTextColor={C.text4}
-              returnKeyType="next"
-              selectTextOnFocus
-            />
-          </View>
-
-          <View style={st.qtyRow}>
-            <Text style={st.qtyLabel}>Number of servings</Text>
-            <TextInput
-              style={st.qtyInput}
-              value={qty}
-              onChangeText={v => setQty(v.replace(',', '.'))}
-              keyboardType="decimal-pad"
-              returnKeyType="done"
-              autoFocus
-              selectTextOnFocus
-            />
-          </View>
-
-          {!hideCalories && q > 0 && (
-            <Text style={st.qtyPreview}>
-              {kcal} kcal{protein != null ? ` · ${protein}g protein` : ''}
-            </Text>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={!isScanningActive}
+      onRequestClose={() => {
+        if (tab === 'scan' && scannedProduct) { setScannedProduct(null); lastScannedRef.current = null }
+        else if (tab === 'scan') setTab('search')
+        else onClose()
+      }}
+    >
+      {isScanningActive ? (
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          {!cameraPermission?.granted ? (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, padding: 32 }}>
+              <Ionicons name="camera-outline" size={48} color={C.text3} />
+              <Text style={{ fontSize: 14, color: C.text2, textAlign: 'center' }}>Camera access is needed to scan barcodes</Text>
+              <Pressable style={[st.addFormBtn, { paddingHorizontal: 24 }]} onPress={requestCameraPermission}>
+                <Text style={st.addFormBtnText}>Allow camera</Text>
+              </Pressable>
+              <Pressable onPress={() => setTab('search')} style={{ marginTop: 8 }}>
+                <Text style={{ color: C.text3, fontSize: 14 }}>Cancel</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={{ flex: 1 }}>
+              <CameraView
+                style={StyleSheet.absoluteFill}
+                facing="back"
+                onBarcodeScanned={scanLoading ? undefined : handleBarcodeScan}
+                barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'] }}
+              />
+              <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} />
+                <View style={{ flexDirection: 'row', height: 180 }}>
+                  <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} />
+                  <View style={{ width: 260 }}>
+                    <View style={{ position: 'absolute', top: 0, left: 0, width: 28, height: 28, borderTopWidth: 3, borderLeftWidth: 3, borderColor: '#fff' }} />
+                    <View style={{ position: 'absolute', top: 0, right: 0, width: 28, height: 28, borderTopWidth: 3, borderRightWidth: 3, borderColor: '#fff' }} />
+                    <View style={{ position: 'absolute', bottom: 0, left: 0, width: 28, height: 28, borderBottomWidth: 3, borderLeftWidth: 3, borderColor: '#fff' }} />
+                    <View style={{ position: 'absolute', bottom: 0, right: 0, width: 28, height: 28, borderBottomWidth: 3, borderRightWidth: 3, borderColor: '#fff' }} />
+                  </View>
+                  <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} />
+                </View>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} />
+              </View>
+              <View style={{ position: 'absolute', bottom: 48, left: 0, right: 0, alignItems: 'center' }}>
+                <Text style={{ color: '#fff', fontSize: 14, marginBottom: 20 }}>Point at a barcode</Text>
+                <Pressable onPress={() => setTab('search')} style={{ backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20, paddingHorizontal: 24, paddingVertical: 10 }}>
+                  <Text style={{ color: '#fff', fontSize: 14 }}>Cancel</Text>
+                </Pressable>
+              </View>
+              {scanLoading && (
+                <View style={{ ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)' }}>
+                  <ActivityIndicator size="large" color="#fff" />
+                  <Text style={{ color: '#fff', marginTop: 12, fontSize: 14 }}>Looking up product…</Text>
+                </View>
+              )}
+            </View>
           )}
-          <Pressable style={[st.addFormBtn, q <= 0 && { opacity: 0.4 }]}
-            onPress={() => q > 0 && onAdd(kcal, protein, null, null)} disabled={q <= 0}>
-            <Text style={st.addFormBtnText}>Add to log</Text>
-          </Pressable>
         </View>
-      </KeyboardAvoidingView>
+      ) : (
+        <>
+          <Pressable style={st.modalOverlay} onPress={onClose} />
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ justifyContent: 'flex-end' }}>
+            <View style={[loggerSt.sheet, { paddingBottom: Math.max(20, insets.bottom) }]}>
+              <View style={loggerSt.header}>
+                <Text style={loggerSt.title}>{mealName ? `Add to ${mealName}` : 'Log food'}</Text>
+                <Pressable onPress={onClose} hitSlop={10}>
+                  <Ionicons name="close" size={22} color={C.text3} />
+                </Pressable>
+              </View>
+
+              <View style={loggerSt.tabBar}>
+                {(['search', 'scan', 'manual'] as const).map(t => (
+                  <Pressable key={t} style={[loggerSt.tab, tab === t && loggerSt.tabActive]} onPress={() => setTab(t)}>
+                    <Ionicons
+                      name={t === 'search' ? 'search-outline' : t === 'scan' ? 'barcode-outline' : 'pencil-outline'}
+                      size={14}
+                      color={tab === t ? '#fff' : C.text3}
+                    />
+                    <Text style={[loggerSt.tabText, tab === t && loggerSt.tabTextActive]}>
+                      {t === 'search' ? 'Search' : t === 'scan' ? 'Scan' : 'Manual'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {tab === 'search' && (
+                <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+                  {pendingFood ? (
+                    <View style={{ gap: 10 }}>
+                      <Text style={loggerSt.sectionLabel}>{pendingFood.name}</Text>
+                      <View style={st.qtyRow}>
+                        <Text style={st.qtyLabel}>1 serving =</Text>
+                        <TextInput
+                          style={st.qtyInput}
+                          value={servingLabel}
+                          onChangeText={setServingLabel}
+                          placeholder="e.g. 100g"
+                          placeholderTextColor={C.text3}
+                          returnKeyType="next"
+                          selectTextOnFocus
+                        />
+                      </View>
+                      <View style={st.qtyRow}>
+                        <Text style={st.qtyLabel}>Number of servings</Text>
+                        <TextInput
+                          style={st.qtyInput}
+                          value={servingQty}
+                          onChangeText={v => setServingQty(v.replace(',', '.'))}
+                          keyboardType="decimal-pad"
+                          returnKeyType="done"
+                          autoFocus
+                          selectTextOnFocus
+                        />
+                      </View>
+                      {!hideCalories && parseFloat(servingQty) > 0 && (() => {
+                        const qty = parseFloat(servingQty) || 0
+                        const origG = parseGrams(defaultServingLabel(pendingFood))
+                        const curG = parseGrams(servingLabel)
+                        const scale = origG && curG ? curG / origG : 1
+                        return <Text style={st.qtyPreview}>{Math.round(pendingFood.kcal * qty * scale)} kcal</Text>
+                      })()}
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                        <Pressable style={[st.addFormBtn, { flex: 1, backgroundColor: C.surface2 }]} onPress={() => setPendingFood(null)}>
+                          <Text style={[st.addFormBtnText, { color: C.text2 }]}>Back</Text>
+                        </Pressable>
+                        <Pressable
+                          style={[st.addFormBtn, { flex: 1 }, (adding || parseFloat(servingQty) <= 0) && { opacity: 0.5 }]}
+                          onPress={confirmPending}
+                          disabled={adding || parseFloat(servingQty) <= 0}
+                        >
+                          <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={[st.searchRow, { marginBottom: 8 }]}>
+                        <Ionicons name="search-outline" size={15} color={C.text3} />
+                        <TextInput
+                          style={st.searchInput}
+                          value={search}
+                          onChangeText={setSearch}
+                          placeholder="Search foods…"
+                          placeholderTextColor={C.text3}
+                          returnKeyType="search"
+                          clearButtonMode="while-editing"
+                          autoFocus
+                        />
+                      </View>
+                      {search.trim() ? (
+                        searchResults.length > 0 ? (
+                          searchResults.map((food, i) => (
+                            <Pressable key={food.name + i} style={[loggerSt.resultRow, i > 0 && loggerSt.resultRowBorder]} onPress={() => selectFood(food)}>
+                              <Text style={loggerSt.resultName}>{food.name}</Text>
+                              {!hideCalories && <Text style={loggerSt.resultMeta}>{food.kcal} kcal</Text>}
+                            </Pressable>
+                          ))
+                        ) : (
+                          <Text style={st.emptyNote}>No results for "{search}"</Text>
+                        )
+                      ) : (
+                        <>
+                          {allPresets.length > 0 && (
+                            <>
+                              <Text style={loggerSt.sectionLabel}>My Meals</Text>
+                              {allPresets.map((preset, i) => {
+                                const total = (preset.items ?? []).reduce((s, it) => s + it.kcal, 0)
+                                return (
+                                  <Pressable
+                                    key={preset.id}
+                                    style={[loggerSt.resultRow, i > 0 && loggerSt.resultRowBorder]}
+                                    onPress={async () => { await onLogPreset(preset); onClose() }}
+                                  >
+                                    <Text style={loggerSt.resultName}>{preset.name}</Text>
+                                    {!hideCalories && <Text style={loggerSt.resultMeta}>{total} kcal</Text>}
+                                  </Pressable>
+                                )
+                              })}
+                              <Text style={[loggerSt.sectionLabel, { marginTop: 14 }]}>Common foods</Text>
+                            </>
+                          )}
+                          {COMMON_FOOD_CATEGORIES.map(cat => (
+                            <QuickAddCategory
+                              key={cat.category}
+                              cat={{
+                                category: cat.category,
+                                items: [
+                                  ...customFoods.filter(f => f.category === cat.category) as CommonFood[],
+                                  ...cat.items,
+                                ],
+                              }}
+                              hideCalories={hideCalories}
+                              onSelect={selectFood}
+                            />
+                          ))}
+                        </>
+                      )}
+                    </>
+                  )}
+                </ScrollView>
+              )}
+
+              {tab === 'scan' && scannedProduct && (
+                <View style={{ gap: 10 }}>
+                  <Text style={loggerSt.sectionLabel}>{scannedProduct.name}</Text>
+                  {!hideCalories && <Text style={{ fontSize: 12, color: C.text3 }}>{scannedProduct.kcalPer100g} kcal per 100g</Text>}
+                  <View style={st.qtyRow}>
+                    <Text style={st.qtyLabel}>1 serving =</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <TextInput
+                        style={st.qtyInput}
+                        value={scanAmount}
+                        onChangeText={v => setScanAmount(v.replace(',', '.'))}
+                        keyboardType="decimal-pad"
+                        returnKeyType="next"
+                        autoFocus
+                        selectTextOnFocus
+                      />
+                      <Text style={{ color: C.text3, fontSize: 13 }}>g</Text>
+                    </View>
+                  </View>
+                  <View style={st.qtyRow}>
+                    <Text style={st.qtyLabel}>Number of servings</Text>
+                    <TextInput
+                      style={st.qtyInput}
+                      value={scanServings}
+                      onChangeText={v => setScanServings(v.replace(',', '.'))}
+                      keyboardType="decimal-pad"
+                      returnKeyType="done"
+                      selectTextOnFocus
+                    />
+                  </View>
+                  {!hideCalories && parseFloat(scanAmount) > 0 && parseFloat(scanServings) > 0 && (
+                    <Text style={st.qtyPreview}>
+                      = {Math.round(scannedProduct.kcalPer100g * parseFloat(scanAmount) * (parseFloat(scanServings) || 1) / 100)} kcal
+                    </Text>
+                  )}
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                    <Pressable style={[st.addFormBtn, { flex: 1, backgroundColor: C.surface2 }]} onPress={() => { setScannedProduct(null); lastScannedRef.current = null }}>
+                      <Text style={[st.addFormBtnText, { color: C.text2 }]}>Scan again</Text>
+                    </Pressable>
+                    <Pressable style={[st.addFormBtn, { flex: 1 }, adding && { opacity: 0.5 }]} onPress={confirmScan} disabled={adding}>
+                      <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+
+              {tab === 'manual' && (
+                <View style={{ gap: 10 }}>
+                  <TextInput style={st.addFormInput} value={manualName} onChangeText={setManualName}
+                    placeholder="Food name" placeholderTextColor={C.text3} returnKeyType="next" autoFocus />
+                  <TextInput style={st.addFormInput} value={manualKcal} onChangeText={setManualKcal}
+                    placeholder="Calories (kcal)" placeholderTextColor={C.text3} keyboardType="numeric" returnKeyType="next" />
+                  <View style={st.addFormMacroRow}>
+                    <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={manualProtein}
+                      onChangeText={v => setManualProtein(v.replace(',', '.'))}
+                      placeholder="Protein g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
+                    <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={manualFat}
+                      onChangeText={v => setManualFat(v.replace(',', '.'))}
+                      placeholder="Fat g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
+                    <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={manualCarb}
+                      onChangeText={v => setManualCarb(v.replace(',', '.'))}
+                      placeholder="Carbs g" placeholderTextColor={C.text3} keyboardType="decimal-pad"
+                      returnKeyType="done" onSubmitEditing={submitManual} />
+                  </View>
+                  <Pressable style={[st.addFormBtn, adding && { opacity: 0.6 }]} onPress={submitManual} disabled={adding}>
+                    <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          </KeyboardAvoidingView>
+        </>
+      )}
     </Modal>
   )
 }
@@ -1626,4 +1882,20 @@ const st = StyleSheet.create({
   builderCancelBtnText: { fontSize: 15, fontWeight: '700', color: C.text2 },
   builderSaveBtn: { flex: 1, backgroundColor: C.accent, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   builderSaveBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+})
+
+const loggerSt = StyleSheet.create({
+  sheet: { backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, gap: 12, maxHeight: '88%' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  title: { fontSize: 16, fontWeight: '800', color: C.text1 },
+  tabBar: { flexDirection: 'row', backgroundColor: C.surface2, borderRadius: 10, padding: 3 },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, borderRadius: 8, gap: 5 },
+  tabActive: { backgroundColor: C.accent },
+  tabText: { fontSize: 12, fontWeight: '600', color: C.text3 },
+  tabTextActive: { color: '#fff' },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 2 },
+  resultRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 11, paddingHorizontal: 2 },
+  resultRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider },
+  resultName: { fontSize: 13, color: C.text1, flex: 1 },
+  resultMeta: { fontSize: 12, color: C.text3 },
 })

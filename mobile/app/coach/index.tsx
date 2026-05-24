@@ -131,7 +131,7 @@ export default function CoachHubScreen() {
 
   async function shareInvite() {
     if (!invite) return
-    const expires = new Date(invite.expires_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    const expires = new Date(invite.expires_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     await Share.share({
       message: `Join me on StravaEat! Enter this code in the Coach section to connect: ${invite.code}\n(expires at ${expires})`,
     })
@@ -192,7 +192,7 @@ export default function CoachHubScreen() {
   }
 
   const expiresLabel = invite
-    ? `Expires ${new Date(invite.expires_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`
+    ? `Expires ${new Date(invite.expires_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
     : ''
 
   return (

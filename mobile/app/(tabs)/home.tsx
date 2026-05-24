@@ -174,7 +174,7 @@ function greeting(name: string | null): string {
 }
 
 function formatDate(): string {
-  return new Date().toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'long' })
+  return new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'long' })
 }
 
 function localDate(): string {

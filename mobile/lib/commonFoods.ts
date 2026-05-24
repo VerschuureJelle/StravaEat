@@ -155,6 +155,7 @@ export const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[]
       { name: 'Beer (330ml)', kcal: 142, carb_g: 13 },
       { name: 'Wine, red (175ml)', kcal: 143, carb_g: 4 },
       { name: 'Wine, white (175ml)', kcal: 130, carb_g: 4 },
+      { name: 'Chocolate milk (200ml)', kcal: 152, protein_g: 6, fat_g: 4, carb_g: 22 },
     ],
   },
   {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView, Modal,
   StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
+import { generateZonesFromMaxHR } from '../../constants/zones'
 import { addWorkoutToAppleCal, removeWorkoutFromAppleCal } from '../../lib/appleCalAuth'
 import { W as C } from '../../lib/themeWarm'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
@@ -201,6 +202,14 @@ export default function PlannerScreen() {
   const [zones, setZones] = useState<HeartRateZone[]>([])
   const [burnSchema, setBurnSchema] = useState<BurnSchemaPoint[]>([])
   const [sportSettings, setSportSettings] = useState<SportEnergySetting[]>([])
+
+  const activeZones = useMemo(() => {
+    const sportSpecific = zones.filter(
+      z => z.sport_type === selectedSport || normalizeType(z.sport_type ?? '') === selectedSport
+    )
+    if (sportSpecific.length > 0) return sportSpecific
+    return zones.filter(z => !z.sport_type || z.sport_type === 'default')
+  }, [zones, selectedSport])
   const [avgSpeedBySport, setAvgSpeedBySport] = useState<Record<string, number>>({})
 
   const [todayPlans, setTodayPlans] = useState<PlannedWorkout[]>([])
@@ -266,7 +275,7 @@ export default function PlannerScreen() {
     const todayStr = localDate()
 
     const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes, userSportsRes, programRes] = await Promise.all([
-      supabase.from('users').select('weight_kg, ftp_watts, on_period, period_severity, onboarding_data, preferred_workout_time').eq('id', user.id).single(),
+      supabase.from('users').select('weight_kg, ftp_watts, on_period, period_severity, onboarding_data, preferred_workout_time, max_hr').eq('id', user.id).single(),
       supabase.from('activities').select('type, distance_m, duration_sec').eq('user_id', user.id),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
@@ -281,7 +290,15 @@ export default function PlannerScreen() {
     setPreferredWorkoutTime((profileRes.data as any)?.preferred_workout_time ?? '07:00')
     setOnPeriod(profileRes.data?.on_period ?? false)
     setPeriodSeverity(profileRes.data?.period_severity ?? 'minor')
-    setZones(zonesRes.data ?? [])
+    let effectiveZones: HeartRateZone[] = zonesRes.data ?? []
+    if (effectiveZones.length === 0 && profileRes.data?.max_hr) {
+      const generated = generateZonesFromMaxHR(profileRes.data.max_hr).map(z => ({ ...z, user_id: user.id }))
+      const { data: saved } = await supabase.from('heart_rate_zones')
+        .upsert(generated, { onConflict: 'user_id,zone_number' })
+        .select()
+      effectiveZones = (saved ?? generated) as HeartRateZone[]
+    }
+    setZones(effectiveZones)
     setBurnSchema(burnRes.data ?? [])
     setSportSettings(settingsRes.data ?? [])
     setTodayPlans(plansRes.data ?? [])
@@ -401,7 +418,7 @@ export default function PlannerScreen() {
   }
 
   function calculateSegments() {
-    if (zones.length === 0) { Alert.alert('No zones', 'Set up your HR zones in Settings first.'); return }
+    if (activeZones.length === 0) { Alert.alert('No zones', 'Set up your HR zones in Settings first.'); return }
     if (!weightKg) { Alert.alert('No weight', 'Add your weight in Settings → Personal Info first.'); return }
 
     const results: SegmentResult['segments'] = []
@@ -415,7 +432,7 @@ export default function PlannerScreen() {
         return
       }
       const repeats = Math.max(1, parseInt(seg.repeats) || 1)
-      const zone = zones.find(z => z.id === seg.zoneId)
+      const zone = activeZones.find(z => z.id === seg.zoneId)
       if (!zone) { Alert.alert('Missing zone', 'Select a zone for every segment.'); return }
 
       const kcalPerHour = getKcalPerHour(zone)
@@ -839,6 +856,7 @@ export default function PlannerScreen() {
                       setSelectedSport(sport)
                       setSportDropdownOpen(false)
                       setSegResult(null)
+                      setSegments(prev => prev.map(s => ({ ...s, zoneId: '' })))
                     }}
                   >
                     <MaterialCommunityIcons name={getSportIcon(sport) as any} size={20} color={getSportColor(sport)} />
@@ -857,7 +875,7 @@ export default function PlannerScreen() {
             <Text style={st.label}>Workout segments</Text>
 
             {segments.map((seg, idx) => {
-              const selZone = zones.find(z => z.id === seg.zoneId)
+              const selZone = activeZones.find(z => z.id === seg.zoneId)
               const isSwim = /swim/i.test(selectedSport)
               return (
                 <View key={seg.id} style={st.segCard}>
@@ -911,7 +929,7 @@ export default function PlannerScreen() {
                   </View>
 
                   <View style={st.segZoneRow}>
-                    {zones.map(z => (
+                    {activeZones.map(z => (
                       <Pressable
                         key={z.id}
                         style={[st.segZoneBtn, seg.zoneId === z.id && { backgroundColor: C.accent, borderColor: C.accent }]}

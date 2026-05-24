@@ -168,7 +168,7 @@ export default function ActivityDetailScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.name}>{activity.name}</Text>
         <Text style={styles.meta}>
-          {activity.type} · {new Date(activity.date).toLocaleDateString(undefined, {
+          {activity.type} · {new Date(activity.date).toLocaleDateString('en-GB', {
             day: 'numeric', month: 'long', year: 'numeric',
           })} · {formatDuration(totalTimeSec)}
         </Text>

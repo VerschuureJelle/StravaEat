@@ -10,11 +10,11 @@ import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { supabase } from '../../lib/supabase'
 import { notifyWorkoutSynced } from '../../lib/notifications'
+import { callSyncRecent } from '../../lib/stravaSync'
 import { W as C } from '../../lib/themeWarm'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import type { Activity } from '../../types'
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
 
 type Period = 'total' | 'day' | 'week' | 'month' | 'year' | 'custom'
 
@@ -101,7 +101,7 @@ function advance(period: Exclude<Period, 'total' | 'custom'>, anchor: Date, delt
 
 function formatNavLabel(period: Exclude<Period, 'total' | 'custom'>, anchor: Date): string {
   const start = startOf(period, anchor), end = endOf(period, start)
-  const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString(undefined, o)
+  const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString('en-GB', o)
   switch (period) {
     case 'day': return fmt(start, { weekday: 'long', day: 'numeric', month: 'long' })
     case 'week': return `${fmt(start, { day: 'numeric', month: 'short' })} – ${fmt(end, { day: 'numeric', month: 'short', year: 'numeric' })}`
@@ -127,7 +127,7 @@ function formatDayHeader(dateStr: string): string {
   const yest = new Date(); yest.setDate(yest.getDate() - 1)
   if (dateStr === today) return 'Today'
   if (dateStr === dayKey(yest.toISOString())) return 'Yesterday'
-  return new Date(dateStr + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
 function formatDuration(sec: number) {
@@ -280,7 +280,7 @@ function buildMonthSections(acts: Activity[]): ListSection[] {
       }
       return {
         key: mk, isTotal: true, monthStart, monthActivities: as,
-        title: monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+        title: monthStart.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
         data: items,
       }
     })
@@ -343,50 +343,44 @@ export default function ActivitiesScreen() {
   const syncStrava = useCallback(async () => {
     setSyncing(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Not signed in')
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/sync-recent`, {
-        method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-      const text = await res.text()
-      let json: any = {}
-      try { json = JSON.parse(text) } catch { /* non-JSON body from CDN/gateway */ }
-      if (!res.ok) {
-        if (json.error === 'strava_not_connected') {
+      const result = await callSyncRecent()
+      if (!result.ok) {
+        if ('skipped' in result) return
+        if (result.error === 'strava_not_connected') {
           Alert.alert('Strava not connected', 'Link your Strava account via the Settings tab.')
           return
         }
-        if (res.status === 429 || String(json.error).startsWith('rate_limit:')) {
-          const minutes = String(json.error).startsWith('rate_limit:')
-            ? String(json.error).split(':')[1]
-            : '15'
+        if (result.error === 'rate_limit') {
+          const mins = result.rateLimitMinutes ?? 15
           Alert.alert(
             'Strava rate limit reached',
-            `Strava only allows a limited number of syncs per 15-minute window. Try again in ${minutes} minute${minutes === '1' ? '' : 's'}.`,
+            `Strava only allows a limited number of syncs per 15-minute window. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`,
           )
           return
         }
-        throw new Error(json.error ?? `HTTP ${res.status}`)
+        throw new Error(result.error ?? 'Something went wrong')
       }
-      await fetchActivities(period, anchor, monthsBack, customStart, customEnd)
 
-      const syncedCount: number = json.synced ?? 0
-      setSyncBanner({ count: syncedCount })
+      await fetchActivities(period, anchor, monthsBack, customStart, customEnd)
+      setSyncBanner({ count: result.synced })
       setTimeout(() => setSyncBanner(null), 4000)
 
       // Notify if any kcal were burned today
-      const todayStr = new Date().toISOString().slice(0, 10)
-      const [actsRes, profileRes] = await Promise.all([
-        supabase.from('activities').select('total_kcal').eq('user_id', session.user.id)
-          .gte('date', todayStr).not('total_kcal', 'is', null),
-        supabase.from('users').select('daily_kcal_target, hide_calories').eq('id', session.user.id).single(),
-      ])
-      const burnedToday = (actsRes.data ?? []).reduce((s: number, a: any) => s + (a.total_kcal ?? 0), 0)
-      if (burnedToday > 0) {
-        const baseline = profileRes.data?.daily_kcal_target ?? null
-        const newTarget = baseline != null ? baseline + Math.round(burnedToday) : null
-        const hideKcal = profileRes.data?.hide_calories ?? false
-        notifyWorkoutSynced(burnedToday, newTarget, hideKcal)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        const todayStr = new Date().toISOString().slice(0, 10)
+        const [actsRes, profileRes] = await Promise.all([
+          supabase.from('activities').select('total_kcal').eq('user_id', session.user.id)
+            .gte('date', todayStr).not('total_kcal', 'is', null),
+          supabase.from('users').select('daily_kcal_target, hide_calories').eq('id', session.user.id).single(),
+        ])
+        const burnedToday = (actsRes.data ?? []).reduce((s: number, a: any) => s + (a.total_kcal ?? 0), 0)
+        if (burnedToday > 0) {
+          const baseline = profileRes.data?.daily_kcal_target ?? null
+          const newTarget = baseline != null ? baseline + Math.round(burnedToday) : null
+          const hideKcal = profileRes.data?.hide_calories ?? false
+          notifyWorkoutSynced(burnedToday, newTarget, hideKcal)
+        }
       }
     } catch (err: any) {
       Alert.alert('Sync failed', err.message ?? 'Something went wrong')
@@ -431,7 +425,7 @@ export default function ActivitiesScreen() {
     if (period === 'total') return 'All activities'
     if (period === 'custom') {
       if (customStart && customEnd) {
-        const fmt = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+        const fmt = (iso: string) => new Date(iso + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
         return `${fmt(customStart)} – ${fmt(customEnd)}`
       }
       return 'Custom range'

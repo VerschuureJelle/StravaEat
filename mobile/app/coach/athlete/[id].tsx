@@ -265,7 +265,7 @@ export default function AthleteDetailScreen() {
                   <Ionicons name={noteTypeIcon(n.note_type)} size={12} color={noteTypeColor(n.note_type)} />
                   <Text style={[st.noteTag, { color: noteTypeColor(n.note_type) }]}>{noteTypeLabel(n.note_type)}</Text>
                   <Text style={st.noteDate}>
-                    {new Date(n.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                    {new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                   </Text>
                 </View>
                 <Text style={st.noteContent}>{n.content}</Text>

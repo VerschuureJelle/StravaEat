@@ -36,7 +36,7 @@ const MEAL_DEFAULTS: { name: string; time: string }[] = [
   { name: 'Snack', time: '12:00' },
 ]
 
-type SettingsTab = 'profile' | 'zones' | 'meals' | 'fueling'
+type SettingsTab = 'profile' | 'zones' | 'meals'
 type SportMode = 'standard' | 'custom' | 'linked'
 interface SportConfig { mode: SportMode; linkedTo: string | null }
 interface DraftMeal {
@@ -107,10 +107,10 @@ export default function SettingsScreen() {
   const [linkPickerMeal, setLinkPickerMeal] = useState<number | null>(null)
   const [foodPickerTargetIdx, setFoodPickerTargetIdx] = useState<number | null>(null)
   const [expandedPresets, setExpandedPresets] = useState<Set<string>>(new Set())
-  const [collapsedMealCards, setCollapsedMealCards] = useState<Set<number>>(new Set())
+  const [expandedMealCards, setExpandedMealCards] = useState<Set<number>>(new Set())
 
   function toggleMealCard(index: number) {
-    setCollapsedMealCards(prev => {
+    setExpandedMealCards(prev => {
       const next = new Set(prev)
       next.has(index) ? next.delete(index) : next.add(index)
       return next
@@ -285,7 +285,7 @@ export default function SettingsScreen() {
     )
   }
 
-  const handleConnectStrava = () => initiateStravaOAuth()
+  const handleConnectStrava = () => initiateStravaOAuth().catch(e => Alert.alert('Strava', e.message ?? 'Could not open Strava'))
 
   async function savePeriodState(newOnPeriod: boolean, newSeverity: PeriodSeverity) {
     if (!userId) return
@@ -427,14 +427,13 @@ export default function SettingsScreen() {
 
   async function addPlannerSport(name: string) {
     const trimmed = name.trim()
-    if (!userId || !trimmed || userSports.some(s => s.sport_name === trimmed)) return
-    const { data, error } = await supabase.from('user_sports').insert({
-      user_id: userId,
-      sport_name: trimmed,
-      sort_order: userSports.length,
-    }).select().single()
+    if (!userId || !trimmed) return
+    if (userSports.some(s => s.sport_name.toLowerCase() === trimmed.toLowerCase())) return
+    const { data, error } = await supabase.from('user_sports')
+      .upsert({ user_id: userId, sport_name: trimmed, sort_order: userSports.length }, { onConflict: 'user_id,sport_name' })
+      .select().single()
     if (error) { Alert.alert('Error', error.message); return }
-    setUserSports(prev => [...prev, data as UserSport])
+    setUserSports(prev => prev.some(s => s.id === (data as UserSport).id) ? prev : [...prev, data as UserSport])
     setNewSportInput('')
   }
 
@@ -731,7 +730,6 @@ export default function SettingsScreen() {
           { key: 'profile', label: 'Profile' },
           { key: 'zones', label: 'Zones' },
           { key: 'meals', label: 'Meals' },
-          { key: 'fueling', label: 'Fueling' },
         ] as const).map(tab => (
           <Pressable
             key={tab.key}
@@ -787,14 +785,40 @@ export default function SettingsScreen() {
               <View>
                 <Text style={styles.stravaLabel}>Strava</Text>
                 <Text style={styles.stravaStatus}>
-                  {savedProfile.strava_id ? `Connected (ID: ${savedProfile.strava_id})` : 'Not connected'}
+                  {savedProfile.strava_access_token
+                    ? `Connected (ID: ${savedProfile.strava_id})`
+                    : savedProfile.strava_id
+                      ? 'Disconnected'
+                      : 'Not connected'}
                 </Text>
               </View>
-              <Pressable style={styles.stravaBtn} onPress={handleConnectStrava}>
-                <Text style={styles.stravaBtnText}>
-                  {savedProfile.strava_id ? 'Reconnect' : 'Connect'}
-                </Text>
-              </Pressable>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {savedProfile.strava_access_token && (
+                  <Pressable
+                    style={[styles.stravaBtn, { backgroundColor: C.surface2 }]}
+                    onPress={async () => {
+                      Alert.alert('Disconnect Strava?', 'This will remove your Strava connection. Your synced activities will remain.', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Disconnect', style: 'destructive', onPress: async () => {
+                          await supabase.from('users').update({
+                            strava_access_token: null,
+                            strava_refresh_token: null,
+                            strava_token_expires_at: null,
+                          }).eq('id', userId!)
+                          setSavedProfile(p => ({ ...p, strava_access_token: null, strava_refresh_token: null }))
+                        }},
+                      ])
+                    }}
+                  >
+                    <Text style={[styles.stravaBtnText, { color: C.text2 }]}>Disconnect</Text>
+                  </Pressable>
+                )}
+                <Pressable style={styles.stravaBtn} onPress={handleConnectStrava}>
+                  <Text style={styles.stravaBtnText}>
+                    {savedProfile.strava_access_token ? 'Reconnect' : savedProfile.strava_id ? 'Reconnect' : 'Connect'}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
 
             <Text style={[styles.sectionHeader, { marginTop: 24 }]}>Calendars</Text>
@@ -926,7 +950,7 @@ export default function SettingsScreen() {
                   setEditedProfile(p => ({ ...p, daily_kcal_target: v ? parseFloat(v) : null }))
                 }
               />
-              <Text style={styles.prefNote}>Lower bound — workouts add on top. Use Nutrition → Estimate to calculate from your body stats.</Text>
+              <Text style={styles.prefNote}>Lower bound — workouts add on top. Auto-calculated from your profile using Mifflin-St Jeor × 1.2 (sedentary baseline). You can override this manually.</Text>
             </View>
 
             <View style={styles.fieldGroup}>
@@ -1348,7 +1372,7 @@ export default function SettingsScreen() {
             </View>
 
             {draftMeals.map((meal, i) => {
-              const mealCollapsed = collapsedMealCards.has(i)
+              const mealCollapsed = !expandedMealCards.has(i)
               return (
               <View key={i} style={styles.mealCard}>
                 <Pressable style={styles.mealCardHeader} onPress={() => toggleMealCard(i)}>
@@ -1549,8 +1573,8 @@ export default function SettingsScreen() {
 
           </>
         )}
-        {/* ── Fueling ──────────────────────────────────────── */}
-        {activeTab === 'fueling' && (() => {
+        {/* ── Fueling (removed) ──────────────────────────── */}
+        {(false as boolean) && (() => {
           const fuelingSports = [...new Set(activitySports.map(s => normalizeType(s)))].sort()
           const activeEntries = Object.entries(fuelingConfigs)
 

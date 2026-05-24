@@ -119,7 +119,7 @@ export default function MealsScreen() {
       <ScrollView contentContainerStyle={st.content} showsVerticalScrollIndicator={false}>
         <Text style={st.screenTitle}>Meal Plan</Text>
         <Text style={st.dateText}>
-          {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+          {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
         </Text>
 
         {meals.length > 0 && (

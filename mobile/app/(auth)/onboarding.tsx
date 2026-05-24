@@ -1,18 +1,27 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   View, Text, TextInput, Pressable, StyleSheet, ScrollView,
-  Alert, ActivityIndicator, Animated, Dimensions,
+  Alert, ActivityIndicator, Animated, Dimensions, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
 import { initiateStravaOAuth } from '../../lib/stravaAuth'
+import { setOnboardingDone } from '../../lib/onboardingCache'
 import { W as C } from '../../lib/themeWarm'
 import { generateZonesFromMaxHR } from '../../constants/zones'
 import type { SportHistory, Sex } from '../../types'
 
 const SCREEN_WIDTH = Dimensions.get('window').width
+
+// ─── Mifflin-St Jeor ─────────────────────────────────────────────────────────
+
+function calcMifflinBMR(weight_kg: number, height_cm: number, age: number, sex: Sex | ''): number {
+  const base = 10 * weight_kg + 6.25 * height_cm - 5 * age
+  const offset = sex === 'female' ? -161 : sex === 'male' ? 5 : -78
+  return Math.round(base + offset)
+}
 
 // ─── question definitions ─────────────────────────────────────────────────────
 
@@ -77,7 +86,7 @@ const QUESTIONS: Question[] = [
       { label: 'Planning workouts', value: 'planning' },
       { label: 'Keeping energy levels up', value: 'energy' },
       { label: 'Supporting recovery', value: 'recovery' },
-      { label: 'Managing load around my period', value: 'period' },
+      { label: 'Managing trainingsload around my period', value: 'period' },
       { label: 'Building a healthier food relationship', value: 'food_relationship' },
     ],
   },
@@ -123,7 +132,7 @@ const QUESTIONS: Question[] = [
     options: [
       { label: 'Performance fueling', value: 'performance', emoji: '⚡' },
       { label: 'Energy & recovery', value: 'energy', emoji: '🔋' },
-      { label: 'Body composition', value: 'composition', emoji: '⚖️' },
+      { label: 'Change in body composition', value: 'composition', emoji: '⚖️' },
       { label: 'A balanced mix', value: 'balanced', emoji: '☯️' },
     ],
   },
@@ -158,11 +167,19 @@ const QUESTIONS: Question[] = [
 // ─── types ────────────────────────────────────────────────────────────────────
 
 type Step = 'profile' | 'questions' | 'strava'
+type WeightMode = 'fixed' | 'estimate'
 
 interface ProfileData {
-  name: string; age: string; weight_kg: string
-  sex: Sex | ''; sport_history: SportHistory | ''
-  max_hr: string; resting_hr: string
+  name: string
+  age: string
+  weight_kg: string
+  weight_lower: string
+  weight_upper: string
+  height_cm: string
+  sex: Sex | ''
+  sport_history: SportHistory | ''
+  max_hr: string
+  resting_hr: string
 }
 
 const SEX_OPTIONS: { label: string; value: Sex }[] = [
@@ -171,10 +188,10 @@ const SEX_OPTIONS: { label: string; value: Sex }[] = [
   { label: 'Other', value: 'other' },
 ]
 
-const SPORT_OPTIONS: { label: string; value: SportHistory }[] = [
-  { label: 'Beginner', value: 'beginner' },
-  { label: 'Intermediate', value: 'intermediate' },
-  { label: 'Advanced', value: 'advanced' },
+const SPORT_OPTIONS: { label: string; value: SportHistory; note: string }[] = [
+  { label: 'Beginner', value: 'beginner', note: 'Less than 2 years of regular training' },
+  { label: 'Intermediate', value: 'intermediate', note: '2–5 years, training consistently' },
+  { label: 'Advanced', value: 'advanced', note: '5+ years, high-volume or competitive' },
 ]
 
 // ─── screen ──────────────────────────────────────────────────────────────────
@@ -182,18 +199,16 @@ const SPORT_OPTIONS: { label: string; value: SportHistory }[] = [
 export default function OnboardingScreen() {
   const router = useRouter()
 
-  // ── step state ──────────────────────────────────────────────────────────────
   const [step, setStep]           = useState<Step>('profile')
   const [stravaConnected, setStravaConnected] = useState(false)
   const [saving, setSaving]       = useState(false)
+  const [weightMode, setWeightMode] = useState<WeightMode>('fixed')
 
-  // ── profile state ──────────────────────────────────────────────────────────
   const [profile, setProfile] = useState<ProfileData>({
-    name: '', age: '', weight_kg: '', sex: '',
-    sport_history: '', max_hr: '', resting_hr: '',
+    name: '', age: '', weight_kg: '', weight_lower: '', weight_upper: '',
+    height_cm: '', sex: '', sport_history: '', max_hr: '', resting_hr: '',
   })
 
-  // ── question state ─────────────────────────────────────────────────────────
   const [qIndex, setQIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
   const slideX = useRef(new Animated.Value(0)).current
@@ -210,27 +225,68 @@ export default function OnboardingScreen() {
     if (parsed.queryParams?.linked === 'true') { setStravaConnected(true) }
   }
 
+  // ── weight validation ──────────────────────────────────────────────────────
+
+  function resolvedWeight(): number | null {
+    if (weightMode === 'fixed') {
+      const v = parseFloat(profile.weight_kg)
+      return isNaN(v) ? null : v
+    }
+    const lo = parseFloat(profile.weight_lower)
+    const hi = parseFloat(profile.weight_upper)
+    if (isNaN(lo) || isNaN(hi)) return null
+    return (lo + hi) / 2
+  }
+
+  function weightError(): string | null {
+    if (weightMode === 'estimate') {
+      const lo = parseFloat(profile.weight_lower)
+      const hi = parseFloat(profile.weight_upper)
+      if (!isNaN(lo) && !isNaN(hi)) {
+        if (hi <= lo) return 'Upper bound must be greater than lower bound.'
+        if (hi - lo > 5) return 'Difference between bounds may not exceed 5 kg.'
+      }
+    }
+    return null
+  }
+
   // ── profile save ───────────────────────────────────────────────────────────
 
   async function saveProfile() {
-    if (!profile.weight_kg || !profile.max_hr) {
+    const wkg = resolvedWeight()
+    const wErr = weightError()
+    if (wErr) { Alert.alert('Weight', wErr); return }
+    if (!wkg || !profile.max_hr) {
       Alert.alert('Required', 'Weight and max heart rate are needed to calculate your heart rate zones.')
       return
     }
+
     setSaving(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not signed in')
 
+      const age = profile.age ? parseInt(profile.age) : null
+      const height = profile.height_cm ? parseFloat(profile.height_cm) : null
+
+      // Auto-calculate daily calorie target using Mifflin-St Jeor (moderate activity factor 1.55)
+      let daily_kcal_target: number | null = null
+      if (age && height) {
+        const bmr = calcMifflinBMR(wkg, height, age, profile.sex)
+        daily_kcal_target = Math.round(bmr * 1.2)
+      }
+
       await supabase.from('users').upsert({
         id: user.id,
         name: profile.name || null,
-        age: profile.age ? parseInt(profile.age) : null,
-        weight_kg: parseFloat(profile.weight_kg),
+        age,
+        weight_kg: wkg,
+        height_cm: height,
         sex: profile.sex || null,
         sport_history: profile.sport_history || null,
         max_hr: parseInt(profile.max_hr),
         resting_hr: profile.resting_hr ? parseInt(profile.resting_hr) : null,
+        ...(daily_kcal_target != null ? { daily_kcal_target } : {}),
       })
 
       const zones = generateZonesFromMaxHR(parseInt(profile.max_hr)).map(z => ({ ...z, user_id: user.id }))
@@ -256,11 +312,8 @@ export default function OnboardingScreen() {
   }
 
   function handleNext() {
-    if (qIndex < QUESTIONS.length - 1) {
-      slideToIndex(qIndex + 1, 1)
-    } else {
-      finishOnboarding()
-    }
+    if (qIndex < QUESTIONS.length - 1) slideToIndex(qIndex + 1, 1)
+    else finishOnboarding()
   }
 
   function handleBack() {
@@ -301,9 +354,7 @@ export default function OnboardingScreen() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not signed in')
 
-      // Apply answers to app settings
-      const hideCalories =
-        answers.nutrition_pref === 'minimal' || answers.metrics_stress === 'often'
+      const hideCalories = answers.nutrition_pref === 'minimal' || answers.metrics_stress === 'often'
 
       await supabase.from('users').update({
         onboarding_data: answers,
@@ -311,6 +362,7 @@ export default function OnboardingScreen() {
         hide_calories: hideCalories || undefined,
       }).eq('id', user.id)
 
+      setOnboardingDone(user.id)  // cache so startup skips the DB query next time
       setStep('strava')
     } catch (err: any) {
       Alert.alert('Error', err.message ?? 'Could not save your answers')
@@ -319,7 +371,6 @@ export default function OnboardingScreen() {
     }
   }
 
-  // ── max HR preview ─────────────────────────────────────────────────────────
   const maxHRNum = parseInt(profile.max_hr)
   const previewZones = maxHRNum > 0 ? generateZonesFromMaxHR(maxHRNum) : null
 
@@ -338,16 +389,20 @@ export default function OnboardingScreen() {
           </Text>
           {stravaConnected ? (
             <>
-              <View style={[s.primaryBtn, { backgroundColor: '#4CAF50' }]}>
-                <Text style={s.primaryBtnText}>✓ Strava connected</Text>
+              <View style={[s.stravaBtn, { backgroundColor: '#4CAF50' }]}>
+                <Text style={s.stravaBtnText}>✓ Strava connected</Text>
               </View>
               <Pressable style={s.primaryBtn} onPress={() => router.replace('/(tabs)/today')}>
                 <Text style={s.primaryBtnText}>Let's go →</Text>
               </Pressable>
             </>
           ) : (
-            <Pressable style={s.primaryBtn} onPress={() => initiateStravaOAuth()}>
-              <Text style={s.primaryBtnText}>Connect with Strava</Text>
+            <Pressable
+              style={s.stravaBtn}
+              onPress={() => initiateStravaOAuth()}
+              hitSlop={4}
+            >
+              <Text style={s.stravaBtnText}>Connect with Strava</Text>
             </Pressable>
           )}
           <Pressable style={s.ghostBtn} onPress={() => router.replace('/(tabs)/today')}>
@@ -363,8 +418,10 @@ export default function OnboardingScreen() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   if (step === 'profile') {
+    const wErr = weightError()
     return (
       <SafeAreaView style={s.safe}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={s.profileScroll} keyboardShouldPersistTaps="handled">
           <Text style={s.stepLabel}>Your profile</Text>
           <Text style={s.profileTitle}>A few basics</Text>
@@ -376,8 +433,39 @@ export default function OnboardingScreen() {
           <Text style={s.label}>Age</Text>
           <TextInput style={s.input} value={profile.age} onChangeText={v => setProfile(p => ({ ...p, age: v }))} keyboardType="numeric" placeholder="e.g. 30" placeholderTextColor={C.text3} />
 
+          <Text style={s.label}>Height (cm)</Text>
+          <TextInput style={s.input} value={profile.height_cm} onChangeText={v => setProfile(p => ({ ...p, height_cm: v }))} keyboardType="numeric" placeholder="e.g. 175" placeholderTextColor={C.text3} />
+
+          {/* Weight — fixed or estimate */}
           <Text style={s.label}>Weight (kg) *</Text>
-          <TextInput style={s.input} value={profile.weight_kg} onChangeText={v => setProfile(p => ({ ...p, weight_kg: v }))} keyboardType="numeric" placeholder="e.g. 75" placeholderTextColor={C.text3} />
+          <View style={s.weightToggleRow}>
+            <Pressable style={[s.weightToggleBtn, weightMode === 'fixed' && s.weightToggleBtnActive]} onPress={() => setWeightMode('fixed')}>
+              <Text style={[s.weightToggleText, weightMode === 'fixed' && s.weightToggleTextActive]}>Fixed</Text>
+            </Pressable>
+            <Pressable style={[s.weightToggleBtn, weightMode === 'estimate' && s.weightToggleBtnActive]} onPress={() => setWeightMode('estimate')}>
+              <Text style={[s.weightToggleText, weightMode === 'estimate' && s.weightToggleTextActive]}>Estimate</Text>
+            </Pressable>
+          </View>
+          {weightMode === 'fixed' ? (
+            <TextInput style={s.input} value={profile.weight_kg} onChangeText={v => setProfile(p => ({ ...p, weight_kg: v }))} keyboardType="numeric" placeholder="e.g. 75" placeholderTextColor={C.text3} />
+          ) : (
+            <View style={s.weightEstimateRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.weightBoundLabel}>Lower bound</Text>
+                <TextInput style={s.input} value={profile.weight_lower} onChangeText={v => setProfile(p => ({ ...p, weight_lower: v }))} keyboardType="numeric" placeholder="e.g. 73" placeholderTextColor={C.text3} />
+              </View>
+              <Text style={s.weightDash}>–</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={s.weightBoundLabel}>Upper bound</Text>
+                <TextInput style={s.input} value={profile.weight_upper} onChangeText={v => setProfile(p => ({ ...p, weight_upper: v }))} keyboardType="numeric" placeholder="e.g. 77" placeholderTextColor={C.text3} />
+              </View>
+            </View>
+          )}
+          {weightMode === 'estimate' && (
+            <Text style={wErr ? s.weightErrText : s.weightHint}>
+              {wErr ?? 'Max 5 kg difference. Average will be used for calculations.'}
+            </Text>
+          )}
 
           <Text style={s.label}>Sex</Text>
           <View style={s.chipRow}>
@@ -389,10 +477,16 @@ export default function OnboardingScreen() {
           </View>
 
           <Text style={s.label}>Sport experience</Text>
-          <View style={s.chipRow}>
+          <View style={s.sportOptionList}>
             {SPORT_OPTIONS.map(o => (
-              <Pressable key={o.value} style={[s.chip, profile.sport_history === o.value && s.chipActive]} onPress={() => setProfile(p => ({ ...p, sport_history: o.value }))}>
-                <Text style={[s.chipText, profile.sport_history === o.value && s.chipTextActive]}>{o.label}</Text>
+              <Pressable key={o.value} style={[s.sportOption, profile.sport_history === o.value && s.sportOptionActive]} onPress={() => setProfile(p => ({ ...p, sport_history: o.value }))}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.sportOptionLabel, profile.sport_history === o.value && s.sportOptionLabelActive]}>{o.label}</Text>
+                  <Text style={s.sportOptionNote}>{o.note}</Text>
+                </View>
+                <View style={[s.optionCheck, profile.sport_history === o.value && s.optionCheckSel]}>
+                  {profile.sport_history === o.value && <Text style={s.optionCheckMark}>✓</Text>}
+                </View>
               </Pressable>
             ))}
           </View>
@@ -420,6 +514,7 @@ export default function OnboardingScreen() {
             {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryBtnText}>Continue →</Text>}
           </Pressable>
         </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     )
   }
@@ -434,7 +529,6 @@ export default function OnboardingScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      {/* Top bar */}
       <View style={s.qTopBar}>
         <Pressable onPress={handleBack} hitSlop={12}>
           <Text style={s.backArrow}>←</Text>
@@ -445,12 +539,10 @@ export default function OnboardingScreen() {
         </Pressable>
       </View>
 
-      {/* Progress bar */}
       <View style={s.progressTrack}>
         <Animated.View style={[s.progressFill, { width: `${progress * 100}%` }]} />
       </View>
 
-      {/* Card */}
       <Animated.View style={[s.qCard, { transform: [{ translateX: slideX }] }]}>
         <ScrollView contentContainerStyle={s.qCardInner} showsVerticalScrollIndicator={false}>
           <Text style={s.qQuestion}>{q.question}</Text>
@@ -482,7 +574,6 @@ export default function OnboardingScreen() {
         </ScrollView>
       </Animated.View>
 
-      {/* Next / Finish */}
       <View style={s.qFooter}>
         <Pressable
           style={[s.primaryBtn, !canProceed(q) && s.btnDisabled, { marginHorizontal: 24 }]}
@@ -509,6 +600,8 @@ const s = StyleSheet.create({
   heroEmoji:        { fontSize: 64, marginBottom: 24 },
   stravaTitle:      { fontSize: 28, fontWeight: '800', color: C.text1, marginBottom: 10, textAlign: 'center' },
   stravaSub:        { fontSize: 15, color: C.text2, textAlign: 'center', lineHeight: 22, marginBottom: 40 },
+  stravaBtn:        { backgroundColor: C.accent, paddingVertical: 16, paddingHorizontal: 28, borderRadius: 14, alignItems: 'center', marginTop: 8, alignSelf: 'stretch' },
+  stravaBtnText:    { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'center' },
 
   // Profile step
   profileScroll:    { padding: 24, paddingBottom: 48 },
@@ -522,6 +615,27 @@ const s = StyleSheet.create({
   chipActive:       { borderColor: C.accent, backgroundColor: C.accent + '18' },
   chipText:         { fontSize: 14, color: C.text2 },
   chipTextActive:   { color: C.accent, fontWeight: '600' },
+
+  // Weight toggle
+  weightToggleRow:      { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  weightToggleBtn:      { flex: 1, borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: C.surface },
+  weightToggleBtnActive:{ borderColor: C.accent, backgroundColor: C.accent + '18' },
+  weightToggleText:     { fontSize: 14, color: C.text2, fontWeight: '500' },
+  weightToggleTextActive:{ color: C.accent, fontWeight: '700' },
+  weightEstimateRow:    { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+  weightBoundLabel:     { fontSize: 11, color: C.text3, marginBottom: 4 },
+  weightDash:           { fontSize: 18, color: C.text3, paddingBottom: 12 },
+  weightHint:           { fontSize: 11, color: C.text3, marginTop: 6 },
+  weightErrText:        { fontSize: 11, color: C.danger, marginTop: 6 },
+
+  // Sport experience
+  sportOptionList:       { gap: 8 },
+  sportOption:           { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface, borderRadius: 12, padding: 14, borderWidth: 1.5, borderColor: 'transparent' },
+  sportOptionActive:     { borderColor: C.accent, backgroundColor: C.accent + '10' },
+  sportOptionLabel:      { fontSize: 15, fontWeight: '500', color: C.text1 },
+  sportOptionLabelActive:{ color: C.accent, fontWeight: '700' },
+  sportOptionNote:       { fontSize: 12, color: C.text3, marginTop: 2 },
+
   zoneBox:          { marginTop: 20, backgroundColor: C.surface, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: C.border },
   zoneBoxTitle:     { fontSize: 13, fontWeight: '700', color: C.text1, marginBottom: 10 },
   zoneRow:          { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
