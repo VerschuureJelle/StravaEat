@@ -55,11 +55,13 @@ Deno.serve(async (req) => {
 
   // Atomically claim a sync slot. claim_strava_sync() is an atomic
   // UPDATE that only returns the profile if no other sync has run in
-  // the last 120 seconds — protects the per-app Strava quota against
-  // concurrent or rapid-fire invocations from buggy or stale clients.
+  // the last SYNC_COOLDOWN_SEC seconds. 20s is enough to dedup the
+  // millisecond-level [ready] double-fire in the client, but short
+  // enough that manual pull-to-refresh almost always goes through.
+  const SYNC_COOLDOWN_SEC = 20
   const { data: claimedRows } = await supabase.rpc('claim_strava_sync', {
     p_user_id: user.id,
-    p_cooldown_sec: 120,
+    p_cooldown_sec: SYNC_COOLDOWN_SEC,
   })
 
   if (!claimedRows || claimedRows.length === 0) {
@@ -69,13 +71,39 @@ Deno.serve(async (req) => {
   }
   const profile = claimedRows[0]
 
+  // Release the claim if the sync fails before producing any results.
+  // Without this, a Strava 429 or transient error wedges the user for
+  // the full cooldown window with no way to retry.
+  async function releaseClaim() {
+    await supabase.from('users')
+      .update({ last_strava_sync_at: null })
+      .eq('id', user.id)
+  }
+  async function holdClaimUntil(retryAfterSec: number) {
+    // Set last_strava_sync_at to a future value so the next claim is
+    // only allowed retryAfterSec seconds from now. Avoids hammering
+    // Strava with retries during its rate-limit penalty window.
+    const futureMs = Date.now() + (retryAfterSec - SYNC_COOLDOWN_SEC) * 1000
+    await supabase.from('users')
+      .update({ last_strava_sync_at: new Date(futureMs).toISOString() })
+      .eq('id', user.id)
+  }
+
   if (!profile?.strava_access_token) {
+    await releaseClaim()
     return new Response(JSON.stringify({ error: 'strava_not_connected' }), {
       status: 422, headers: { 'Content-Type': 'application/json' },
     })
   }
 
-  const accessToken = await getValidStravaToken(supabase, user.id, profile)
+  let accessToken: string
+  try {
+    accessToken = await getValidStravaToken(supabase, user.id, profile)
+  } catch (e) {
+    await releaseClaim()
+    console.error('Token refresh failed:', e)
+    return jsonErr('strava_auth_expired', 401)
+  }
 
   const activitiesRes = await fetch(
     `${STRAVA_API}/athlete/activities?per_page=20`,
@@ -84,9 +112,11 @@ Deno.serve(async (req) => {
   if (!activitiesRes.ok) {
     if (activitiesRes.status === 429) {
       const retryAfter = activitiesRes.headers.get('Retry-After')
-      const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15
-      return jsonErr(`rate_limit:${minutes}`, 429)
+      const seconds = retryAfter ? Number(retryAfter) : 900
+      await holdClaimUntil(seconds)
+      return jsonErr(`rate_limit:${Math.ceil(seconds / 60)}`, 429)
     }
+    await releaseClaim()
     const body = await activitiesRes.text().catch(() => '')
     return jsonErr(`Strava error ${activitiesRes.status}: ${body.slice(0, 200)}`, 502)
   }
@@ -124,8 +154,9 @@ Deno.serve(async (req) => {
     // Rate limited mid-sync — stop early, report what was done
     if (streamRes.status === 429 || lapsRes.status === 429) {
       const retryAfter = (streamRes.headers.get('Retry-After') ?? lapsRes.headers.get('Retry-After'))
-      const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15
-      return jsonErr(`rate_limit:${minutes}`, 429)
+      const seconds = retryAfter ? Number(retryAfter) : 900
+      await holdClaimUntil(seconds)
+      return jsonErr(`rate_limit:${Math.ceil(seconds / 60)}`, 429)
     }
 
     const [streamBody, lapsData] = await Promise.all([
