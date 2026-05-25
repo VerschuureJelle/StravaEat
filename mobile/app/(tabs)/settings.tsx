@@ -285,7 +285,17 @@ export default function SettingsScreen() {
     )
   }
 
-  const handleConnectStrava = () => initiateStravaOAuth().catch(e => Alert.alert('Strava', e.message ?? 'Could not open Strava'))
+  const handleConnectStrava = async () => {
+    try {
+      const result = await initiateStravaOAuth()
+      if (result === 'linked') {
+        await load()
+        Alert.alert('Connected', 'Strava account linked successfully.')
+      }
+    } catch (e: any) {
+      Alert.alert('Strava', e.message ?? 'Could not open Strava')
+    }
+  }
 
   async function savePeriodState(newOnPeriod: boolean, newSeverity: PeriodSeverity) {
     if (!userId) return
@@ -297,6 +307,16 @@ export default function SettingsScreen() {
 
   async function saveProfile() {
     if (!userId || !isDirty) return
+
+    // Sanity check: resting HR must be below max HR — otherwise zones would
+    // generate nonsense (min_bpm > max_bpm). Same rule as onboarding.
+    const maxHr = editedProfile.max_hr
+    const restingHr = editedProfile.resting_hr
+    if (maxHr != null && restingHr != null && restingHr >= maxHr) {
+      Alert.alert('Heart rate values', 'Resting heart rate must be lower than max heart rate.')
+      return
+    }
+
     setSavingProfile(true)
     const { error } = await supabase.from('users').update(editedProfile).eq('id', userId)
     setSavingProfile(false)
@@ -813,11 +833,13 @@ export default function SettingsScreen() {
                     <Text style={[styles.stravaBtnText, { color: C.text2 }]}>Disconnect</Text>
                   </Pressable>
                 )}
-                <Pressable style={styles.stravaBtn} onPress={handleConnectStrava}>
-                  <Text style={styles.stravaBtnText}>
-                    {savedProfile.strava_access_token ? 'Reconnect' : savedProfile.strava_id ? 'Reconnect' : 'Connect'}
-                  </Text>
-                </Pressable>
+                {!savedProfile.strava_access_token && (
+                  <Pressable style={styles.stravaBtn} onPress={handleConnectStrava}>
+                    <Text style={styles.stravaBtnText}>
+                      {savedProfile.strava_id ? 'Reconnect' : 'Connect'}
+                    </Text>
+                  </Pressable>
+                )}
               </View>
             </View>
 
