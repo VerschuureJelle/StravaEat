@@ -4,6 +4,7 @@ import { Stack, useRouter, useSegments } from 'expo-router'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { supabase } from '../lib/supabase'
 import { registerForNotifications, scheduleDailyMealNotificationsForUser } from '../lib/notifications'
+import { callSyncRecent } from '../lib/stravaSync'
 import { AppModeProvider } from '../contexts/AppModeContext'
 
 export default function RootLayout() {
@@ -18,7 +19,9 @@ export default function RootLayout() {
       if (session) {
         registerForNotifications()
         scheduleDailyMealNotificationsForUser(session.user.id)
-        supabase.functions.invoke('sync-recent').catch(() => {})
+        // Route via callSyncRecent so the cooldown + in-flight flag dedupe
+        // the second invocation triggered by [ready] re-running the effect.
+        callSyncRecent().catch(() => {})
       }
       setReady(true)
     })

@@ -53,19 +53,57 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authError } = await userClient.auth.getUser()
   if (authError || !user) return jsonErr('Unauthorized', 401)
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('strava_access_token, strava_refresh_token, strava_token_expires_at, weight_kg')
-    .eq('id', user.id)
-    .single()
+  // Atomically claim a sync slot. claim_strava_sync() is an atomic
+  // UPDATE that only returns the profile if no other sync has run in
+  // the last SYNC_COOLDOWN_SEC seconds. 20s is enough to dedup the
+  // millisecond-level [ready] double-fire in the client, but short
+  // enough that manual pull-to-refresh almost always goes through.
+  const SYNC_COOLDOWN_SEC = 20
+  const { data: claimedRows } = await supabase.rpc('claim_strava_sync', {
+    p_user_id: user.id,
+    p_cooldown_sec: SYNC_COOLDOWN_SEC,
+  })
+
+  if (!claimedRows || claimedRows.length === 0) {
+    return new Response(JSON.stringify({ synced: 0, cached: true }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  const profile = claimedRows[0]
+
+  // Release the claim if the sync fails before producing any results.
+  // Without this, a Strava 429 or transient error wedges the user for
+  // the full cooldown window with no way to retry.
+  async function releaseClaim() {
+    await supabase.from('users')
+      .update({ last_strava_sync_at: null })
+      .eq('id', user.id)
+  }
+  async function holdClaimUntil(retryAfterSec: number) {
+    // Set last_strava_sync_at to a future value so the next claim is
+    // only allowed retryAfterSec seconds from now. Avoids hammering
+    // Strava with retries during its rate-limit penalty window.
+    const futureMs = Date.now() + (retryAfterSec - SYNC_COOLDOWN_SEC) * 1000
+    await supabase.from('users')
+      .update({ last_strava_sync_at: new Date(futureMs).toISOString() })
+      .eq('id', user.id)
+  }
 
   if (!profile?.strava_access_token) {
+    await releaseClaim()
     return new Response(JSON.stringify({ error: 'strava_not_connected' }), {
       status: 422, headers: { 'Content-Type': 'application/json' },
     })
   }
 
-  const accessToken = await getValidStravaToken(supabase, user.id, profile)
+  let accessToken: string
+  try {
+    accessToken = await getValidStravaToken(supabase, user.id, profile)
+  } catch (e) {
+    await releaseClaim()
+    console.error('Token refresh failed:', e)
+    return jsonErr('strava_auth_expired', 401)
+  }
 
   const activitiesRes = await fetch(
     `${STRAVA_API}/athlete/activities?per_page=20`,
@@ -74,9 +112,11 @@ Deno.serve(async (req) => {
   if (!activitiesRes.ok) {
     if (activitiesRes.status === 429) {
       const retryAfter = activitiesRes.headers.get('Retry-After')
-      const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15
-      return jsonErr(`rate_limit:${minutes}`, 429)
+      const seconds = retryAfter ? Number(retryAfter) : 900
+      await holdClaimUntil(seconds)
+      return jsonErr(`rate_limit:${Math.ceil(seconds / 60)}`, 429)
     }
+    await releaseClaim()
     const body = await activitiesRes.text().catch(() => '')
     return jsonErr(`Strava error ${activitiesRes.status}: ${body.slice(0, 200)}`, 502)
   }
@@ -88,11 +128,25 @@ Deno.serve(async (req) => {
     supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
     supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
     supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
-    supabase.from('activities').select('strava_activity_id').eq('user_id', user.id).in('strava_activity_id', stravaIds),
+    supabase.from('activities').select('strava_activity_id, total_kcal, synced_at').eq('user_id', user.id).in('strava_activity_id', stravaIds),
   ])
 
-  // Activities already in the DB don't need stream/laps re-fetched
-  const alreadySynced = new Set((existingRows ?? []).map((r: any) => r.strava_activity_id))
+  // Activities count as "already synced" only if they have kcal computed,
+  // OR they're older than 3 days (give up on backfilling — likely no HR).
+  // Reason: Strava's streams endpoint can return empty for a few minutes
+  // after upload, leaving us with a row that has null total_kcal. Without
+  // this retry, those activities would be permanently stuck without kcal
+  // and would be hidden from the Today screen (which filters out null kcal).
+  const RETRY_NULL_KCAL_DAYS = 3
+  const retryCutoffMs = Date.now() - RETRY_NULL_KCAL_DAYS * 86400 * 1000
+  const alreadySynced = new Set(
+    (existingRows ?? [])
+      .filter((r: any) =>
+        r.total_kcal != null ||
+        (r.synced_at && new Date(r.synced_at).getTime() < retryCutoffMs)
+      )
+      .map((r: any) => r.strava_activity_id)
+  )
 
   const weightKg = profile.weight_kg ?? 0
   const results = []
@@ -114,8 +168,9 @@ Deno.serve(async (req) => {
     // Rate limited mid-sync — stop early, report what was done
     if (streamRes.status === 429 || lapsRes.status === 429) {
       const retryAfter = (streamRes.headers.get('Retry-After') ?? lapsRes.headers.get('Retry-After'))
-      const minutes = retryAfter ? Math.ceil(Number(retryAfter) / 60) : 15
-      return jsonErr(`rate_limit:${minutes}`, 429)
+      const seconds = retryAfter ? Number(retryAfter) : 900
+      await holdClaimUntil(seconds)
+      return jsonErr(`rate_limit:${Math.ceil(seconds / 60)}`, 429)
     }
 
     const [streamBody, lapsData] = await Promise.all([
