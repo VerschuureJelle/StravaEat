@@ -14,7 +14,7 @@ function randomHex(bytes = 16): string {
   return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-export async function initiateStravaOAuth(): Promise<void> {
+export async function initiateStravaOAuth(): Promise<'linked' | 'cancelled'> {
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError) throw new Error(userError.message)
   if (!user) throw new Error('You must be signed in to connect Strava.')
@@ -45,9 +45,12 @@ export async function initiateStravaOAuth(): Promise<void> {
     `https://www.strava.com/oauth/authorize?${params}`,
     'stravaeat://auth',
   )
-  if (result.type === 'cancel' || result.type === 'dismiss') {
-    // User closed the browser without completing OAuth — not an error,
-    // but the caller might want to know nothing happened.
-    return
+
+  if (result.type === 'success') {
+    if (result.url.includes('linked=true')) return 'linked' as const
+    const error = new URL(result.url).searchParams.get('error') ?? 'unknown'
+    throw new Error(error)
   }
+
+  return 'cancelled' as const
 }

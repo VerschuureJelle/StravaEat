@@ -285,7 +285,17 @@ export default function SettingsScreen() {
     )
   }
 
-  const handleConnectStrava = () => initiateStravaOAuth().catch(e => Alert.alert('Strava', e.message ?? 'Could not open Strava'))
+  const handleConnectStrava = async () => {
+    try {
+      const result = await initiateStravaOAuth()
+      if (result === 'linked') {
+        await load()
+        Alert.alert('Connected', 'Strava account linked successfully.')
+      }
+    } catch (e: any) {
+      Alert.alert('Strava', e.message ?? 'Could not open Strava')
+    }
+  }
 
   async function savePeriodState(newOnPeriod: boolean, newSeverity: PeriodSeverity) {
     if (!userId) return

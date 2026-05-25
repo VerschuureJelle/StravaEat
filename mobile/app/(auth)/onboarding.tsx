@@ -69,7 +69,17 @@ export default function OnboardingScreen() {
     }
   }
 
-  const handleConnectStrava = () => initiateStravaOAuth()
+  const handleConnectStrava = async () => {
+    try {
+      const result = await initiateStravaOAuth()
+      if (result === 'linked') {
+        setStravaConnected(true)
+        setStep('profile')
+      }
+    } catch (e: any) {
+      Alert.alert('Strava connection failed', e.message ?? 'Something went wrong')
+    }
+  }
 
   const maxHRNum = parseInt(data.max_hr)
   const previewZones = maxHRNum > 0 ? generateZonesFromMaxHR(maxHRNum) : null
