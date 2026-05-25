@@ -823,11 +823,13 @@ export default function SettingsScreen() {
                     <Text style={[styles.stravaBtnText, { color: C.text2 }]}>Disconnect</Text>
                   </Pressable>
                 )}
-                <Pressable style={styles.stravaBtn} onPress={handleConnectStrava}>
-                  <Text style={styles.stravaBtnText}>
-                    {savedProfile.strava_access_token ? 'Reconnect' : savedProfile.strava_id ? 'Reconnect' : 'Connect'}
-                  </Text>
-                </Pressable>
+                {!savedProfile.strava_access_token && (
+                  <Pressable style={styles.stravaBtn} onPress={handleConnectStrava}>
+                    <Text style={styles.stravaBtnText}>
+                      {savedProfile.strava_id ? 'Reconnect' : 'Connect'}
+                    </Text>
+                  </Pressable>
+                )}
               </View>
             </View>
 
