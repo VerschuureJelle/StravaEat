@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native'
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import * as Linking from 'expo-linking'
@@ -80,6 +80,34 @@ export default function OnboardingScreen() {
       return
     }
 
+    // Range validation — catches mistyped values (e.g. weight in grams, HR in
+    // wrong units) before we try to persist them and generate zones from them.
+    const ageNum = data.age ? parseInt(data.age) : null
+    const weightNum = parseFloat(data.weight_kg)
+    const maxHrNum = parseInt(data.max_hr)
+    const restingHrNum = data.resting_hr ? parseInt(data.resting_hr) : null
+
+    if (ageNum != null && (isNaN(ageNum) || ageNum < 1 || ageNum > 100)) {
+      Alert.alert('Check your age', 'Age must be between 1 and 100.')
+      return
+    }
+    if (isNaN(weightNum) || weightNum < 20 || weightNum > 250) {
+      Alert.alert('Check your weight', 'Please enter your real weight.')
+      return
+    }
+    if (isNaN(maxHrNum) || maxHrNum < 35 || maxHrNum > 230) {
+      Alert.alert('Check your max heart rate', 'Max heart rate must be between 35 and 230 bpm.')
+      return
+    }
+    if (restingHrNum != null && (isNaN(restingHrNum) || restingHrNum < 35 || restingHrNum > 230)) {
+      Alert.alert('Check your resting heart rate', 'Resting heart rate must be between 35 and 230 bpm.')
+      return
+    }
+    if (restingHrNum != null && restingHrNum >= maxHrNum) {
+      Alert.alert('Heart rate values', 'Resting heart rate must be lower than max heart rate.')
+      return
+    }
+
     setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -97,14 +125,18 @@ export default function OnboardingScreen() {
       })
       if (profileError) throw profileError
 
+      // sport_type='default' applies the zones to all sports without overrides.
+      // The unique constraint is (user_id, zone_number, sport_type), so the
+      // onConflict spec must list all three columns to match.
       const zones = generateZonesFromMaxHR(parseInt(data.max_hr)).map((z) => ({
         ...z,
         user_id: user.id,
+        sport_type: 'default',
       }))
 
       const { error: zonesError } = await supabase
         .from('heart_rate_zones')
-        .upsert(zones, { onConflict: 'user_id,zone_number' })
+        .upsert(zones, { onConflict: 'user_id,zone_number,sport_type' })
       if (zonesError) throw zonesError
 
       router.replace('/(tabs)/')
@@ -137,7 +169,14 @@ export default function OnboardingScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.title}>Set up your profile</Text>
         <Text style={styles.subtitle}>We'll use this to calculate your heart rate zones and energy expenditure.</Text>
 
@@ -154,20 +193,22 @@ export default function OnboardingScreen() {
         <TextInput
           style={styles.input}
           value={data.age}
-          onChangeText={(v) => setData((d) => ({ ...d, age: v }))}
+          onChangeText={(v) => setData((d) => ({ ...d, age: v.replace(/\D/g, '').slice(0, 3) }))}
           keyboardType="numeric"
-          placeholder="e.g. 30"
+          placeholder="e.g. 30  (max 100)"
           placeholderTextColor={C.text3}
+          maxLength={3}
         />
 
         <Text style={styles.label}>Weight (kg) *</Text>
         <TextInput
           style={styles.input}
           value={data.weight_kg}
-          onChangeText={(v) => setData((d) => ({ ...d, weight_kg: v }))}
-          keyboardType="numeric"
+          onChangeText={(v) => setData((d) => ({ ...d, weight_kg: v.replace(/[^0-9.]/g, '').slice(0, 6) }))}
+          keyboardType="decimal-pad"
           placeholder="e.g. 75"
           placeholderTextColor={C.text3}
+          maxLength={6}
         />
 
         <Text style={styles.label}>Sex</Text>
@@ -204,20 +245,22 @@ export default function OnboardingScreen() {
         <TextInput
           style={styles.input}
           value={data.max_hr}
-          onChangeText={(v) => setData((d) => ({ ...d, max_hr: v }))}
+          onChangeText={(v) => setData((d) => ({ ...d, max_hr: v.replace(/\D/g, '').slice(0, 3) }))}
           keyboardType="numeric"
-          placeholder="e.g. 190  (or use 220 − age as estimate)"
+          placeholder="e.g. 190  (35–230)"
           placeholderTextColor={C.text3}
+          maxLength={3}
         />
 
         <Text style={styles.label}>Resting Heart Rate (bpm)</Text>
         <TextInput
           style={styles.input}
           value={data.resting_hr}
-          onChangeText={(v) => setData((d) => ({ ...d, resting_hr: v }))}
+          onChangeText={(v) => setData((d) => ({ ...d, resting_hr: v.replace(/\D/g, '').slice(0, 3) }))}
           keyboardType="numeric"
-          placeholder="e.g. 55"
+          placeholder="e.g. 55  (35–230)"
           placeholderTextColor={C.text3}
+          maxLength={3}
         />
 
         {previewZones && (
@@ -237,6 +280,7 @@ export default function OnboardingScreen() {
           {loading ? <ActivityIndicator color={C.white} /> : <Text style={styles.buttonText}>Get started</Text>}
         </Pressable>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }

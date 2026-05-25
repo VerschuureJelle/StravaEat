@@ -2,6 +2,7 @@ import { useState } from 'react'
 import {
   View, Text, TextInput, Pressable, StyleSheet,
   ActivityIndicator, Alert, ScrollView,
+  KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
@@ -23,6 +24,29 @@ export default function SignUpScreen() {
   const set = (key: keyof typeof form) => (value: string | boolean) =>
     setForm((f) => ({ ...f, [key]: value }))
 
+  // Re-format the date-of-birth input on every keystroke so the user only
+  // needs to type digits — hyphens get inserted automatically at the right
+  // positions for DD-MM-YYYY.
+  const formatDob = (input: string): string => {
+    const digits = input.replace(/\D/g, '').slice(0, 8)
+    if (digits.length <= 2) return digits
+    if (digits.length <= 4) return `${digits.slice(0, 2)}-${digits.slice(2)}`
+    return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`
+  }
+
+  // Parse "DD-MM-YYYY" → "YYYY-MM-DD" (ISO) or null if not a real date.
+  // Uses the (year, monthIndex, day) constructor and local getters so the
+  // round-trip check isn't affected by the user's timezone offset.
+  const parseDobToIso = (dob: string): string | null => {
+    const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dob)
+    if (!m) return null
+    const [, dd, mm, yyyy] = m
+    const y = Number(yyyy), mo = Number(mm), d = Number(dd)
+    const dt = new Date(y, mo - 1, d)
+    if (dt.getFullYear() !== y || dt.getMonth() + 1 !== mo || dt.getDate() !== d) return null
+    return `${yyyy}-${mm}-${dd}`
+  }
+
   const validate = () => {
     if (!form.username.trim()) return 'Username is required.'
     if (form.username.length < 3) return 'Username must be at least 3 characters.'
@@ -31,7 +55,8 @@ export default function SignUpScreen() {
     if (form.password.length < 8) return 'Password must be at least 8 characters.'
     if (form.password !== form.confirmPassword) return 'Passwords do not match.'
     if (!form.dateOfBirth) return 'Date of birth is required.'
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.dateOfBirth)) return 'Use format YYYY-MM-DD.'
+    if (!/^\d{2}-\d{2}-\d{4}$/.test(form.dateOfBirth)) return 'Use format DD-MM-YYYY (e.g. 15-03-1990).'
+    if (!parseDobToIso(form.dateOfBirth)) return 'That doesn\'t look like a real date.'
     if (!form.termsAccepted) return 'You must accept the terms and conditions.'
     return null
   }
@@ -42,13 +67,14 @@ export default function SignUpScreen() {
 
     setLoading(true)
     try {
+      const isoDob = parseDobToIso(form.dateOfBirth)!  // validate() guarantees this is non-null
       const { data, error } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
         options: {
           data: {
             username: form.username,
-            date_of_birth: form.dateOfBirth,
+            date_of_birth: isoDob,
             terms_accepted_at: new Date().toISOString(),
           },
         },
@@ -78,7 +104,16 @@ export default function SignUpScreen() {
         <Text style={styles.backText}>← Back</Text>
       </Pressable>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+      >
+      <ScrollView
+        style={{ backgroundColor: C.bg }}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.title}>Create account</Text>
 
         <Text style={styles.label}>Username</Text>
@@ -130,10 +165,11 @@ export default function SignUpScreen() {
         <TextInput
           style={styles.input}
           value={form.dateOfBirth}
-          onChangeText={set('dateOfBirth')}
-          placeholder="YYYY-MM-DD"
+          onChangeText={(v) => set('dateOfBirth')(formatDob(v))}
+          placeholder="DD-MM-YYYY"
           placeholderTextColor={C.text3}
           keyboardType="numeric"
+          maxLength={10}
         />
 
         <Pressable
@@ -164,6 +200,7 @@ export default function SignUpScreen() {
           </Text>
         </Pressable>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }

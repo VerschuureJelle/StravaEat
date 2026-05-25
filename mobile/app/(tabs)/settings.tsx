@@ -297,6 +297,16 @@ export default function SettingsScreen() {
 
   async function saveProfile() {
     if (!userId || !isDirty) return
+
+    // Sanity check: resting HR must be below max HR — otherwise zones would
+    // generate nonsense (min_bpm > max_bpm). Same rule as onboarding.
+    const maxHr = editedProfile.max_hr
+    const restingHr = editedProfile.resting_hr
+    if (maxHr != null && restingHr != null && restingHr >= maxHr) {
+      Alert.alert('Heart rate values', 'Resting heart rate must be lower than max heart rate.')
+      return
+    }
+
     setSavingProfile(true)
     const { error } = await supabase.from('users').update(editedProfile).eq('id', userId)
     setSavingProfile(false)
