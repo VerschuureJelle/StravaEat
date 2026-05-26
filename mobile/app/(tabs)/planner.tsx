@@ -227,6 +227,7 @@ export default function PlannerScreen() {
     return zones.filter(z => !z.sport_type || z.sport_type === 'default')
   }, [zones, selectedSport])
   const [avgSpeedBySport, setAvgSpeedBySport] = useState<Record<string, number>>({})
+  const [zonePaceMap, setZonePaceMap] = useState<Record<string, number>>({})
 
   const [todayPlans, setTodayPlans] = useState<PlannedWorkout[]>([])
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null)
@@ -297,7 +298,7 @@ export default function PlannerScreen() {
 
     const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes, userSportsRes, programRes] = await Promise.all([
       supabase.from('users').select('weight_kg, ftp_watts, on_period, period_severity, onboarding_data, preferred_workout_time, max_hr').eq('id', user.id).single(),
-      supabase.from('activities').select('type, distance_m, duration_sec').eq('user_id', user.id),
+      supabase.from('activities').select('id, type, distance_m, duration_sec').eq('user_id', user.id),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
       supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
@@ -323,6 +324,35 @@ export default function PlannerScreen() {
     setBurnSchema(burnRes.data ?? [])
     setSportSettings(settingsRes.data ?? [])
     setTodayPlans(plansRes.data ?? [])
+
+    // Build per-zone pace map from historical run/jog laps
+    const runActIds = (activitiesRes.data ?? [])
+      .filter((a: any) => /run|jog/i.test(a.type))
+      .map((a: any) => a.id)
+      .filter(Boolean)
+    if (runActIds.length > 0) {
+      const { data: laps } = await supabase
+        .from('activity_laps')
+        .select('avg_speed_ms, avg_hr')
+        .in('activity_id', runActIds)
+        .not('avg_speed_ms', 'is', null)
+        .not('avg_hr', 'is', null)
+      const zoneSpeedSums: Record<string, { sum: number; count: number }> = {}
+      for (const lap of (laps ?? [])) {
+        const matched = effectiveZones.find(
+          (z: HeartRateZone) => lap.avg_hr >= z.min_bpm && lap.avg_hr <= z.max_bpm
+        )
+        if (!matched) continue
+        if (!zoneSpeedSums[matched.id]) zoneSpeedSums[matched.id] = { sum: 0, count: 0 }
+        zoneSpeedSums[matched.id].sum += lap.avg_speed_ms
+        zoneSpeedSums[matched.id].count++
+      }
+      const paceMap: Record<string, number> = {}
+      for (const [zId, { sum, count }] of Object.entries(zoneSpeedSums)) {
+        paceMap[zId] = sum / count
+      }
+      setZonePaceMap(paceMap)
+    }
 
     const userSportNames: string[] = (userSportsRes.data ?? []).map((s: any) => s.sport_name)
     let sportList: string[]
@@ -448,23 +478,13 @@ export default function PlannerScreen() {
     let totalDurationMin = 0
 
     for (const seg of segments) {
-      const val = parseFloat(seg.value)
-      if (seg.inputType !== 'pace' && (isNaN(val) || val <= 0)) {
-        Alert.alert('Invalid segment', 'All segments need a positive distance or time value.')
-        return
-      }
       const repeats = Math.max(1, parseInt(seg.repeats) || 1)
-      const zone = activeZones.find(z => z.id === seg.zoneId)
-      if (!zone) { Alert.alert('Missing zone', 'Select a zone for every segment.'); return }
+      let zone: HeartRateZone | undefined
+      let kcalPerHour = 0
+      let durationMin = 0
+      let label = ''
 
-      const kcalPerHour = getKcalPerHour(zone)
-      let durationMin: number
-      let label: string
-
-      if (seg.inputType === 'time') {
-        durationMin = val
-        label = `${val} min @ ${zone.name}`
-      } else if (seg.inputType === 'pace') {
+      if (seg.inputType === 'pace') {
         const pMin = parseInt(seg.paceMin || '0')
         const pSec = parseInt(seg.paceSec || '0')
         const totalPaceSec = pMin * 60 + pSec
@@ -474,17 +494,50 @@ export default function PlannerScreen() {
           return
         }
         durationMin = (totalPaceSec * dist) / 60
-        label = `${dist} km @ ${pMin}:${String(pSec).padStart(2, '0')}/km`
+
+        // Derive zone from historical lap pace data
+        if (Object.keys(zonePaceMap).length > 0) {
+          const enteredSpeedMs = 1000 / totalPaceSec
+          let bestDiff = Infinity
+          for (const [zId, avgSpeed] of Object.entries(zonePaceMap)) {
+            const diff = Math.abs(avgSpeed - enteredSpeedMs)
+            if (diff < bestDiff) {
+              bestDiff = diff
+              zone = activeZones.find(z => z.id === zId)
+            }
+          }
+        }
+
+        if (zone) {
+          kcalPerHour = getKcalPerHour(zone)
+          label = `${dist} km @ ${pMin}:${String(pSec).padStart(2, '0')}/km (${zone.name})`
+        } else {
+          label = `${dist} km @ ${pMin}:${String(pSec).padStart(2, '0')}/km`
+        }
       } else {
-        const avgSpeed = avgSpeedBySport[selectedSport]
-        if (!avgSpeed) {
-          Alert.alert('No pace data', `No historical pace found for ${selectedSport}. Use time-based segments instead.`)
+        const val = parseFloat(seg.value)
+        if (isNaN(val) || val <= 0) {
+          Alert.alert('Invalid segment', 'All segments need a positive distance or time value.')
           return
         }
-        const isSwim = /swim/i.test(selectedSport)
-        const distM = isSwim ? val : val * 1000
-        durationMin = distM / avgSpeed / 60
-        label = isSwim ? `${val} m @ ${zone.name}` : `${val} km @ ${zone.name}`
+        zone = activeZones.find(z => z.id === seg.zoneId)
+        if (!zone) { Alert.alert('Missing zone', 'Select a zone for every segment.'); return }
+        kcalPerHour = getKcalPerHour(zone)
+
+        if (seg.inputType === 'time') {
+          durationMin = val
+          label = `${val} min @ ${zone.name}`
+        } else {
+          const avgSpeed = avgSpeedBySport[selectedSport]
+          if (!avgSpeed) {
+            Alert.alert('No pace data', `No historical pace found for ${selectedSport}. Use time-based segments instead.`)
+            return
+          }
+          const isSwim = /swim/i.test(selectedSport)
+          const distM = isSwim ? val : val * 1000
+          durationMin = distM / avgSpeed / 60
+          label = isSwim ? `${val} m @ ${zone.name}` : `${val} km @ ${zone.name}`
+        }
       }
 
       const segKcal = Math.round(kcalPerHour * (durationMin / 60)) * repeats
@@ -493,7 +546,7 @@ export default function PlannerScreen() {
         label: repeats > 1 ? `${repeats}× (${label})` : label,
         kcal: segKcal,
         durationMin: Math.round(segDurationMin),
-        zoneNumber: zone.zone_number,
+        zoneNumber: zone?.zone_number ?? 0,
         repeats,
       })
       totalKcal += segKcal
@@ -951,7 +1004,7 @@ export default function PlannerScreen() {
                     {(/run|jog/i.test(selectedSport)) && (
                       <Pressable
                         style={[st.segToggleBtn, seg.inputType === 'pace' && { backgroundColor: C.accent, borderColor: C.accent }]}
-                        onPress={() => updateSegment(seg.id, { inputType: 'pace', value: '' })}
+                        onPress={() => updateSegment(seg.id, { inputType: 'pace', value: '', zoneId: '' })}
                       >
                         <Text style={[st.segToggleText, seg.inputType === 'pace' && { color: C.white }]}>Pace</Text>
                       </Pressable>
@@ -1114,7 +1167,7 @@ export default function PlannerScreen() {
                       <View key={i} style={[st.diagramSegment, { flex: pct, backgroundColor: color }]}>
                         {pct > 12 && (
                           <Text style={st.diagramSegmentText} numberOfLines={1}>
-                            Z{s.zoneNumber}
+                            {s.zoneNumber > 0 ? `Z${s.zoneNumber}` : '–'}
                           </Text>
                         )}
                       </View>
@@ -1127,7 +1180,7 @@ export default function PlannerScreen() {
                   {[...new Set(segResult.segments.map(s => s.zoneNumber))].sort().map(zn => (
                     <View key={zn} style={st.diagramLegendItem}>
                       <View style={[st.diagramLegendDot, { backgroundColor: zoneBarColor(zn) }]} />
-                      <Text style={st.diagramLegendText}>Z{zn}</Text>
+                      <Text style={st.diagramLegendText}>{zn > 0 ? `Z${zn}` : '–'}</Text>
                     </View>
                   ))}
                 </View>
@@ -1140,7 +1193,7 @@ export default function PlannerScreen() {
                       <Text style={st.segBreakMeta}>{formatDuration(s.durationMin)} · {s.kcal} kcal</Text>
                     </View>
                     <View style={[st.segZoneTag, { backgroundColor: zoneBarColor(s.zoneNumber) + '22' }]}>
-                      <Text style={[st.segZoneTagText, { color: zoneBarColor(s.zoneNumber) }]}>Z{s.zoneNumber}</Text>
+                      <Text style={[st.segZoneTagText, { color: zoneBarColor(s.zoneNumber) }]}>{s.zoneNumber > 0 ? `Z${s.zoneNumber}` : '–'}</Text>
                     </View>
                   </View>
                 ))}
