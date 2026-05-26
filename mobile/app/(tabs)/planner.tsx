@@ -298,7 +298,7 @@ export default function PlannerScreen() {
 
     const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes, userSportsRes, programRes] = await Promise.all([
       supabase.from('users').select('weight_kg, ftp_watts, on_period, period_severity, onboarding_data, preferred_workout_time, max_hr').eq('id', user.id).single(),
-      supabase.from('activities').select('id, type, distance_m, duration_sec, avg_hr').eq('user_id', user.id),
+      supabase.from('activities').select('id, type, distance_m, duration_sec, avg_hr, date').eq('user_id', user.id),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
       supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
@@ -325,10 +325,14 @@ export default function PlannerScreen() {
     setSportSettings(settingsRes.data ?? [])
     setTodayPlans(plansRes.data ?? [])
 
-    // Build per-zone pace map from activity-level avg_hr + speed (more reliably populated than per-lap HR)
+    // Build per-zone pace map from last 3 months of activities only
+    const threeMonthsAgo = new Date()
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+    const cutoff = threeMonthsAgo.toISOString().slice(0, 10)
     const zoneSpeedSums: Record<string, { sum: number; count: number }> = {}
     for (const act of (activitiesRes.data ?? [])) {
       if (!act.avg_hr || act.distance_m <= 0 || act.duration_sec <= 0) continue
+      if (act.date < cutoff) continue
       const speedMs = act.distance_m / act.duration_sec
       const matched = effectiveZones.find(
         (z: HeartRateZone) => act.avg_hr >= z.min_bpm && act.avg_hr <= z.max_bpm
