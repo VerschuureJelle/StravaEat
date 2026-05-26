@@ -58,6 +58,13 @@ export default function TodayScreen() {
   const [onPeriod, setOnPeriod] = useState(false)
   const [periodSeverity, setPeriodSeverity] = useState<'minor' | 'medium' | 'severe' | null>(null)
 
+  // Cycle tracking
+  const [cycleLength, setCycleLength] = useState(28)
+  const [lastPeriodStart, setLastPeriodStart] = useState<string | null>(null)
+  const [showCycleModal, setShowCycleModal] = useState(false)
+  const [cycleLengthDraft, setCycleLengthDraft] = useState('28')
+  const [lastPeriodDraft, setLastPeriodDraft] = useState('')
+
   // Calories
   const [burnedKcal, setBurnedKcal] = useState(0)
   const [plannedKcal, setPlannedKcal] = useState(0)
@@ -115,11 +122,24 @@ export default function TodayScreen() {
 
   useFocusEffect(useCallback(() => { if (Date.now() - lastLoadRef.current > 60_000) load() }, []))
 
+  // Always re-fetch profile fields on focus so settings changes are reflected immediately
   useFocusEffect(useCallback(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
-      supabase.from('users').select('hide_calories').eq('id', user.id).single()
-        .then(({ data }) => { if (data) setHideCalories(data.hide_calories ?? false) })
+      supabase.from('users')
+        .select('hide_calories, daily_kcal_target, max_kcal_target, meal_notif_delay_min, cycle_length, last_period_start, on_period, period_severity')
+        .eq('id', user.id).single()
+        .then(({ data }) => {
+          if (!data) return
+          setHideCalories(data.hide_calories ?? false)
+          setDailyTarget(data.daily_kcal_target)
+          setMaxKcalTarget(data.max_kcal_target)
+          setMealNotifDelayMin(data.meal_notif_delay_min ?? 60)
+          setCycleLength(data.cycle_length ?? 28)
+          setLastPeriodStart(data.last_period_start ?? null)
+          setOnPeriod(data.on_period ?? false)
+          setPeriodSeverity(data.period_severity ?? null)
+        })
     })
   }, []))
 
@@ -132,7 +152,7 @@ export default function TodayScreen() {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
 
     const [profileRes, activitiesRes, plannedRes, logsRes, templatesRes, checksRes, presetsRes, customRes, allPresetsRes] = await Promise.all([
-      supabase.from('users').select('name, avatar_url, sex, daily_kcal_target, max_kcal_target, hide_calories, on_period, period_severity, meal_notif_delay_min').eq('id', user.id).single(),
+      supabase.from('users').select('name, avatar_url, sex, daily_kcal_target, max_kcal_target, hide_calories, on_period, period_severity, meal_notif_delay_min, cycle_length, last_period_start').eq('id', user.id).single(),
       supabase.from('activities').select('id, name, type, total_kcal').eq('user_id', user.id).gte('date', todayStr).lt('date', tomorrow).not('total_kcal', 'is', null),
       supabase.from('planned_workouts').select('id, sport_type, target_kcal, workout_description').eq('user_id', user.id).eq('planned_for', todayStr),
       supabase.from('food_logs').select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').eq('user_id', user.id).eq('date', todayStr).order('logged_at'),
@@ -153,6 +173,22 @@ export default function TodayScreen() {
       setOnPeriod(profileRes.data.on_period ?? false)
       setPeriodSeverity(profileRes.data.period_severity ?? null)
       setMealNotifDelayMin(profileRes.data.meal_notif_delay_min ?? 60)
+      const cl = profileRes.data.cycle_length ?? 28
+      const lps: string | null = profileRes.data.last_period_start ?? null
+      setCycleLength(cl)
+      setLastPeriodStart(lps)
+      // Auto-clear on_period if we're past menstrual phase (day > 5)
+      const day = lps ? (() => {
+        const start = new Date(lps)
+        const today = new Date(); today.setHours(0,0,0,0); start.setHours(0,0,0,0)
+        const diff = Math.floor((today.getTime() - start.getTime()) / 86400000)
+        return diff >= 0 ? (diff % cl) + 1 : null
+      })() : null
+      if (day !== null && day > 5 && profileRes.data.on_period) {
+        setOnPeriod(false)
+        setPeriodSeverity(null)
+        supabase.from('users').update({ on_period: false, period_severity: null }).eq('id', user.id)
+      }
     }
 
     const acts = (activitiesRes.data ?? []) as TodayActivity[]
@@ -349,6 +385,25 @@ export default function TodayScreen() {
     setAllPresets((allPresetsRes.data ?? []) as MealPreset[])
   }
 
+  // ── Cycle helpers ──────────────────────────────────────────────────────────
+
+  function getCycleDay(): number | null {
+    if (!lastPeriodStart) return null
+    const start = new Date(lastPeriodStart)
+    const today = new Date()
+    today.setHours(0,0,0,0); start.setHours(0,0,0,0)
+    const diff = Math.floor((today.getTime() - start.getTime()) / 86400000)
+    if (diff < 0) return null
+    return (diff % cycleLength) + 1
+  }
+
+  function getCyclePhase(day: number): { label: string; color: string; description: string } {
+    if (day <= 5)  return { label: 'Menstrual',  color: '#E91E8C', description: 'Period phase' }
+    if (day <= 13) return { label: 'Follicular', color: '#66BB6A', description: 'Energy rising' }
+    if (day <= 15) return { label: 'Ovulation',  color: '#FFCA28', description: 'Peak energy' }
+    return          { label: 'Luteal',      color: '#9C27B0', description: 'Wind-down phase' }
+  }
+
   // ── Calorie helpers ────────────────────────────────────────────────────────
 
   function calorieStatusLabel() {
@@ -375,6 +430,9 @@ export default function TodayScreen() {
   }, [presetsMap])
 
   // ── UI ─────────────────────────────────────────────────────────────────────
+
+  const cycleDay = getCycleDay()
+  const phase = cycleDay != null ? getCyclePhase(cycleDay) : null
 
   return (
     <SafeAreaView style={st.container} edges={['top']}>
@@ -404,14 +462,57 @@ export default function TodayScreen() {
             {firstName && <Text style={st.greetingLine2}>{firstName}.</Text>}
           </View>
 
-          {/* ── Period banner ── */}
-          {onPeriod && sex === 'female' && (
-            <View style={st.periodBanner}>
-              <Ionicons name="heart-outline" size={13} color="#E91E8C" />
-              <Text style={st.periodBannerText}>
-                Period active{periodSeverity && periodSeverity !== 'minor' ? ` · ${periodSeverity}` : ''} — target adjusted
-              </Text>
-            </View>
+          {/* ── Cycle tracker card ── */}
+          {sex === 'female' && (
+            <Pressable style={[st.cycleCard, { marginHorizontal: 16 }]} onPress={() => {
+              setCycleLengthDraft(String(cycleLength))
+              if (lastPeriodStart) {
+                const [y, mo, d] = lastPeriodStart.split('-')
+                setLastPeriodDraft(`${d}-${mo}-${y}`)
+              } else {
+                setLastPeriodDraft('')
+              }
+              setShowCycleModal(true)
+            }}>
+              {cycleDay != null && phase != null ? (
+                <>
+                  <View style={st.cycleHeaderRow}>
+                    <View style={[st.cyclePhaseDot, { backgroundColor: phase.color }]} />
+                    <Text style={st.cyclePhaseLabel}>{phase.label}</Text>
+                    <Text style={st.cycleDayText}>Day {cycleDay} of {cycleLength}</Text>
+                    <Ionicons name="chevron-forward" size={14} color={C.text3} style={{ marginLeft: 'auto' }} />
+                  </View>
+                  <View style={st.cycleTrack}>
+                    <View style={[st.cycleFill, { width: `${Math.round((cycleDay / cycleLength) * 100)}%` as any, backgroundColor: phase.color }]} />
+                  </View>
+                  <Text style={st.cyclePhaseDesc}>{phase.description}</Text>
+                  {cycleDay <= 5 && (
+                    <View style={st.cycleSeverityRow}>
+                      {(['minor', 'medium', 'severe'] as const).map(level => (
+                        <Pressable
+                          key={level}
+                          style={[st.cycleSeverityBtn, periodSeverity === level && { borderColor: '#E91E8C', backgroundColor: 'rgba(233,30,140,0.08)' }]}
+                          onPress={async () => {
+                            setPeriodSeverity(level)
+                            setOnPeriod(true)
+                            if (userId) await supabase.from('users').update({ on_period: true, period_severity: level }).eq('id', userId)
+                          }}
+                        >
+                          <Text style={[st.cycleSeverityText, periodSeverity === level && { color: '#E91E8C' }]}>
+                            {level === 'minor' ? 'Light' : level === 'medium' ? 'Moderate' : 'Severe'}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                </>
+              ) : (
+                <View style={st.cycleEmpty}>
+                  <Ionicons name="rose-outline" size={16} color={C.text3} />
+                  <Text style={st.cycleEmptyText}>Track your cycle — tap to set up</Text>
+                </View>
+              )}
+            </Pressable>
           )}
 
           {/* ── Calorie card ── */}
@@ -678,6 +779,77 @@ export default function TodayScreen() {
           onClose={() => { setShowMealBuilder(false); setEditingPreset(null) }}
         />
       )}
+
+      {/* ── Cycle setup modal ── */}
+      <Modal visible={showCycleModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowCycleModal(false)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top', 'bottom']}>
+          <View style={st.cycleModalHeader}>
+            <Text style={st.cycleModalTitle}>Cycle tracking</Text>
+            <Pressable onPress={() => setShowCycleModal(false)} hitSlop={12}>
+              <Ionicons name="close" size={22} color={C.text2} />
+            </Pressable>
+          </View>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24, gap: 24 }}>
+            <View>
+              <Text style={st.cycleModalLabel}>First day of last period</Text>
+              <TextInput
+                style={st.cycleModalInput}
+                value={lastPeriodDraft}
+                placeholder="DD-MM-YYYY"
+                placeholderTextColor={C.text3}
+                keyboardType="numbers-and-punctuation"
+                onChangeText={v => setLastPeriodDraft(v)}
+              />
+            </View>
+            <View>
+              <Text style={st.cycleModalLabel}>Cycle length (days)</Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                {[21, 24, 26, 28, 30, 32, 35].map(n => (
+                  <Pressable
+                    key={n}
+                    style={[st.cycleLenBtn, cycleLengthDraft === String(n) && st.cycleLenBtnActive]}
+                    onPress={() => setCycleLengthDraft(String(n))}
+                  >
+                    <Text style={[st.cycleLenBtnText, cycleLengthDraft === String(n) && st.cycleLenBtnTextActive]}>{n}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <TextInput
+                style={[st.cycleModalInput, { marginTop: 8 }]}
+                value={cycleLengthDraft}
+                placeholder="Custom (days)"
+                placeholderTextColor={C.text3}
+                keyboardType="number-pad"
+                onChangeText={v => setCycleLengthDraft(v)}
+              />
+            </View>
+          </ScrollView>
+          <View style={{ padding: 24 }}>
+            <Pressable
+              style={st.cycleModalSave}
+              onPress={async () => {
+                let isoDate: string | null = null
+                const parts = lastPeriodDraft.replace(/\//g, '-').split('-')
+                if (parts.length === 3) {
+                  const [dd, mm, yyyy] = parts
+                  if (dd && mm && yyyy && yyyy.length === 4) {
+                    isoDate = `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`
+                  }
+                }
+                const len = parseInt(cycleLengthDraft) || 28
+                setCycleLength(len)
+                setLastPeriodStart(isoDate)
+                if (userId) {
+                  await supabase.from('users').update({ cycle_length: len, last_period_start: isoDate }).eq('id', userId)
+                }
+                setShowCycleModal(false)
+              }}
+            >
+              <Text style={st.cycleModalSaveText}>Save</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -1949,6 +2121,32 @@ const st = StyleSheet.create({
   builderCancelBtnText: { fontSize: 15, fontWeight: '700', color: C.text2 },
   builderSaveBtn: { flex: 1, backgroundColor: C.accent, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   builderSaveBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+
+  // Cycle tracker card
+  cycleCard:         { backgroundColor: C.surface, borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(233,30,140,0.2)' },
+  cycleHeaderRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  cyclePhaseDot:     { width: 8, height: 8, borderRadius: 4 },
+  cyclePhaseLabel:   { fontSize: 15, fontWeight: '700', color: C.text1 },
+  cycleDayText:      { fontSize: 12, color: C.text3, marginLeft: 4 },
+  cycleTrack:        { height: 6, backgroundColor: C.surface3, borderRadius: 3, marginBottom: 6, overflow: 'hidden' },
+  cycleFill:         { height: 6, borderRadius: 3 },
+  cyclePhaseDesc:    { fontSize: 12, color: C.text3, marginBottom: 8 },
+  cycleSeverityRow:  { flexDirection: 'row', gap: 8, marginTop: 4 },
+  cycleSeverityBtn:  { flex: 1, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.border, alignItems: 'center' },
+  cycleSeverityText: { fontSize: 13, fontWeight: '600', color: C.text2 },
+  cycleEmpty:        { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cycleEmptyText:    { fontSize: 14, color: C.text3 },
+  // Cycle modal
+  cycleModalHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.border },
+  cycleModalTitle:    { fontSize: 18, fontWeight: '700', color: C.text1 },
+  cycleModalLabel:    { fontSize: 14, fontWeight: '600', color: C.text2, marginBottom: 8 },
+  cycleModalInput:    { backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 14, fontSize: 16, color: C.text1 },
+  cycleModalSave:     { backgroundColor: C.accent, borderRadius: 14, padding: 16, alignItems: 'center' },
+  cycleModalSaveText: { fontSize: 16, fontWeight: '700', color: C.white },
+  cycleLenBtn:        { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
+  cycleLenBtnActive:  { borderColor: C.accent, backgroundColor: 'rgba(28,25,23,0.06)' },
+  cycleLenBtnText:    { fontSize: 14, color: C.text2, fontWeight: '500' },
+  cycleLenBtnTextActive: { color: C.accent, fontWeight: '700' },
 })
 
 const loggerSt = StyleSheet.create({
