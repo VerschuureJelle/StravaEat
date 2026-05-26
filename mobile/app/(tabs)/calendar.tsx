@@ -27,6 +27,20 @@ function toStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function toDisplay(yyyy: string): string {
+  const [y, m, d] = yyyy.split('-')
+  return `${d}-${m}-${y}`
+}
+
+function fromDisplay(dd: string): string | null {
+  const parts = dd.replace(/\//g, '-').split('-')
+  if (parts.length !== 3 || parts[2].length !== 4) return null
+  const [d, m, y] = parts
+  const date = new Date(parseInt(y), parseInt(m) - 1, parseInt(d))
+  if (isNaN(date.getTime()) || date.getMonth() !== parseInt(m) - 1) return null
+  return toStr(date)
+}
+
 function parse(s: string): Date {
   const [y, m, d] = s.split('-').map(Number)
   return new Date(y, m - 1, d)
@@ -99,6 +113,9 @@ export default function CalendarScreen() {
   const [editingEvent, setEditingEvent]   = useState<CalEvent | null>(null)
   const [evTitle, setEvTitle]             = useState('')
   const [evDate, setEvDate]               = useState(today)
+  const [evDateDisplay, setEvDateDisplay] = useState(toDisplay(today))
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [datePickerMonth, setDatePickerMonth] = useState(new Date())
   const [evIsAllDay, setEvIsAllDay]       = useState(true)
   const [evStartTime, setEvStartTime]     = useState('09:00')
   const [evEndTime, setEvEndTime]         = useState('10:00')
@@ -135,6 +152,9 @@ export default function CalendarScreen() {
     setEditingEvent(null)
     setEvTitle('')
     setEvDate(selStart)
+    setEvDateDisplay(toDisplay(selStart))
+    setShowDatePicker(false)
+    setDatePickerMonth(parse(selStart))
     setEvIsAllDay(true)
     setEvStartTime('09:00')
     setEvEndTime('10:00')
@@ -147,6 +167,9 @@ export default function CalendarScreen() {
     setEditingEvent(event)
     setEvTitle(event.title)
     setEvDate(event.date)
+    setEvDateDisplay(toDisplay(event.date))
+    setShowDatePicker(false)
+    setDatePickerMonth(parse(event.date))
     setEvIsAllDay(event.isAllDay)
     setEvStartTime(event.startTime ?? '09:00')
     setEvEndTime(event.endTime ?? '10:00')
@@ -514,14 +537,73 @@ export default function CalendarScreen() {
                   />
 
                   <Text style={s.createLabel}>Date</Text>
-                  <TextInput
-                    style={s.createInput}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={C.text3}
-                    value={evDate}
-                    onChangeText={setEvDate}
-                    keyboardType="numbers-and-punctuation"
-                  />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <TextInput
+                      style={[s.createInput, { flex: 1, marginBottom: 0 }]}
+                      placeholder="DD-MM-YYYY"
+                      placeholderTextColor={C.text3}
+                      value={evDateDisplay}
+                      onChangeText={v => {
+                        setEvDateDisplay(v)
+                        const parsed = fromDisplay(v)
+                        if (parsed) { setEvDate(parsed); setDatePickerMonth(parse(parsed)) }
+                      }}
+                      keyboardType="numbers-and-punctuation"
+                    />
+                    <Pressable
+                      style={{ padding: 10, backgroundColor: C.surface2, borderRadius: 10, borderWidth: 1, borderColor: showDatePicker ? C.accent : C.border }}
+                      onPress={() => setShowDatePicker(v => !v)}
+                    >
+                      <Ionicons name="calendar-outline" size={20} color={showDatePicker ? C.accent : C.text2} />
+                    </Pressable>
+                  </View>
+
+                  {showDatePicker && (() => {
+                    const grid = buildMonthGrid(datePickerMonth.getFullYear(), datePickerMonth.getMonth())
+                    return (
+                      <View style={s.miniCal}>
+                        <View style={s.miniCalNav}>
+                          <Pressable hitSlop={10} onPress={() => setDatePickerMonth(p => new Date(p.getFullYear(), p.getMonth() - 1, 1))}>
+                            <Ionicons name="chevron-back" size={18} color={C.text1} />
+                          </Pressable>
+                          <Text style={s.miniCalTitle}>
+                            {MONTHS[datePickerMonth.getMonth()]} {datePickerMonth.getFullYear()}
+                          </Text>
+                          <Pressable hitSlop={10} onPress={() => setDatePickerMonth(p => new Date(p.getFullYear(), p.getMonth() + 1, 1))}>
+                            <Ionicons name="chevron-forward" size={18} color={C.text1} />
+                          </Pressable>
+                        </View>
+                        <View style={s.miniCalDowRow}>
+                          {DOW.map(d => <Text key={d} style={s.miniCalDow}>{d}</Text>)}
+                        </View>
+                        {grid.map((week, wi) => (
+                          <View key={wi} style={s.miniCalWeekRow}>
+                            {week.map((cell, di) => {
+                              const isSelected = cell === evDate
+                              const isToday = cell === toStr(new Date())
+                              return (
+                                <Pressable
+                                  key={di}
+                                  style={[s.miniCalCell, isSelected && s.miniCalCellSel]}
+                                  onPress={() => {
+                                    if (!cell) return
+                                    setEvDate(cell)
+                                    setEvDateDisplay(toDisplay(cell))
+                                    setShowDatePicker(false)
+                                  }}
+                                  disabled={!cell}
+                                >
+                                  <Text style={[s.miniCalCellText, isToday && !isSelected && s.miniCalCellToday, isSelected && s.miniCalCellSelText]}>
+                                    {cell ? parseInt(cell.split('-')[2]) : ''}
+                                  </Text>
+                                </Pressable>
+                              )
+                            })}
+                          </View>
+                        ))}
+                      </View>
+                    )
+                  })()}
 
                   <View style={s.createRow}>
                     <Text style={s.createLabel}>All day</Text>
@@ -724,4 +806,16 @@ const s = StyleSheet.create({
   sheetRowText:   { fontSize: 16, fontWeight: '500', color: C.text1 },
   sheetCancel:    { paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   sheetCancelText: { fontSize: 15, color: C.text3, fontWeight: '600' },
+
+  miniCal:        { backgroundColor: C.surface2, borderRadius: 14, padding: 12, marginBottom: 12 },
+  miniCalNav:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  miniCalTitle:   { fontSize: 14, fontWeight: '700', color: C.text1 },
+  miniCalDowRow:  { flexDirection: 'row', marginBottom: 4 },
+  miniCalDow:     { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', color: C.text3 },
+  miniCalWeekRow: { flexDirection: 'row', marginBottom: 2 },
+  miniCalCell:    { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 5, borderRadius: 20 },
+  miniCalCellSel: { backgroundColor: C.accent },
+  miniCalCellText:{ fontSize: 13, color: C.text1 },
+  miniCalCellToday: { color: C.accent, fontWeight: '700' },
+  miniCalCellSelText: { color: '#fff', fontWeight: '700' },
 })

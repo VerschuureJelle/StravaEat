@@ -6,11 +6,20 @@ import { supabase } from '../lib/supabase'
 import { registerForNotifications, scheduleDailyMealNotificationsForUser } from '../lib/notifications'
 import { callSyncRecent } from '../lib/stravaSync'
 import { AppModeProvider } from '../contexts/AppModeContext'
+import { LanguageContext, AppLanguage, translations, loadLanguage, saveLanguage } from '../lib/i18n'
 
 export default function RootLayout() {
   const router = useRouter()
   const segments = useSegments()
   const [ready, setReady] = useState(false)
+  const [lang, setLangState] = useState<AppLanguage>('en')
+
+  useEffect(() => { loadLanguage().then(setLangState) }, [])
+
+  function setLang(l: AppLanguage) {
+    setLangState(l)
+    saveLanguage(l)
+  }
 
   useEffect(() => {
     // Check for an existing persisted session on app start
@@ -51,9 +60,11 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AppModeProvider>
-        <Stack screenOptions={{ headerShown: false }} />
-      </AppModeProvider>
+      <LanguageContext.Provider value={{ lang, setLang, t: (key) => translations[lang][key] }}>
+        <AppModeProvider>
+          <Stack screenOptions={{ headerShown: false }} />
+        </AppModeProvider>
+      </LanguageContext.Provider>
     </GestureHandlerRootView>
   )
 }

@@ -71,16 +71,25 @@ export async function notifyWorkoutSynced(
 }
 
 // Schedule overdue-meal notifications for a list of meals.
-// Each unchecked meal gets a notification at scheduled_time + 1h.
+// Each unchecked meal gets a notification at scheduled_time + delayMin.
 // Cancels any existing notification for that meal index before rescheduling.
-export async function scheduleMealNotifications(meals: Array<{
-  meal_index: number
-  name: string
-  scheduled_time: string  // HH:MM
-  date: string            // YYYY-MM-DD
-  checked: boolean
-}>): Promise<void> {
+export async function scheduleMealNotifications(
+  meals: Array<{
+    meal_index: number
+    name: string
+    scheduled_time: string  // HH:MM
+    date: string            // YYYY-MM-DD
+    checked: boolean
+  }>,
+  delayMin = 60,
+): Promise<void> {
   const now = Date.now()
+
+  const delayLabel = delayMin < 60
+    ? `${delayMin} minutes`
+    : delayMin === 60
+      ? 'an hour'
+      : `${delayMin / 60} hours`
 
   for (const meal of meals) {
     const notifId = `meal-overdue-${meal.meal_index}`
@@ -94,8 +103,7 @@ export async function scheduleMealNotifications(meals: Array<{
     if (isNaN(hh) || isNaN(mm)) continue
 
     const [y, mo, d] = meal.date.split('-').map(Number)
-    // Fire 1 hour after scheduled time
-    const triggerMs = new Date(y, mo - 1, d, hh + 1, mm, 0, 0).getTime()
+    const triggerMs = new Date(y, mo - 1, d, hh, mm, 0, 0).getTime() + delayMin * 60 * 1000
     const secondsUntil = Math.round((triggerMs - now) / 1000)
 
     if (secondsUntil <= 0) continue  // already past — don't schedule
@@ -104,7 +112,7 @@ export async function scheduleMealNotifications(meals: Array<{
       identifier: notifId,
       content: {
         title: `${meal.name} overdue`,
-        body: `Your ${meal.name} was scheduled for ${meal.scheduled_time} and is now more than an hour overdue. Don't forget to eat!`,
+        body: `Your ${meal.name} was scheduled for ${meal.scheduled_time} and hasn't been checked off after ${delayLabel}. Don't forget to eat!`,
         ...(Platform.OS === 'android' && { channelId: 'meals' }),
       },
       trigger: {
@@ -124,7 +132,8 @@ export async function cancelMealNotification(meal_index: number): Promise<void> 
 export async function scheduleDailyMealNotificationsForUser(userId: string): Promise<void> {
   try {
     const todayStr = localDate()
-    const [templatesRes, checksRes] = await Promise.all([
+    const [profileRes, templatesRes, checksRes] = await Promise.all([
+      supabase.from('users').select('meal_notif_delay_min').eq('id', userId).single(),
       supabase.from('meal_templates').select('meal_index, name, scheduled_time').eq('user_id', userId).order('meal_index'),
       supabase.from('meal_checks').select('meal_index').eq('user_id', userId).eq('date', todayStr),
     ])
@@ -132,13 +141,18 @@ export async function scheduleDailyMealNotificationsForUser(userId: string): Pro
     const checkedSet = new Set<number>((checksRes.data ?? []).map((c: any) => c.meal_index as number))
     if (templates.length === 0) return
 
-    await scheduleMealNotifications(templates.map((t: any) => ({
-      meal_index: t.meal_index,
-      name: t.name,
-      scheduled_time: t.scheduled_time,
-      date: todayStr,
-      checked: checkedSet.has(t.meal_index),
-    })))
+    const delayMin: number = profileRes.data?.meal_notif_delay_min ?? 60
+
+    await scheduleMealNotifications(
+      templates.map((t: any) => ({
+        meal_index: t.meal_index,
+        name: t.name,
+        scheduled_time: t.scheduled_time,
+        date: todayStr,
+        checked: checkedSet.has(t.meal_index),
+      })),
+      delayMin,
+    )
   } catch {
     // Non-critical — don't crash startup if this fails
   }

@@ -186,7 +186,7 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
 
   function computedFromPending() {
     if (!pendingItem) return null
-    const amt = parseFloat(pendingAmountStr)
+    const amt = parseFloat(pendingAmountStr.replace(',', '.'))
     if (isNaN(amt) || amt <= 0) return null
     const ratio = pendingItem.unit === 'serving' ? amt : amt / pendingItem.baseAmount
     return {
@@ -200,7 +200,7 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
   function confirmPending() {
     const c = computedFromPending()
     if (!c || !pendingItem) return
-    const amt = parseFloat(pendingAmountStr)
+    const amt = parseFloat(pendingAmountStr.replace(',', '.'))
     onSelect({
       name: pendingItem.name,
       amount_label: pendingItem.unit === 'serving'
@@ -499,7 +499,7 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
                 <TextInput
                   style={fp.amountInput}
                   value={pendingAmountStr}
-                  onChangeText={setPendingAmountStr}
+                  onChangeText={v => setPendingAmountStr(v.replace(',', '.'))}
                   keyboardType="decimal-pad"
                   returnKeyType="done"
                   autoFocus

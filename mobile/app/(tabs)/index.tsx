@@ -312,7 +312,7 @@ export default function ActivitiesScreen() {
   const fetchActivities = useCallback(async (
     p: Period, a: Date, mb: number, cStart: string | null, cEnd: string | null,
   ) => {
-    let q = supabase.from('activities').select('id, user_id, strava_activity_id, name, type, date, duration_sec, distance_m, elevation_gain_m, avg_hr, max_hr, total_kcal, total_fat_g, total_carb_g, synced_at').order('date', { ascending: false })
+    let q = supabase.from('activities').select('id, user_id, strava_activity_id, name, type, date, duration_sec, distance_m, elevation_gain_m, avg_hr, max_hr, total_kcal, total_fat_g, total_carb_g, synced_at, summary_polyline').order('date', { ascending: false })
     if (p === 'total') {
       const start = new Date(); start.setMonth(start.getMonth() - mb); start.setDate(1); start.setHours(0, 0, 0, 0)
       q = q.gte('date', start.toISOString())

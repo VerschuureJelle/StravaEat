@@ -3,7 +3,9 @@ import {
   View, Text, TextInput, Pressable, ScrollView, Modal,
   StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useRouter } from 'expo-router'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
@@ -129,6 +131,17 @@ interface GeneratedSession {
   estimated_kcal: number | null
 }
 
+// ─── coach defaults ─────────────────────────────────────────────────────────
+
+const DEFAULT_COACH_GUIDELINES = `- Reference zones by number and name (e.g. "Zone 2 — Aerobic Base")
+- Give specific distances or durations for each segment
+- Always include a warm-up and cool-down
+- Estimate total kcal burned (write it as "X kcal" so it can be parsed)
+- Be concise — use a numbered or bulleted list
+- Respond in the same language the user writes in`
+
+const COACH_PROMPT_KEY = 'coach_custom_guidelines'
+
 // ─── program config ─────────────────────────────────────────────────────────
 
 const PROGRAM_CONFIG: Record<ProgramType, { label: string; minWeeks: number; maxWeeks: number; emoji: string; color: string }> = {
@@ -184,12 +197,13 @@ const AI_GOALS = [
 const AI_DURATION_PRESETS = ['20', '30', '45', '60', '75', '90', '120']
 
 function zoneBarColor(n: number): string {
-  return ([C.text4, C.swim, C.run, C.ride, C.accent] as string[])[n - 1] ?? C.sport
+  return (['#94A3B8', '#29B6F6', '#66BB6A', '#FFCA28', '#EF5350'] as string[])[n - 1] ?? '#94A3B8'
 }
 
 // ─── screen ────────────────────────────────────────────────────────────────
 
 export default function PlannerScreen() {
+  const router = useRouter()
   const [userId, setUserId] = useState<string | null>(null)
   const [weightKg, setWeightKg] = useState<number | null>(null)
   const [ftpWatts, setFtpWatts] = useState<number | null>(null)
@@ -229,6 +243,8 @@ export default function PlannerScreen() {
   const [aiNotes, setAiNotes] = useState('')
   const [aiResult, setAiResult] = useState<AiResult | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
+  const [coachPrompt, setCoachPrompt] = useState(DEFAULT_COACH_GUIDELINES)
+  const [showPromptEditor, setShowPromptEditor] = useState(false)
 
   // programs mode — wizard
   const [programType, setProgramType] = useState<ProgramType>('5k')
@@ -236,7 +252,6 @@ export default function PlannerScreen() {
   const [startingKm, setStartingKm] = useState('')
   const [startingPaceMin, setStartingPaceMin] = useState('')
   const [startingPaceSec, setStartingPaceSec] = useState('')
-  const [calibrationNotes, setCalibrationNotes] = useState('')
   const [generatedSessions, setGeneratedSessions] = useState<GeneratedSession[]>([])
   const [programGenerating, setProgramGenerating] = useState(false)
   const [programSaving, setProgramSaving] = useState(false)
@@ -266,6 +281,9 @@ export default function PlannerScreen() {
   const [periodSeverity, setPeriodSeverity] = useState<PeriodSeverity>('minor')
 
   useEffect(() => { load() }, [])
+  useEffect(() => {
+    AsyncStorage.getItem(COACH_PROMPT_KEY).then(v => { if (v) setCoachPrompt(v) })
+  }, [])
 
   async function load() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -510,6 +528,7 @@ export default function PlannerScreen() {
           message,
           sport: selectedSport || undefined,
           period_severity: onPeriod ? periodSeverity : null,
+          customGuidelines: coachPrompt !== DEFAULT_COACH_GUIDELINES ? coachPrompt : undefined,
         },
       })
       if (res.error) {
@@ -518,7 +537,7 @@ export default function PlannerScreen() {
       }
       setAiResult(res.data as AiResult)
     } catch (e: any) {
-      Alert.alert('AI Coach error', e?.message ?? 'Could not reach AI Coach.')
+      Alert.alert('Coach error', e?.message ?? 'Could not reach Coach.')
     } finally {
       setAiLoading(false)
     }
@@ -639,7 +658,6 @@ export default function PlannerScreen() {
           weeks: programWeeks,
           starting_km: startingKmVal ?? 0,
           starting_pace_sec_km: paceSecTotal ?? 0,
-          calibration_notes: calibrationNotes.trim() || null,
           subtype_config: buildSubtypeConfig(),
           period_severity: onPeriod ? periodSeverity : null,
         }),
@@ -670,7 +688,6 @@ export default function PlannerScreen() {
         start_date: startDate,
         starting_km: parseFloat(startingKm) || 0,
         starting_pace_sec_km: parseInt(startingPaceMin || '0') * 60 + parseInt(startingPaceSec || '0'),
-        calibration_notes: calibrationNotes.trim() || null,
         subtype_config: Object.keys(buildSubtypeConfig()).length > 0 ? buildSubtypeConfig() : null,
         active: true,
       })
@@ -704,7 +721,6 @@ export default function PlannerScreen() {
     setStartingKm('')
     setStartingPaceMin('')
     setStartingPaceSec('')
-    setCalibrationNotes('')
     load()
   }
 
@@ -814,7 +830,7 @@ export default function PlannerScreen() {
         <View style={st.modeGrid}>
           {([
             { key: 'build',    label: 'Build workout', icon: 'list-outline'       as const },
-            { key: 'ai',       label: 'AI Coach',      icon: 'sparkles-outline'   as const },
+            { key: 'ai',       label: 'Coach',          icon: 'sparkles-outline'   as const },
             { key: 'programs', label: 'Programs',      icon: 'trophy-outline'     as const },
           ] as const).map(m => (
             <Pressable
@@ -872,6 +888,14 @@ export default function PlannerScreen() {
         {/* ─── BUILD MODE ───────────────────────────────────────────────────── */}
         {mode === 'build' && (
           <>
+            {activeZones.length === 0 ? (
+              <Pressable style={st.noZonesBox} onPress={() => router.push('/(tabs)/settings')}>
+                <Ionicons name="pulse-outline" size={22} color={C.text3} />
+                <Text style={st.noZonesText}>No heart rate zones set up yet.</Text>
+                <Text style={st.noZonesLink}>Go to Settings → Heart Rate Zones →</Text>
+              </Pressable>
+            ) : (
+            <>
             <Text style={st.label}>Workout segments</Text>
 
             {segments.map((seg, idx) => {
@@ -932,7 +956,7 @@ export default function PlannerScreen() {
                     {activeZones.map(z => (
                       <Pressable
                         key={z.id}
-                        style={[st.segZoneBtn, seg.zoneId === z.id && { backgroundColor: C.accent, borderColor: C.accent }]}
+                        style={[st.segZoneBtn, seg.zoneId === z.id && { backgroundColor: zoneBarColor(z.zone_number), borderColor: zoneBarColor(z.zone_number) }]}
                         onPress={() => updateSegment(seg.id, { zoneId: z.id })}
                       >
                         <Text style={[st.segZoneBtnNum, seg.zoneId === z.id && { color: C.white }]}>Z{z.zone_number}</Text>
@@ -1023,6 +1047,8 @@ export default function PlannerScreen() {
                 </Pressable>
               </View>
             )}
+            </>
+            )}
           </>
         )}
 
@@ -1042,7 +1068,7 @@ export default function PlannerScreen() {
               {AI_DURATION_PRESETS.map(d => (
                 <Pressable
                   key={d}
-                  style={[st.aiDurationBtn, aiDuration === d && { backgroundColor: C.accent2, borderColor: C.accent2 }]}
+                  style={[st.aiDurationBtn, aiDuration === d && { backgroundColor: C.accent, borderColor: C.accent }]}
                   onPress={() => setAiDuration(d)}
                 >
                   <Text style={[st.aiDurationBtnText, aiDuration === d && { color: C.white }]}>{d}'</Text>
@@ -1056,10 +1082,10 @@ export default function PlannerScreen() {
               {AI_GOALS.map(g => (
                 <Pressable
                   key={g.key}
-                  style={[st.aiGoalCard, aiGoal === g.key && { borderColor: C.accent2, backgroundColor: 'C.accent2Bg' }]}
+                  style={[st.aiGoalCard, aiGoal === g.key && { borderColor: C.accent, backgroundColor: C.accent + '22' }]}
                   onPress={() => setAiGoal(g.key)}
                 >
-                  <Text style={[st.aiGoalLabel, aiGoal === g.key && { color: C.accent2, fontWeight: '800' }]}>{g.label}</Text>
+                  <Text style={[st.aiGoalLabel, aiGoal === g.key && { color: C.accent, fontWeight: '800' }]}>{g.label}</Text>
                   <Text style={st.aiGoalNote}>{g.note}</Text>
                 </Pressable>
               ))}
@@ -1078,8 +1104,42 @@ export default function PlannerScreen() {
               textAlignVertical="top"
             />
 
+            {/* Prompt editor */}
             <Pressable
-              style={[st.calcBtn, { backgroundColor: C.accent2 }, aiLoading && st.planBtnDisabled]}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}
+              onPress={() => setShowPromptEditor(v => !v)}
+            >
+              <Ionicons name={showPromptEditor ? 'chevron-up' : 'chevron-down'} size={14} color={C.text3} />
+              <Text style={{ fontSize: 12, color: C.text3 }}>Coach prompt</Text>
+              {coachPrompt !== DEFAULT_COACH_GUIDELINES && (
+                <View style={{ backgroundColor: C.accent + '33', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}>
+                  <Text style={{ fontSize: 10, color: C.accent, fontWeight: '700' }}>custom</Text>
+                </View>
+              )}
+            </Pressable>
+            {showPromptEditor && (
+              <View style={{ gap: 8, marginBottom: 12 }}>
+                <TextInput
+                  style={[st.aiInput, { minHeight: 160, fontSize: 12, color: C.text2 }]}
+                  value={coachPrompt}
+                  onChangeText={v => { setCoachPrompt(v); AsyncStorage.setItem(COACH_PROMPT_KEY, v) }}
+                  multiline
+                  textAlignVertical="top"
+                  autoCorrect={false}
+                />
+                {coachPrompt !== DEFAULT_COACH_GUIDELINES && (
+                  <Pressable
+                    style={{ alignSelf: 'flex-end' }}
+                    onPress={() => { setCoachPrompt(DEFAULT_COACH_GUIDELINES); AsyncStorage.setItem(COACH_PROMPT_KEY, DEFAULT_COACH_GUIDELINES) }}
+                  >
+                    <Text style={{ fontSize: 12, color: C.text3 }}>Reset to default</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            <Pressable
+              style={[st.calcBtn, { backgroundColor: C.accent }, aiLoading && st.planBtnDisabled]}
               onPress={askAI}
               disabled={aiLoading}
             >
@@ -1096,7 +1156,7 @@ export default function PlannerScreen() {
               <View style={st.aiResultCard}>
                 <View style={st.aiResultHeader}>
                   <Ionicons name="sparkles-outline" size={14} color={C.accent2} />
-                  <Text style={st.aiResultTitle}>AI Coach plan</Text>
+                  <Text style={st.aiResultTitle}>Coach plan</Text>
                   {aiResult.estimated_kcal && (
                     <View style={st.aiKcalBadge}>
                       <Text style={st.aiKcalBadgeText}>~{aiResult.estimated_kcal} kcal</Text>
@@ -1325,15 +1385,8 @@ export default function PlannerScreen() {
             ) : (
               /* Program creation wizard */
               <>
-                <View style={st.aiInfoBox}>
-                  <Ionicons name="trophy-outline" size={14} color={C.accent2} />
-                  <Text style={st.aiInfoText}>
-                    Build a structured multi-week training plan tailored to your goal race and current fitness.
-                  </Text>
-                </View>
-
                 {/* Step 1: Program type */}
-                <Text style={st.label}>Goal race</Text>
+                <Text style={st.label}>Goal</Text>
                 <View style={st.programTypeGrid}>
                   {PROGRAM_TYPES.map(type => {
                     const c = PROGRAM_CONFIG[type]
@@ -1392,7 +1445,7 @@ export default function PlannerScreen() {
                       ))}
                     </View>
 
-                    <Text style={st.label}>Body parts to emphasise</Text>
+                    <Text style={st.label}>Focus areas</Text>
                     <View style={st.bodyPartRow}>
                       {BODY_PARTS.map(bp => {
                         const selected = strengthBodyParts.includes(bp)
@@ -1483,13 +1536,13 @@ export default function PlannerScreen() {
 
                 {/* Step 3: Starting point — not shown for pure strength */}
                 {programType !== 'strength' && (
-                <Text style={st.label}>Your current fitness</Text>
+                <Text style={st.label}>Starting point</Text>
                 )}
 
                 {/* Running */}
                 {['5k', '10k', 'half_marathon', 'marathon'].includes(programType) && (
                 <View style={st.startingPointCard}>
-                  <Text style={st.startingPointHint}>I can currently run</Text>
+                  <Text style={st.startingPointHint}>Long run distance</Text>
                   <View style={st.startingPointRow}>
                     <TextInput
                       style={[st.startingInput, { flex: 2 }]}
@@ -1530,7 +1583,7 @@ export default function PlannerScreen() {
                 {/* Swimming */}
                 {programType === 'swim' && (
                 <View style={st.startingPointCard}>
-                  <Text style={st.startingPointHint}>I can currently swim</Text>
+                  <Text style={st.startingPointHint}>Longest swim distance</Text>
                   <View style={st.startingPointRow}>
                     <TextInput
                       style={[st.startingInput, { flex: 2 }]}
@@ -1571,7 +1624,7 @@ export default function PlannerScreen() {
                 {/* Cycling */}
                 {programType === 'cycling' && (
                 <View style={st.startingPointCard}>
-                  <Text style={st.startingPointHint}>My FTP is</Text>
+                  <Text style={st.startingPointHint}>FTP</Text>
                   <View style={st.startingPointRow}>
                     <TextInput
                       style={[st.startingInput, { flex: 2 }]}
@@ -1585,19 +1638,6 @@ export default function PlannerScreen() {
                   </View>
                 </View>
                 )}
-
-                {/* Step 4: Calibration notes */}
-                <Text style={st.label}>Coaching instructions (optional)</Text>
-                <TextInput
-                  style={st.calibrationInput}
-                  value={calibrationNotes}
-                  onChangeText={setCalibrationNotes}
-                  placeholder="e.g. I prefer morning runs, no more than 4 sessions per week, avoid back-to-back hard days, focus on aerobic base first..."
-                  placeholderTextColor={C.text3}
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                />
 
                 <Pressable
                   style={[st.calcBtn, { backgroundColor: cfg.color }, programGenerating && st.planBtnDisabled]}
@@ -1694,6 +1734,15 @@ const st = StyleSheet.create({
     gap: 8, padding: 15, borderRadius: 12, marginBottom: 24,
   },
   calcBtnText: { color: C.white, fontWeight: '700', fontSize: 16 },
+
+  // Build mode empty state
+  noZonesBox: {
+    alignItems: 'center', gap: 8, paddingVertical: 40,
+    backgroundColor: C.surface2, borderRadius: 14,
+    borderWidth: 1, borderColor: C.border, marginTop: 8,
+  },
+  noZonesText: { fontSize: 15, fontWeight: '600', color: C.text2 },
+  noZonesLink: { fontSize: 13, color: C.accent, fontWeight: '600' },
 
   // Segment builder
   segCard: {

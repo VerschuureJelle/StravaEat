@@ -27,6 +27,7 @@ export interface UserProfile {
   on_period: boolean
   period_severity: PeriodSeverity | null
   hide_calories: boolean
+  avatar_url: string | null
 }
 
 export interface FoodLog {

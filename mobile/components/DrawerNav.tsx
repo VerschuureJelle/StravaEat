@@ -62,7 +62,6 @@ function DrawerContent({ userName, avatarUrl, onNav, onClose }: {
       ))}
 
       <View style={dr.sectionDivider} />
-      <Text style={dr.sectionLabel}>Language</Text>
       <View style={dr.langRow}>
         {LANGUAGES.map(l => (
           <Pressable
@@ -71,7 +70,6 @@ function DrawerContent({ userName, avatarUrl, onNav, onClose }: {
             onPress={() => setLang(l.code)}
           >
             <Text style={dr.langFlag}>{l.flag}</Text>
-            <Text style={[dr.langLabel, lang === l.code && dr.langLabelActive]}>{l.label}</Text>
           </Pressable>
         ))}
       </View>
