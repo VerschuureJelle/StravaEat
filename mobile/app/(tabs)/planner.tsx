@@ -479,7 +479,7 @@ export default function PlannerScreen() {
         const pSec = parseInt(seg.paceSec || '0')
         const totalPaceSec = pMin * 60 + pSec
         const dist = parseFloat(seg.value)
-        if (totalPaceSec <= 0 || dist <= 0) {
+        if (totalPaceSec <= 0 || isNaN(dist) || dist <= 0) {
           Alert.alert('Missing input', 'Enter both pace and distance for pace segments.')
           return
         }
@@ -994,7 +994,7 @@ export default function PlannerScreen() {
                     {(/run|jog/i.test(selectedSport)) && (
                       <Pressable
                         style={[st.segToggleBtn, seg.inputType === 'pace' && { backgroundColor: C.accent, borderColor: C.accent }]}
-                        onPress={() => updateSegment(seg.id, { inputType: 'pace', value: '', zoneId: '' })}
+                        onPress={() => updateSegment(seg.id, { inputType: 'pace', zoneId: '', ...(seg.inputType !== 'pace' ? { value: '' } : {}) })}
                       >
                         <Text style={[st.segToggleText, seg.inputType === 'pace' && { color: C.white }]}>Pace</Text>
                       </Pressable>
