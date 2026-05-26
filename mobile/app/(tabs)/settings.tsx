@@ -976,6 +976,34 @@ export default function SettingsScreen() {
                   setEditedProfile(p => ({ ...p, daily_kcal_target: v ? parseFloat(v) : null }))
                 }
               />
+              {(() => {
+                const w = editedProfile.weight_kg
+                const h = editedProfile.height_cm
+                const a = editedProfile.age
+                if (!w || !h || !a) return null
+                return (
+                  <>
+                    <Pressable
+                      style={styles.autoCalcBtn}
+                      onPress={() => {
+                        const male   = (10 * (w as number) + 6.25 * (h as number) - 5 * (a as number) + 5) * 1.2
+                        const female = (10 * (w as number) + 6.25 * (h as number) - 5 * (a as number) - 161) * 1.2
+                        const sex = editedProfile.sex
+                        const result = sex === 'male'
+                          ? male
+                          : sex === 'female'
+                            ? female
+                            : (male + female) / 2
+                        setEditedProfile(p => ({ ...p, daily_kcal_target: Math.round(result) }))
+                      }}
+                    >
+                      <Ionicons name="calculator-outline" size={14} color={C.accent} />
+                      <Text style={styles.autoCalcBtnText}>Auto-calculate</Text>
+                    </Pressable>
+                    <Text style={styles.prefNote}>Estimated using Mifflin-St Jeor (sedentary baseline). Adjust manually if needed.</Text>
+                  </>
+                )
+              })()}
             </View>
 
             <View style={styles.fieldGroup}>
@@ -998,9 +1026,18 @@ export default function SettingsScreen() {
               <Text style={styles.fieldLabel}>Macro goals</Text>
               {(() => {
                 const kcal = editedProfile.daily_kcal_target
-                const autoProtein = kcal ? Math.round(kcal * 0.2 / 4) : null
-                const autoFat = kcal ? Math.round(kcal * 0.3 / 9) : null
-                const autoCarb = kcal ? Math.round(kcal * 0.5 / 4) : null
+                const appFocus = (editedProfile as any)?.onboarding_data?.app_focus as string | undefined
+                let proteinPct = 0.20, fatPct = 0.30, carbPct = 0.50
+                if (appFocus === 'composition') { proteinPct = 0.30; fatPct = 0.30; carbPct = 0.40 }
+                else if (appFocus === 'performance') { proteinPct = 0.20; fatPct = 0.20; carbPct = 0.60 }
+                else if (appFocus === 'energy') { proteinPct = 0.20; fatPct = 0.25; carbPct = 0.55 }
+                const autoProtein = kcal ? Math.round(kcal * proteinPct / 4) : null
+                const autoFat     = kcal ? Math.round(kcal * fatPct / 9) : null
+                const autoCarb    = kcal ? Math.round(kcal * carbPct / 4) : null
+                const focusLabel = appFocus === 'composition' ? 'body composition'
+                  : appFocus === 'performance' ? 'performance'
+                  : appFocus === 'energy' ? 'energy'
+                  : null
                 return (
                   <View style={styles.macroGoalRows}>
                     {([
@@ -1022,6 +1059,9 @@ export default function SettingsScreen() {
                       </View>
                     ))}
                     <Text style={styles.macroGoalNote}>Leave blank for auto targets (20% protein · 30% fat · 50% carbs of daily kcal).</Text>
+                    {focusLabel && (
+                      <Text style={styles.macroGoalNote}>Based on your goal: {focusLabel}</Text>
+                    )}
                   </View>
                 )
               })()}
@@ -1125,57 +1165,6 @@ export default function SettingsScreen() {
               />
             </View>
 
-            {/* Period tracking — only visible for female users */}
-            {savedProfile.sex === 'female' && (
-              <View style={styles.periodCard}>
-                <View style={styles.periodToggleRow}>
-                  <View style={styles.periodToggleLeft}>
-                    <Ionicons name="rose-outline" size={20} color={C.run} />
-                    <View>
-                      <Text style={styles.periodToggleTitle}>On period</Text>
-                      <Text style={styles.periodToggleNote}>Adjusts training intensity automatically</Text>
-                    </View>
-                  </View>
-                  <Switch
-                    value={onPeriod}
-                    onValueChange={v => {
-                      setOnPeriod(v)
-                      savePeriodState(v, periodSeverity)
-                    }}
-                    trackColor={{ true: C.run, false: C.surface3 }}
-                    thumbColor={C.white}
-                  />
-                </View>
-
-                {onPeriod && (
-                  <View style={styles.periodSeveritySection}>
-                    <Text style={styles.periodSeverityLabel}>Symptom severity</Text>
-                    {(['minor', 'medium', 'severe'] as PeriodSeverity[]).map(level => (
-                      <Pressable
-                        key={level}
-                        style={[styles.periodSeverityBtn, periodSeverity === level && styles.periodSeverityBtnActive]}
-                        onPress={() => {
-                          setPeriodSeverity(level)
-                          savePeriodState(true, level)
-                        }}
-                      >
-                        <View style={styles.periodSeverityBtnInner}>
-                          <Text style={[styles.periodSeverityBtnTitle, periodSeverity === level && styles.periodSeverityBtnTitleActive]}>
-                            {SEVERITY_LABELS[level]}
-                          </Text>
-                          <Text style={[styles.periodSeverityBtnDesc, periodSeverity === level && styles.periodSeverityBtnDescActive]}>
-                            {SEVERITY_DESCRIPTIONS[level]}
-                          </Text>
-                        </View>
-                        {periodSeverity === level && (
-                          <Ionicons name="checkmark-circle" size={18} color={C.run} />
-                        )}
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-              </View>
-            )}
 
             <Pressable style={styles.signOutBtn} onPress={async () => {
               if (userId) {
@@ -2406,6 +2395,14 @@ const styles = StyleSheet.create({
   sexBtnActive: { borderColor: C.accent, backgroundColor: C.accentBg },
   sexBtnText: { fontSize: 14, fontWeight: '600', color: C.text2 },
   sexBtnTextActive: { color: C.accent },
+
+  // Auto-calculate kcal
+  autoCalcBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+    marginTop: 8, paddingVertical: 7, paddingHorizontal: 12,
+    borderRadius: 10, borderWidth: 1, borderColor: C.accent, backgroundColor: C.accentBg,
+  },
+  autoCalcBtnText: { fontSize: 13, fontWeight: '600', color: C.accent },
 
   // Period tracking
   periodCard: {
