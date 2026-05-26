@@ -1688,64 +1688,103 @@ export default function SettingsScreen() {
 
             {(presetDraft?.items ?? []).map((item, idx) => (
               <View key={idx} style={styles.draftItemBlock}>
-                <View style={styles.draftItemRow}>
-                  <View style={styles.draftAmountWrap}>
+                {item.ingredient_id ? (
+                  /* ── Library-based item: only grams editable, rest is computed ── */
+                  <View style={styles.draftLibraryRow}>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <Ionicons name="nutrition-outline" size={13} color={C.ride} />
+                        <Text style={styles.draftLibraryName}>{item.name}</Text>
+                      </View>
+                      <View style={styles.draftLibraryMacros}>
+                        <Text style={styles.draftLibraryKcal}>{item.kcal || '—'} kcal</Text>
+                        {item.protein ? <Text style={styles.draftLibraryMacro}>P {item.protein}g</Text> : null}
+                        {item.fat ? <Text style={styles.draftLibraryMacro}>F {item.fat}g</Text> : null}
+                        {item.carb ? <Text style={styles.draftLibraryMacro}>C {item.carb}g</Text> : null}
+                      </View>
+                    </View>
+                    <View style={styles.draftAmountWrap}>
+                      <TextInput
+                        style={[styles.input, styles.draftAmountInput]}
+                        value={item.amount}
+                        onChangeText={v => {
+                          const normalized = v.replace(',', '.')
+                          setPresetDraft(d => d ? {
+                            ...d, items: d.items.map((it, j) => j === idx ? recalcItem(it, normalized) : it),
+                          } : d)
+                        }}
+                        placeholder="100"
+                        placeholderTextColor={C.text3}
+                        keyboardType="decimal-pad"
+                        inputAccessoryViewID={Platform.OS === 'ios' ? 'preset-done' : undefined}
+                        returnKeyType="done"
+                      />
+                      <Text style={styles.draftUnitLabel}>g</Text>
+                    </View>
+                    <Pressable
+                      onPress={() => setPresetDraft(d => d ? {
+                        ...d, items: d.items.filter((_, j) => j !== idx),
+                      } : d)}
+                      hitSlop={8}
+                    >
+                      <Ionicons name="close-circle-outline" size={20} color={C.danger} />
+                    </Pressable>
+                  </View>
+                ) : (
+                  /* ── Manually entered item: all fields editable ── */
+                  <View style={styles.draftItemRow}>
+                    <View style={styles.draftAmountWrap}>
+                      <TextInput
+                        style={[styles.input, styles.draftAmountInput]}
+                        value={item.amount}
+                        onChangeText={v => {
+                          const normalized = v.replace(',', '.')
+                          setPresetDraft(d => d ? {
+                            ...d, items: d.items.map((it, j) => j === idx ? recalcItem(it, normalized) : it),
+                          } : d)
+                        }}
+                        placeholder="100"
+                        placeholderTextColor={C.text3}
+                        keyboardType="decimal-pad"
+                        inputAccessoryViewID={Platform.OS === 'ios' ? 'preset-done' : undefined}
+                        returnKeyType="done"
+                      />
+                      <Text style={styles.draftUnitLabel}>{item.unit || 'g'}</Text>
+                    </View>
                     <TextInput
-                      style={[styles.input, styles.draftAmountInput]}
-                      value={item.amount}
-                      onChangeText={v => {
-                        const normalized = v.replace(',', '.')
-                        setPresetDraft(d => d ? {
-                          ...d, items: d.items.map((it, j) => j === idx ? recalcItem(it, normalized) : it),
-                        } : d)
-                      }}
-                      placeholder="100"
+                      style={[styles.input, { flex: 1, marginBottom: 0, textAlign: 'center' }]}
+                      value={item.name}
+                      onChangeText={v => setPresetDraft(d => d ? {
+                        ...d, items: d.items.map((it, j) => j === idx ? { ...it, name: v } : it),
+                      } : d)}
+                      placeholder="Ingredient name"
                       placeholderTextColor={C.text3}
-                      keyboardType="decimal-pad"
+                      returnKeyType="done"
+                    />
+                    <TextInput
+                      style={[styles.input, styles.draftKcalInput]}
+                      value={item.kcal}
+                      onChangeText={v => setPresetDraft(d => d ? {
+                        ...d, items: d.items.map((it, j) => j === idx ? {
+                          ...it, kcal: v,
+                          kcalPerUnit: null, proteinPerUnit: null, fatPerUnit: null, carbPerUnit: null,
+                        } : it),
+                      } : d)}
+                      placeholder="kcal"
+                      placeholderTextColor={C.text3}
+                      keyboardType="numeric"
                       inputAccessoryViewID={Platform.OS === 'ios' ? 'preset-done' : undefined}
                       returnKeyType="done"
                     />
-                    <Text style={styles.draftUnitLabel}>{item.unit || 'g'}</Text>
-                  </View>
-                  <TextInput
-                    style={[styles.input, { flex: 1, marginBottom: 0 }]}
-                    value={item.name}
-                    onChangeText={v => setPresetDraft(d => d ? {
-                      ...d, items: d.items.map((it, j) => j === idx ? { ...it, name: v } : it),
-                    } : d)}
-                    placeholder="Ingredient name"
-                    placeholderTextColor={C.text3}
-                    returnKeyType="done"
-                  />
-                  <TextInput
-                    style={[styles.input, styles.draftKcalInput]}
-                    value={item.kcal}
-                    onChangeText={v => setPresetDraft(d => d ? {
-                      ...d, items: d.items.map((it, j) => j === idx ? {
-                        ...it, kcal: v,
-                        kcalPerUnit: null, proteinPerUnit: null, fatPerUnit: null, carbPerUnit: null,
-                      } : it),
-                    } : d)}
-                    placeholder="kcal"
-                    placeholderTextColor={C.text3}
-                    keyboardType="numeric"
-                    inputAccessoryViewID={Platform.OS === 'ios' ? 'preset-done' : undefined}
-                    returnKeyType="done"
-                  />
-                  <Pressable
-                    onPress={() => setPresetDraft(d => d ? {
-                      ...d, items: d.items.filter((_, j) => j !== idx),
-                    } : d)}
-                    hitSlop={8}
-                    style={{ paddingBottom: 10 }}
-                  >
-                    <Ionicons name="close-circle-outline" size={20} color={C.danger} />
-                  </Pressable>
-                </View>
-                {item.ingredient_id && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                    <Ionicons name="nutrition-outline" size={11} color={C.ride} />
-                    <Text style={{ fontSize: 11, color: C.ride }}>From library</Text>
+                    <Pressable
+                      onPress={() => setPresetDraft(d => d ? {
+                        ...d, items: d.items.filter((_, j) => j !== idx),
+                      } : d)}
+                      hitSlop={8}
+                      style={{ paddingBottom: 10 }}
+                    >
+                      <Ionicons name="close-circle-outline" size={20} color={C.danger} />
+                    </Pressable>
                   </View>
                 )}
               </View>
@@ -1756,22 +1795,22 @@ export default function SettingsScreen() {
                 style={styles.editorAddBtn}
                 onPress={() => setPresetDraft(d => d ? { ...d, items: [...d.items, emptyDraftItem()] } : d)}
               >
-                <Ionicons name="add-outline" size={16} color={C.accent2} />
+                <Ionicons name="add-outline" size={16} color={C.text1} />
                 <Text style={styles.editorAddBtnText}>Add manually</Text>
               </Pressable>
               <Pressable
-                style={[styles.editorAddBtn, { borderColor: C.accent }]}
+                style={styles.editorAddBtn}
                 onPress={() => {
                   const newIdx = presetDraft?.items.length ?? 0
                   setPresetDraft(d => d ? { ...d, items: [...d.items, emptyDraftItem()] } : d)
                   setFoodPickerTargetIdx(newIdx)
                 }}
               >
-                <Ionicons name="search-outline" size={16} color={C.accent} />
-                <Text style={[styles.editorAddBtnText, { color: C.accent }]}>Search food</Text>
+                <Ionicons name="search-outline" size={16} color={C.text1} />
+                <Text style={styles.editorAddBtnText}>Search food</Text>
               </Pressable>
               <Pressable
-                style={[styles.editorAddBtn, { borderColor: C.ride }]}
+                style={styles.editorAddBtn}
                 onPress={() => {
                   const idx = presetDraft?.items.length ?? 0
                   setPresetDraft(d => d ? { ...d, items: [...d.items, emptyDraftItem()] } : d)
@@ -1779,8 +1818,8 @@ export default function SettingsScreen() {
                   setShowIngredientPicker(true)
                 }}
               >
-                <Ionicons name="nutrition-outline" size={14} color={C.ride} />
-                <Text style={[styles.editorAddBtnText, { color: C.ride }]}>From library</Text>
+                <Ionicons name="book-outline" size={16} color={C.text1} />
+                <Text style={styles.editorAddBtnText}>From library</Text>
               </Pressable>
             </View>
 
@@ -1865,6 +1904,21 @@ export default function SettingsScreen() {
             }}
           />
         )}
+
+        {userId && (
+          <IngredientPickerModal
+            visible={showIngredientPicker}
+            userId={userId}
+            onSelect={result => handleIngredientPick(result)}
+            onClose={() => {
+              if (ingredientPickerTargetIdx != null) {
+                setPresetDraft(d => d ? { ...d, items: d.items.filter((_, i) => i !== ingredientPickerTargetIdx) } : d)
+              }
+              setShowIngredientPicker(false)
+              setIngredientPickerTargetIdx(null)
+            }}
+          />
+        )}
       </Modal>
 
       {timePickerMealIdx !== null && (
@@ -1872,22 +1926,6 @@ export default function SettingsScreen() {
           value={draftMeals[timePickerMealIdx]?.scheduled_time ?? '12:00'}
           onChange={v => updateDraftMeal(timePickerMealIdx!, 'scheduled_time', v)}
           onClose={() => setTimePickerMealIdx(null)}
-        />
-      )}
-
-      {userId && (
-        <IngredientPickerModal
-          visible={showIngredientPicker}
-          userId={userId}
-          onSelect={result => handleIngredientPick(result)}
-          onClose={() => {
-            // Remove the pre-appended empty item if cancelled
-            if (ingredientPickerTargetIdx != null) {
-              setPresetDraft(d => d ? { ...d, items: d.items.filter((_, i) => i !== ingredientPickerTargetIdx) } : d)
-            }
-            setShowIngredientPicker(false)
-            setIngredientPickerTargetIdx(null)
-          }}
         />
       )}
 
@@ -2327,10 +2365,15 @@ const styles = StyleSheet.create({
   },
   draftItemBlock: { marginBottom: 10 },
   draftItemRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+  draftLibraryRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(102,187,106,0.06)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(102,187,106,0.25)', padding: 10 },
+  draftLibraryName: { fontSize: 14, fontWeight: '700', color: C.text1 },
+  draftLibraryMacros: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  draftLibraryKcal: { fontSize: 13, fontWeight: '600', color: C.text2 },
+  draftLibraryMacro: { fontSize: 12, color: C.text3 },
   draftAmountWrap: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  draftAmountInput: { width: 68, marginBottom: 0 },
+  draftAmountInput: { width: 68, marginBottom: 0, textAlign: 'center' },
   draftUnitLabel: { fontSize: 12, color: C.text3, fontWeight: '600', minWidth: 14 },
-  draftKcalInput: { width: 64, marginBottom: 0 },
+  draftKcalInput: { width: 64, marginBottom: 0, textAlign: 'center' },
   draftMacroRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
   draftMacroField: { flex: 1 },
   addIngredientBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 },
@@ -2383,11 +2426,11 @@ const styles = StyleSheet.create({
   editorScroll: { padding: 16, paddingBottom: 16 },
   editorAddRow: { flexDirection: 'row', gap: 10, marginTop: 6, marginBottom: 12 },
   editorAddBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    borderWidth: 1.5, borderColor: C.accent2, borderRadius: 10,
-    paddingVertical: 10,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    borderWidth: 1.5, borderColor: C.text1, borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 4,
   },
-  editorAddBtnText: { fontSize: 13, fontWeight: '700', color: C.accent2 },
+  editorAddBtnText: { fontSize: 13, fontWeight: '700', color: C.text1, includeFontPadding: false },
   editorFooter: {
     paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12,
     borderTopWidth: 1, borderTopColor: C.divider, backgroundColor: C.bg,
