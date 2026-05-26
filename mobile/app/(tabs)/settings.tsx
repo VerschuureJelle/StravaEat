@@ -19,6 +19,8 @@ import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import { SEVERITY_LABELS, SEVERITY_DESCRIPTIONS } from '../../lib/periodConfig'
 import type { UserProfile, HeartRateZone, MealTemplate, MealPreset, MealPresetItem, UserSport, PeriodSeverity } from '../../types'
 import FoodPickerModal from '../../components/FoodPickerModal'
+import IngredientPickerModal from '../../components/IngredientPickerModal'
+import type { IngredientPickResult } from '../../components/IngredientPickerModal'
 
 const COMMON_SPORTS = [
   'Run', 'Ride', 'Swim', 'Walk', 'Strength Training',
@@ -57,6 +59,8 @@ interface DraftItem {
   proteinPerUnit: number | null
   fatPerUnit: number | null
   carbPerUnit: number | null
+  ingredient_id: string | null
+  amount_g: number | null
 }
 
 function normalizeType(type: string): string {
@@ -114,6 +118,8 @@ export default function SettingsScreen() {
   const [presetDraft, setPresetDraft] = useState<{ id?: string; autoLinkMealIndex?: number; name: string; items: DraftItem[] } | null>(null)
   const [linkPickerMeal, setLinkPickerMeal] = useState<number | null>(null)
   const [foodPickerTargetIdx, setFoodPickerTargetIdx] = useState<number | null>(null)
+  const [showIngredientPicker, setShowIngredientPicker] = useState(false)
+  const [ingredientPickerTargetIdx, setIngredientPickerTargetIdx] = useState<number | null>(null)
   const [expandedPresets, setExpandedPresets] = useState<Set<string>>(new Set())
   const [expandedMealCards, setExpandedMealCards] = useState<Set<number>>(new Set())
 
@@ -567,6 +573,7 @@ export default function SettingsScreen() {
     return {
       name: '', amount: '', unit: 'g', kcal: '', protein: '', fat: '', carb: '',
       kcalPerUnit: null, proteinPerUnit: null, fatPerUnit: null, carbPerUnit: null,
+      ingredient_id: null, amount_g: null,
     }
   }
 
@@ -614,6 +621,8 @@ export default function SettingsScreen() {
           proteinPerUnit: pu(it.protein_g),
           fatPerUnit: pu(it.fat_g),
           carbPerUnit: pu(it.carb_g),
+          ingredient_id: it.ingredient_id ?? null,
+          amount_g: it.amount_g ?? null,
         }
       }),
     })
@@ -639,6 +648,8 @@ export default function SettingsScreen() {
       fat_g: it.fat ? parseFloat(it.fat) : null,
       carb_g: it.carb ? parseFloat(it.carb) : null,
       sort_order: i,
+      ingredient_id: it.ingredient_id ?? null,
+      amount_g: it.amount_g ?? null,
     }))
 
     if (presetDraft.id) {
@@ -719,6 +730,32 @@ export default function SettingsScreen() {
         [mealIdx]: [...(prev[mealIdx] ?? []), presetId],
       }))
     }
+  }
+
+  function handleIngredientPick(result: IngredientPickResult) {
+    if (ingredientPickerTargetIdx == null) return
+    setPresetDraft(d => {
+      if (!d) return d
+      const items = [...d.items]
+      items[ingredientPickerTargetIdx] = {
+        name: result.ingredient_name,
+        amount: String(result.amount_g),
+        unit: 'g',
+        kcal: String(result.kcal),
+        protein: result.protein_g != null ? String(result.protein_g) : '',
+        fat: result.fat_g != null ? String(result.fat_g) : '',
+        carb: result.carb_g != null ? String(result.carb_g) : '',
+        kcalPerUnit: result.kcal / result.amount_g,
+        proteinPerUnit: result.protein_g != null ? result.protein_g / result.amount_g : null,
+        fatPerUnit: result.fat_g != null ? result.fat_g / result.amount_g : null,
+        carbPerUnit: result.carb_g != null ? result.carb_g / result.amount_g : null,
+        ingredient_id: result.ingredient_id,
+        amount_g: result.amount_g,
+      }
+      return { ...d, items }
+    })
+    setShowIngredientPicker(false)
+    setIngredientPickerTargetIdx(null)
   }
 
   const profileField = (label: string, key: keyof UserProfile, numeric?: boolean) => (
@@ -1705,6 +1742,12 @@ export default function SettingsScreen() {
                     <Ionicons name="close-circle-outline" size={20} color={C.danger} />
                   </Pressable>
                 </View>
+                {item.ingredient_id && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                    <Ionicons name="nutrition-outline" size={11} color={C.ride} />
+                    <Text style={{ fontSize: 11, color: C.ride }}>From library</Text>
+                  </View>
+                )}
               </View>
             ))}
 
@@ -1726,6 +1769,18 @@ export default function SettingsScreen() {
               >
                 <Ionicons name="search-outline" size={16} color={C.accent} />
                 <Text style={[styles.editorAddBtnText, { color: C.accent }]}>Search food</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.editorAddBtn, { borderColor: C.ride }]}
+                onPress={() => {
+                  const idx = presetDraft?.items.length ?? 0
+                  setPresetDraft(d => d ? { ...d, items: [...d.items, emptyDraftItem()] } : d)
+                  setIngredientPickerTargetIdx(idx)
+                  setShowIngredientPicker(true)
+                }}
+              >
+                <Ionicons name="nutrition-outline" size={14} color={C.ride} />
+                <Text style={[styles.editorAddBtnText, { color: C.ride }]}>From library</Text>
               </Pressable>
             </View>
 
@@ -1794,6 +1849,8 @@ export default function SettingsScreen() {
                   proteinPerUnit: pu(food.protein_g),
                   fatPerUnit: pu(food.fat_g),
                   carbPerUnit: pu(food.carb_g),
+                  ingredient_id: null,
+                  amount_g: null,
                 } : it),
               } : d)
               setFoodPickerTargetIdx(null)
@@ -1815,6 +1872,22 @@ export default function SettingsScreen() {
           value={draftMeals[timePickerMealIdx]?.scheduled_time ?? '12:00'}
           onChange={v => updateDraftMeal(timePickerMealIdx!, 'scheduled_time', v)}
           onClose={() => setTimePickerMealIdx(null)}
+        />
+      )}
+
+      {userId && (
+        <IngredientPickerModal
+          visible={showIngredientPicker}
+          userId={userId}
+          onSelect={result => handleIngredientPick(result)}
+          onClose={() => {
+            // Remove the pre-appended empty item if cancelled
+            if (ingredientPickerTargetIdx != null) {
+              setPresetDraft(d => d ? { ...d, items: d.items.filter((_, i) => i !== ingredientPickerTargetIdx) } : d)
+            }
+            setShowIngredientPicker(false)
+            setIngredientPickerTargetIdx(null)
+          }}
         />
       )}
 
