@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView, Image,
   StyleSheet, Alert, Switch, Modal, InputAccessoryView, Keyboard, Platform, KeyboardAvoidingView,
@@ -85,13 +85,21 @@ export default function SettingsScreen() {
   const [customizingSport, setCustomizingSport] = useState(false)
 
   // Sport energy (based on actual activity types from Strava)
-  const [activitySports, setActivitySports] = useState<string[]>([])
+  const [stravaActivitySports, setStravaActivitySports] = useState<string[]>([])
   const [sportConfigs, setSportConfigs] = useState<Record<string, SportConfig>>({})
   const [savingConfig, setSavingConfig] = useState<string | null>(null)
 
   // Planner sports
   const [userSports, setUserSports] = useState<UserSport[]>([])
   const [newSportInput, setNewSportInput] = useState('')
+
+  // Derived: union of Strava activity types + planner sports — auto-updates on either change
+  const activitySports = useMemo(() =>
+    [...new Set([
+      ...stravaActivitySports,
+      ...userSports.map(s => s.sport_name).filter(n => !n.startsWith('Virtual')),
+    ])].sort()
+  , [stravaActivitySports, userSports])
 
   // Meal plan
   const [draftMeals, setDraftMeals] = useState<DraftMeal[]>([
@@ -140,6 +148,7 @@ export default function SettingsScreen() {
 
   // Display preferences
   const [hideCalories, setHideCalories] = useState(false)
+  const [mealNotifDelayMin, setMealNotifDelayMin] = useState(60)
 
   const isDirty = JSON.stringify(editedProfile) !== JSON.stringify(savedProfile)
 
@@ -174,20 +183,15 @@ export default function SettingsScreen() {
       setOnPeriod(profileRes.data.on_period ?? false)
       setPeriodSeverity(profileRes.data.period_severity ?? 'minor')
       setHideCalories(profileRes.data.hide_calories ?? false)
+      setMealNotifDelayMin(profileRes.data.meal_notif_delay_min ?? 60)
     }
     setAllZones(zonesRes.data ?? [])
 
-    // Merge Strava activity types + planner user sports for energy section
-    const sportSet = new Set<string>(
+    // Strava activity types only — user sports are merged in via useMemo (activitySports)
+    const stravaOnlySet = new Set<string>(
       (activitiesRes.data ?? []).map((a: { type: string }) => a.type).filter(Boolean),
     )
-    // Also add user's planner sports (normalized, no Virtual*)
-    for (const us of (userSportsRes.data ?? []) as UserSport[]) {
-      if (us.sport_name && !us.sport_name.startsWith('Virtual')) {
-        sportSet.add(us.sport_name)
-      }
-    }
-    setActivitySports([...sportSet].sort())
+    setStravaActivitySports([...stravaOnlySet].sort())
 
     const configs: Record<string, SportConfig> = {}
     for (const s of (settingsRes.data ?? [])) {
@@ -567,7 +571,7 @@ export default function SettingsScreen() {
   }
 
   function recalcItem(item: DraftItem, newAmount: string): DraftItem {
-    const amt = parseFloat(newAmount)
+    const amt = parseFloat(newAmount.replace(',', '.'))
     if (!isNaN(amt) && amt > 0 && item.kcalPerUnit != null) {
       return {
         ...item,
@@ -972,7 +976,6 @@ export default function SettingsScreen() {
                   setEditedProfile(p => ({ ...p, daily_kcal_target: v ? parseFloat(v) : null }))
                 }
               />
-              <Text style={styles.prefNote}>Lower bound — workouts add on top. Auto-calculated from your profile using Mifflin-St Jeor × 1.2 (sedentary baseline). You can override this manually.</Text>
             </View>
 
             <View style={styles.fieldGroup}>
@@ -1038,6 +1041,27 @@ export default function SettingsScreen() {
                 trackColor={{ true: C.accent, false: C.surface3 }}
                 thumbColor={C.white}
               />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Meal notification delay</Text>
+              <Text style={styles.prefNote}>Get notified if a meal hasn't been checked off after this time.</Text>
+              <View style={styles.sexRow}>
+                {([15, 30, 60, 120] as const).map(min => (
+                  <Pressable
+                    key={min}
+                    style={[styles.sexBtn, mealNotifDelayMin === min && styles.sexBtnActive]}
+                    onPress={() => {
+                      setMealNotifDelayMin(min)
+                      setEditedProfile(p => ({ ...p, meal_notif_delay_min: min }))
+                    }}
+                  >
+                    <Text style={[styles.sexBtnText, mealNotifDelayMin === min && styles.sexBtnTextActive]}>
+                      {min < 60 ? `${min} min` : min === 60 ? '1 hr' : `${min / 60} hr`}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
 
             <View style={styles.fieldGroup}>
@@ -1194,6 +1218,11 @@ export default function SettingsScreen() {
                 </Pressable>
               ))}
             </ScrollView>
+            {activitySports.length === 0 && (
+              <Text style={styles.zoneSportHint}>
+                No sports yet — add them in the Planner sports section below ↓
+              </Text>
+            )}
 
             {displayedZones.length > 0 ? (
               <>
@@ -1595,114 +1624,6 @@ export default function SettingsScreen() {
 
           </>
         )}
-        {/* ── Fueling (removed) ──────────────────────────── */}
-        {(false as boolean) && (() => {
-          const fuelingSports = [...new Set(activitySports.map(s => normalizeType(s)))].sort()
-          const activeEntries = Object.entries(fuelingConfigs)
-
-          return (
-            <>
-              <Text style={styles.sectionHeader}>During-workout fueling</Text>
-              <Text style={styles.sectionNote}>
-                Stel per sport in wanneer je tijdens een training begint te eten en hoeveel koolhydraten je per interval wil innemen.
-              </Text>
-
-              {/* Active overview */}
-              {activeEntries.length > 0 && (
-                <View style={styles.fuelingOverview}>
-                  <Text style={styles.fuelingOverviewTitle}>Actief</Text>
-                  {activeEntries.map(([sport, cfg]) => (
-                    <View key={sport} style={styles.fuelingOverviewRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.fuelingOverviewSport}>{sport}</Text>
-                        <Text style={styles.fuelingOverviewDetail}>
-                          {'>'}{cfg.threshold_min} min · {cfg.carbs_per_interval_g}g per {cfg.interval_min} min
-                        </Text>
-                      </View>
-                      <Pressable onPress={() => deleteFuelingConfig(sport)} hitSlop={8} style={styles.fuelingDeleteBtn}>
-                        <Ionicons name="close-circle" size={22} color={C.danger} />
-                      </Pressable>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {fuelingSports.length === 0 && (
-                <Text style={styles.sectionNote}>Sync eerst een training via Strava om sporten te zien.</Text>
-              )}
-
-              {fuelingSports.map(sport => {
-                const draft = draftFueling[sport] ?? { threshold_min: 60, carbs_per_interval_g: 30, interval_min: 30 }
-                const saved = fuelingConfigs[sport]
-                const isDirtyFueling = JSON.stringify(draft) !== JSON.stringify(saved ?? { threshold_min: 60, carbs_per_interval_g: 30, interval_min: 30 })
-                const isSaving = savingFueling === sport
-
-                return (
-                  <View key={sport} style={styles.fuelingCard}>
-                    <View style={styles.fuelingCardHeader}>
-                      <Text style={styles.sportName}>{sport}</Text>
-                      {saved && (
-                        <View style={styles.fuelingActiveBadge}>
-                          <Ionicons name="checkmark-circle" size={12} color={C.accent} />
-                          <Text style={styles.fuelingActiveBadgeText}>Actief</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    <Text style={styles.fuelingFieldLabel}>Training langer dan (minuten)</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={String(draft.threshold_min)}
-                      keyboardType="numeric"
-                      placeholderTextColor={C.text3}
-                      onChangeText={v => updateDraftFueling(sport, 'threshold_min', parseInt(v) || 0)}
-                    />
-
-                    <View style={styles.fuelingRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.fuelingFieldLabel}>Koolhydraten per interval (g)</Text>
-                        <TextInput
-                          style={[styles.input, { marginBottom: 0 }]}
-                          value={String(draft.carbs_per_interval_g)}
-                          keyboardType="numeric"
-                          placeholderTextColor={C.text3}
-                          onChangeText={v => updateDraftFueling(sport, 'carbs_per_interval_g', parseInt(v) || 0)}
-                        />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.fuelingFieldLabel}>Interval (minuten)</Text>
-                        <TextInput
-                          style={[styles.input, { marginBottom: 0 }]}
-                          value={String(draft.interval_min)}
-                          keyboardType="numeric"
-                          placeholderTextColor={C.text3}
-                          onChangeText={v => updateDraftFueling(sport, 'interval_min', parseInt(v) || 0)}
-                        />
-                      </View>
-                    </View>
-
-                    {draft.threshold_min > 0 && draft.interval_min > 0 && (
-                      <View style={styles.fuelingPreview}>
-                        <Ionicons name="information-circle-outline" size={13} color={C.accent2} />
-                        <Text style={styles.fuelingPreviewText}>
-                          Bij trainingen langer dan {draft.threshold_min} min: elke {draft.interval_min} min {draft.carbs_per_interval_g}g koolhydraten.
-                        </Text>
-                      </View>
-                    )}
-
-                    <Pressable
-                      style={[styles.saveBtn, (!isDirtyFueling || isSaving) && styles.saveBtnDisabled]}
-                      onPress={() => saveFuelingConfig(sport)}
-                      disabled={!isDirtyFueling || isSaving}
-                    >
-                      <Text style={styles.saveBtnText}>{isSaving ? 'Opslaan…' : 'Opslaan'}</Text>
-                    </Pressable>
-                  </View>
-                )
-              })}
-            </>
-          )
-        })()}
 
       </ScrollView>
       </KeyboardAvoidingView>
@@ -1746,9 +1667,12 @@ export default function SettingsScreen() {
                     <TextInput
                       style={[styles.input, styles.draftAmountInput]}
                       value={item.amount}
-                      onChangeText={v => setPresetDraft(d => d ? {
-                        ...d, items: d.items.map((it, j) => j === idx ? recalcItem(it, v) : it),
-                      } : d)}
+                      onChangeText={v => {
+                        const normalized = v.replace(',', '.')
+                        setPresetDraft(d => d ? {
+                          ...d, items: d.items.map((it, j) => j === idx ? recalcItem(it, normalized) : it),
+                        } : d)
+                      }}
                       placeholder="100"
                       placeholderTextColor={C.text3}
                       keyboardType="decimal-pad"
@@ -2093,9 +2017,14 @@ function ZoneCard({
   if (!isEditing) {
     return (
       <Pressable style={styles.zoneCard} onPress={onEdit}>
-        <View>
-          <Text style={styles.zoneName}>{zone.name}</Text>
-          <Text style={styles.zoneMeta}>{zone.min_bpm}–{zone.max_bpm} bpm</Text>
+        <View style={styles.zoneCardLeft}>
+          <View style={styles.zoneNumBadge}>
+            <Text style={styles.zoneNumBadgeText}>Z{zone.zone_number}</Text>
+          </View>
+          <View>
+            <Text style={styles.zoneName}>{zone.name}</Text>
+            <Text style={styles.zoneMeta}>{zone.min_bpm}–{zone.max_bpm} bpm</Text>
+          </View>
         </View>
         <Text style={styles.editHint}>Edit</Text>
       </Pressable>
@@ -2204,6 +2133,7 @@ const styles = StyleSheet.create({
   zoneSportPillActive: { backgroundColor: C.accent, borderColor: C.accent },
   zoneSportPillText: { fontSize: 13, fontWeight: '600', color: C.text2 },
   zoneSportPillTextActive: { color: C.white },
+  zoneSportHint: { fontSize: 12, color: C.text3, marginTop: 8, marginBottom: 4 },
   noZonesBox: { paddingVertical: 16, gap: 12, alignItems: 'flex-start' },
   customizeZonesBtn: {
     backgroundColor: C.accentBg, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9,
@@ -2215,7 +2145,14 @@ const styles = StyleSheet.create({
   zoneCard: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 14, marginBottom: 8, borderRadius: 10, backgroundColor: C.surface,
+    borderWidth: 1, borderColor: C.border,
   },
+  zoneCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  zoneNumBadge: {
+    width: 34, height: 34, borderRadius: 8,
+    backgroundColor: C.accentBg, alignItems: 'center', justifyContent: 'center',
+  },
+  zoneNumBadgeText: { fontSize: 13, fontWeight: '800', color: C.accent },
   zoneCardEditing: { flexDirection: 'column', alignItems: 'stretch' },
   zoneName: { fontSize: 15, fontWeight: '600', color: C.text1 },
   zoneMeta: { fontSize: 13, color: C.text2, marginTop: 2 },
@@ -2329,7 +2266,7 @@ const styles = StyleSheet.create({
   draftItemBlock: { marginBottom: 10 },
   draftItemRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
   draftAmountWrap: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  draftAmountInput: { width: 52, marginBottom: 0 },
+  draftAmountInput: { width: 68, marginBottom: 0 },
   draftUnitLabel: { fontSize: 12, color: C.text3, fontWeight: '600', minWidth: 14 },
   draftKcalInput: { width: 64, marginBottom: 0 },
   draftMacroRow: { flexDirection: 'row', gap: 8, marginTop: 4 },

@@ -924,30 +924,30 @@ function PlannedWorkoutList({ workouts, fuelingSettings, onPeriod, periodSeverit
               </View>
             )}
 
-            {/* Verwachte brandstofverbranding */}
+            {/* Expected fuel burn */}
             {fuel && (
               <View style={pw.fuelRow}>
                 <View style={pw.fuelItem}>
                   <Ionicons name="water-outline" size={12} color={C.accent2} />
-                  <Text style={pw.fuelLabel}>Koolhydraten</Text>
+                  <Text style={pw.fuelLabel}>Carbs</Text>
                   <Text style={[pw.fuelValue, { color: C.accent2 }]}>{fuel.carbG}g</Text>
                 </View>
                 <View style={pw.fuelDivider} />
                 <View style={pw.fuelItem}>
                   <Ionicons name="ellipse-outline" size={12} color={C.warning} />
-                  <Text style={pw.fuelLabel}>Vet</Text>
+                  <Text style={pw.fuelLabel}>Fat</Text>
                   <Text style={[pw.fuelValue, { color: C.warning }]}>{fuel.fatG}g</Text>
                 </View>
               </View>
             )}
 
-            {/* Voedingsaanbeveling tijdens training */}
+            {/* Fueling recommendation during workout */}
             {rec && (
               <View style={pw.recBox}>
                 <Ionicons name="nutrition-outline" size={14} color={C.text3} style={{ marginTop: 1 }} />
                 <Text style={[pw.recText, { color: C.text1 }]}>
-                  <Text style={{ fontWeight: '700' }}>Eet tijdens training: </Text>
-                  {rec.totalCarbs}g koolhydraten ({rec.carbs_per_interval_g}g per {rec.interval_min} min)
+                  <Text style={{ fontWeight: '700' }}>Eat during workout: </Text>
+                  {rec.totalCarbs}g carbs ({rec.carbs_per_interval_g}g per {rec.interval_min} min)
                 </Text>
               </View>
             )}

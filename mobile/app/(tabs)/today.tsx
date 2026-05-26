@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { supabase } from '../../lib/supabase'
 import { callSyncRecent } from '../../lib/stravaSync'
+import { cancelMealNotification, scheduleMealNotifications } from '../../lib/notifications'
 import { W as C } from '../../lib/themeWarm'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import { COMMON_FOOD_CATEGORIES } from '../../lib/commonFoods'
@@ -49,6 +50,7 @@ export default function TodayScreen() {
 
   // Targets
   const [dailyTarget, setDailyTarget] = useState<number | null>(null)
+  const [mealNotifDelayMin, setMealNotifDelayMin] = useState(60)
   const [maxKcalTarget, setMaxKcalTarget] = useState<number | null>(null)
   const [hideCalories, setHideCalories] = useState(false)
 
@@ -89,7 +91,6 @@ export default function TodayScreen() {
   const [showMealBuilder, setShowMealBuilder] = useState(false)
   const [editingPreset, setEditingPreset] = useState<MealPreset | null>(null)
   const [myMealsExpanded, setMyMealsExpanded] = useState(false)
-  const [todayLogExpanded, setTodayLogExpanded] = useState(false)
 
   const lastLoadRef = useRef<number>(0)
 
@@ -131,7 +132,7 @@ export default function TodayScreen() {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
 
     const [profileRes, activitiesRes, plannedRes, logsRes, templatesRes, checksRes, presetsRes, customRes, allPresetsRes] = await Promise.all([
-      supabase.from('users').select('name, avatar_url, sex, daily_kcal_target, max_kcal_target, hide_calories, on_period, period_severity').eq('id', user.id).single(),
+      supabase.from('users').select('name, avatar_url, sex, daily_kcal_target, max_kcal_target, hide_calories, on_period, period_severity, meal_notif_delay_min').eq('id', user.id).single(),
       supabase.from('activities').select('id, name, type, total_kcal').eq('user_id', user.id).gte('date', todayStr).lt('date', tomorrow).not('total_kcal', 'is', null),
       supabase.from('planned_workouts').select('id, sport_type, target_kcal, workout_description').eq('user_id', user.id).eq('planned_for', todayStr),
       supabase.from('food_logs').select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').eq('user_id', user.id).eq('date', todayStr).order('logged_at'),
@@ -151,6 +152,7 @@ export default function TodayScreen() {
       setHideCalories(profileRes.data.hide_calories ?? false)
       setOnPeriod(profileRes.data.on_period ?? false)
       setPeriodSeverity(profileRes.data.period_severity ?? null)
+      setMealNotifDelayMin(profileRes.data.meal_notif_delay_min ?? 60)
     }
 
     const acts = (activitiesRes.data ?? []) as TodayActivity[]
@@ -273,14 +275,21 @@ export default function TodayScreen() {
 
   async function toggleMealCheck(meal: MealItem) {
     if (!userId) return
+    const nowChecking = !meal.checked
     // Optimistic update — flip immediately so the UI responds instantly
     setMeals(prev => prev.map(m =>
-      m.meal_index === meal.meal_index ? { ...m, checked: !m.checked } : m
+      m.meal_index === meal.meal_index ? { ...m, checked: nowChecking } : m
     ))
     try {
       if (meal.checked) {
+        // Unchecking — reschedule notification if time hasn't passed yet
         await supabase.from('meal_checks').delete().eq('user_id', userId).eq('meal_index', meal.meal_index).eq('date', todayStr)
+        if (meal.scheduled_time) {
+          await scheduleMealNotifications([{ meal_index: meal.meal_index, name: meal.name, scheduled_time: meal.scheduled_time, date: todayStr, checked: false }], mealNotifDelayMin)
+        }
       } else {
+        // Checking — cancel any pending notification immediately
+        await cancelMealNotification(meal.meal_index)
         await supabase.from('meal_checks').upsert({ user_id: userId, meal_index: meal.meal_index, date: todayStr }, { onConflict: 'user_id,meal_index,date' })
       }
     } catch {
@@ -406,7 +415,7 @@ export default function TodayScreen() {
           )}
 
           {/* ── Calorie card ── */}
-          <Pressable onPress={() => !hideCalories && setCalorieModalOpen(true)} activeOpacity={hideCalories ? 1 : 0.92}>
+          <Pressable onPress={() => !hideCalories && setCalorieModalOpen(true)}>
             <LinearGradient
               colors={[C.gradA, C.gradB]}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -503,7 +512,7 @@ export default function TodayScreen() {
           {/* ── Meal slots ── */}
           {meals.length > 0 && (
             <View style={st.card}>
-              <Text style={st.cardTitle}>Meals</Text>
+              <Text style={st.cardTitle}>Food log</Text>
               {meals.map(meal => {
                 const presets = presetsMap[meal.meal_index] ?? []
                 const mealLogs = logs.filter(l => l.meal_index === meal.meal_index)
@@ -513,7 +522,7 @@ export default function TodayScreen() {
                     <Pressable style={st.mealCardHeader} onPress={() => toggleMealCheck(meal)}>
                       <View>
                         <Text style={st.mealName}>{meal.name}</Text>
-                        <Text style={st.mealTime}>{meal.scheduled_time}</Text>
+                        <Text style={st.mealTime}>{meal.scheduled_time}{!hideCalories && meal.kcal ? ` · ${meal.kcal} kcal` : ''}</Text>
                       </View>
                       <View style={st.mealHeaderRight}>
                         {mealKcal > 0 && !hideCalories && <Text style={st.mealKcalBadge}>{mealKcal} kcal</Text>}
@@ -548,6 +557,19 @@ export default function TodayScreen() {
                   </View>
                 )
               })}
+              {!hideCalories && (() => {
+                const target = totalTarget
+                const totalLogged = logs.filter(l => l.meal_index != null).reduce((s, l) => s + l.kcal, 0)
+                if (target == null && totalLogged === 0) return null
+                return (
+                  <View style={st.mealSummaryRow}>
+                    <Text style={st.mealSummaryLabel}>Total</Text>
+                    <Text style={st.mealSummaryValue}>
+                      {totalLogged > 0 ? `${totalLogged} / ` : ''}{target != null ? `${target} kcal` : `${totalLogged} kcal`}
+                    </Text>
+                  </View>
+                )
+              })()}
             </View>
           )}
 
@@ -598,51 +620,6 @@ export default function TodayScreen() {
             )}
           </View>
 
-          {/* ── Today's log ── */}
-          <View style={st.card}>
-            <Pressable style={st.cardHeader} onPress={() => setTodayLogExpanded(v => !v)}>
-              <Text style={st.cardTitle}>Today's log</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Pressable style={st.addBtn} onPress={e => { e.stopPropagation?.(); setFoodLoggerMealIndex(null); setShowFoodLogger(true) }}>
-                  <Ionicons name="add" size={16} color="#fff" />
-                  <Text style={st.addBtnText}>Add</Text>
-                </Pressable>
-                <Ionicons
-                  name={todayLogExpanded ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={C.text3}
-                />
-              </View>
-            </Pressable>
-
-            {todayLogExpanded && (
-              <>
-                {loading && <ActivityIndicator color={C.accent2} style={{ marginVertical: 12 }} />}
-                {!loading && logs.length === 0 && <Text style={st.emptyNote}>Nothing logged yet today.</Text>}
-
-                {logs.map((log, i) => (
-                  <View key={log.id} style={[st.logRow, i < logs.length - 1 && st.logRowBorder]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={st.logName} numberOfLines={1}>{log.name}</Text>
-                      {log.meal_name && <Text style={st.logMeta}>{log.meal_name}</Text>}
-                    </View>
-                    {!hideCalories && <Text style={st.logKcal}>{log.kcal} kcal</Text>}
-                    <Pressable onPress={() => deleteLog(log.id)} hitSlop={8} style={{ marginLeft: 8 }}>
-                      <Ionicons name="trash-outline" size={15} color={C.danger} />
-                    </Pressable>
-                  </View>
-                ))}
-
-                {logs.length > 0 && !hideCalories && (
-                  <View style={st.logTotal}>
-                    <Text style={st.logTotalLabel}>Total eaten</Text>
-                    <Text style={st.logTotalValue}>{consumedKcal.toLocaleString()} kcal</Text>
-                  </View>
-                )}
-              </>
-            )}
-          </View>
-
           <View style={{ height: 32 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -659,6 +636,9 @@ export default function TodayScreen() {
         consumed={consumedKcal}
         displayMax={displayMaxKcal}
         hideCalories={hideCalories}
+        logs={logs}
+        userId={userId}
+        onDeleteLog={deleteLog}
         onClose={() => setCalorieModalOpen(false)}
       />
 
@@ -774,7 +754,6 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   const [manualCarb, setManualCarb] = useState('')
   const [adding, setAdding] = useState(false)
   const insets = useSafeAreaInsets()
-
   useEffect(() => {
     if (!visible) {
       setTab('search'); setSearch(''); setPendingFood(null)
@@ -887,7 +866,6 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
     <Modal
       visible={visible}
       animationType="slide"
-      transparent={!isScanningActive}
       onRequestClose={() => {
         if (tab === 'scan' && scannedProduct) { setScannedProduct(null); lastScannedRef.current = null }
         else if (tab === 'scan') setTab('search')
@@ -945,17 +923,19 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
           )}
         </View>
       ) : (
-        <>
-          <Pressable style={st.modalOverlay} onPress={onClose} />
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ justifyContent: 'flex-end' }}>
-            <View style={[loggerSt.sheet, { paddingBottom: Math.max(20, insets.bottom) }]}>
-              <View style={loggerSt.header}>
-                <Text style={loggerSt.title}>{mealName ? `Add to ${mealName}` : 'Log food'}</Text>
-                <Pressable onPress={onClose} hitSlop={10}>
-                  <Ionicons name="close" size={22} color={C.text3} />
-                </Pressable>
-              </View>
+        <KeyboardAvoidingView
+          style={{ flex: 1, backgroundColor: C.surface }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={{ flex: 1, paddingTop: insets.top }}>
+            <View style={[loggerSt.header, { paddingHorizontal: 20, paddingVertical: 16 }]}>
+              <Text style={loggerSt.title}>{mealName ? `Add to ${mealName}` : 'Log food'}</Text>
+              <Pressable onPress={onClose} hitSlop={10}>
+                <Ionicons name="close" size={22} color={C.text3} />
+              </Pressable>
+            </View>
 
+            <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
               <View style={loggerSt.tabBar}>
                 {(['search', 'scan', 'manual'] as const).map(t => (
                   <Pressable key={t} style={[loggerSt.tab, tab === t && loggerSt.tabActive]} onPress={() => setTab(t)}>
@@ -970,9 +950,11 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                   </Pressable>
                 ))}
               </View>
+            </View>
 
+            <View style={{ flex: 1, paddingHorizontal: 20 }}>
               {tab === 'search' && (
-                <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+                <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
                   {pendingFood ? (
                     <View style={{ gap: 10 }}>
                       <Text style={loggerSt.sectionLabel}>{pendingFood.name}</Text>
@@ -1135,31 +1117,34 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
               )}
 
               {tab === 'manual' && (
-                <View style={{ gap: 10 }}>
-                  <TextInput style={st.addFormInput} value={manualName} onChangeText={setManualName}
-                    placeholder="Food name" placeholderTextColor={C.text3} returnKeyType="next" autoFocus />
-                  <TextInput style={st.addFormInput} value={manualKcal} onChangeText={setManualKcal}
-                    placeholder="Calories (kcal)" placeholderTextColor={C.text3} keyboardType="numeric" returnKeyType="next" />
-                  <View style={st.addFormMacroRow}>
-                    <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={manualProtein}
-                      onChangeText={v => setManualProtein(v.replace(',', '.'))}
-                      placeholder="Protein g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
-                    <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={manualFat}
-                      onChangeText={v => setManualFat(v.replace(',', '.'))}
-                      placeholder="Fat g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
-                    <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={manualCarb}
-                      onChangeText={v => setManualCarb(v.replace(',', '.'))}
-                      placeholder="Carbs g" placeholderTextColor={C.text3} keyboardType="decimal-pad"
-                      returnKeyType="done" onSubmitEditing={submitManual} />
+                <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                  <View style={{ gap: 10 }}>
+                    <TextInput style={st.addFormInput} value={manualName} onChangeText={setManualName}
+                      placeholder="Food name" placeholderTextColor={C.text3} returnKeyType="next" autoFocus />
+                    <TextInput style={st.addFormInput} value={manualKcal} onChangeText={setManualKcal}
+                      placeholder="Calories (kcal)" placeholderTextColor={C.text3} keyboardType="numeric" returnKeyType="next" />
+                    <Text style={loggerSt.sectionLabel}>Macros (optional)</Text>
+                    <View style={st.addFormMacroRow}>
+                      <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={manualProtein}
+                        onChangeText={v => setManualProtein(v.replace(',', '.'))}
+                        placeholder="Protein g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
+                      <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={manualFat}
+                        onChangeText={v => setManualFat(v.replace(',', '.'))}
+                        placeholder="Fat g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
+                      <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={manualCarb}
+                        onChangeText={v => setManualCarb(v.replace(',', '.'))}
+                        placeholder="Carbs g" placeholderTextColor={C.text3} keyboardType="decimal-pad"
+                        returnKeyType="done" onSubmitEditing={submitManual} />
+                    </View>
+                    <Pressable style={[st.addFormBtn, adding && { opacity: 0.6 }]} onPress={submitManual} disabled={adding}>
+                      <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
+                    </Pressable>
                   </View>
-                  <Pressable style={[st.addFormBtn, adding && { opacity: 0.6 }]} onPress={submitManual} disabled={adding}>
-                    <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
-                  </Pressable>
-                </View>
+                </ScrollView>
               )}
             </View>
-          </KeyboardAvoidingView>
-        </>
+          </View>
+        </KeyboardAvoidingView>
       )}
     </Modal>
   )
@@ -1205,39 +1190,116 @@ function MealPresetPickerModal({ meal, presets, onSelect, onManage, onClose }: {
 
 // ─── Calorie breakdown modal ───────────────────────────────────────────────────
 
-function CalorieBreakdownModal({ visible, dailyTarget, burned, planned, consumed, displayMax, hideCalories, onClose }: {
+function CalorieBreakdownModal({ visible, dailyTarget, burned, planned, consumed, displayMax, hideCalories, logs, userId, onDeleteLog, onClose }: {
   visible: boolean; dailyTarget: number | null; burned: number; planned: number
-  consumed: number; displayMax: number | null; hideCalories: boolean; onClose: () => void
+  consumed: number; displayMax: number | null; hideCalories: boolean
+  logs: FoodLog[]; userId: string | null; onDeleteLog: (id: string) => void; onClose: () => void
 }) {
+  const todayStr = new Date().toISOString().split('T')[0]
+  const [selectedDate, setSelectedDate] = useState(todayStr)
+  const [historyLogs, setHistoryLogs] = useState<FoodLog[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const insets = useSafeAreaInsets()
+
+  useEffect(() => { if (visible) setSelectedDate(todayStr) }, [visible])
+
+  useEffect(() => {
+    if (!visible || selectedDate === todayStr || !userId) return
+    setHistoryLoading(true)
+    setHistoryLogs([])
+    supabase.from('food_logs')
+      .select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at')
+      .eq('user_id', userId).eq('date', selectedDate).order('logged_at')
+      .then(({ data }) => { setHistoryLogs((data ?? []) as FoodLog[]); setHistoryLoading(false) })
+  }, [selectedDate, visible])
+
+  const isToday = selectedDate === todayStr
+  const displayLogs = isToday ? logs : historyLogs
+  const displayConsumed = isToday ? consumed : historyLogs.reduce((s, l) => s + l.kcal, 0)
   const total = dailyTarget != null ? dailyTarget + burned + planned : null
+
+  function shiftDay(delta: number) {
+    const d = new Date(selectedDate + 'T12:00:00')
+    d.setDate(d.getDate() + delta)
+    const next = d.toISOString().split('T')[0]
+    if (next <= todayStr) setSelectedDate(next)
+  }
+
+  const dateLabel = isToday
+    ? 'Today'
+    : new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={st.modalOverlay} onPress={onClose} />
-      <View style={st.breakdownSheet}>
-        <Text style={st.breakdownTitle}>Today's calorie target</Text>
-        {[
-          { label: 'Baseline (rest day)', value: dailyTarget },
-          { label: 'Burned (activities)', value: burned > 0 ? burned : null },
-          { label: 'Planned workouts', value: planned > 0 ? planned : null },
-          { label: 'Maximum (optional)', value: displayMax },
-        ].map(row => row.value != null && (
-          <View key={row.label} style={st.breakdownRow}>
-            <Text style={st.breakdownLabel}>{row.label}</Text>
-            {!hideCalories && <Text style={st.breakdownValue}>{row.value.toLocaleString()} kcal</Text>}
+      <View style={[st.breakdownSheet, { paddingBottom: Math.max(28, insets.bottom), maxHeight: '85%' }]}>
+        {/* Date navigator */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <Pressable onPress={() => shiftDay(-1)} hitSlop={12} style={{ padding: 4 }}>
+            <Ionicons name="chevron-back" size={22} color={C.text1} />
+          </Pressable>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: C.text1 }}>{dateLabel}</Text>
+          <Pressable onPress={() => shiftDay(1)} hitSlop={12} style={{ padding: 4 }} disabled={isToday}>
+            <Ionicons name="chevron-forward" size={22} color={isToday ? C.text3 : C.text1} />
+          </Pressable>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          {/* Target breakdown — today only */}
+          {isToday && (
+            <>
+              <Text style={[st.breakdownTitle, { marginTop: 0 }]}>Calorie target</Text>
+              {[
+                { label: 'Baseline (rest day)', value: dailyTarget },
+                { label: 'Burned (activities)', value: burned > 0 ? burned : null },
+                { label: 'Planned workouts', value: planned > 0 ? planned : null },
+                { label: 'Maximum (optional)', value: displayMax },
+              ].map(row => row.value != null && (
+                <View key={row.label} style={st.breakdownRow}>
+                  <Text style={st.breakdownLabel}>{row.label}</Text>
+                  {!hideCalories && <Text style={st.breakdownValue}>{row.value.toLocaleString()} kcal</Text>}
+                </View>
+              ))}
+              {total != null && !hideCalories && (
+                <View style={[st.breakdownRow, { borderTopWidth: 1, borderTopColor: C.divider, marginTop: 8, paddingTop: 12 }]}>
+                  <Text style={[st.breakdownLabel, { fontWeight: '700', color: C.text1 }]}>Daily minimum</Text>
+                  <Text style={[st.breakdownValue, { color: C.accent2, fontWeight: '700' }]}>{total.toLocaleString()} kcal</Text>
+                </View>
+              )}
+            </>
+          )}
+
+          {/* Food log */}
+          <View style={[st.breakdownRow, { borderTopWidth: isToday ? 1 : 0, borderTopColor: C.divider, marginTop: isToday ? 16 : 0, paddingTop: isToday ? 16 : 0, marginBottom: 4 }]}>
+            <Text style={[st.breakdownLabel, { fontWeight: '700', color: C.text1 }]}>
+              {isToday ? 'What you ate today' : 'Food log'}
+            </Text>
+            {!hideCalories && displayConsumed > 0 && (
+              <Text style={[st.breakdownValue, { color: C.text2 }]}>{displayConsumed.toLocaleString()} kcal</Text>
+            )}
           </View>
-        ))}
-        {total != null && !hideCalories && (
-          <View style={[st.breakdownRow, { borderTopWidth: 1, borderTopColor: C.divider, marginTop: 8, paddingTop: 12 }]}>
-            <Text style={[st.breakdownLabel, { fontWeight: '700', color: C.text1 }]}>Daily minimum</Text>
-            <Text style={[st.breakdownValue, { color: C.accent2, fontWeight: '700' }]}>{total.toLocaleString()} kcal</Text>
-          </View>
-        )}
-        {total != null && !hideCalories && (
-          <View style={[st.breakdownRow, { marginTop: 4 }]}>
-            <Text style={[st.breakdownLabel, { color: C.text2 }]}>Consumed so far</Text>
-            <Text style={[st.breakdownValue, { color: C.text2 }]}>{consumed.toLocaleString()} kcal</Text>
-          </View>
-        )}
+
+          {historyLoading && <ActivityIndicator color={C.accent2} style={{ marginVertical: 16 }} />}
+
+          {!historyLoading && displayLogs.length === 0 && (
+            <Text style={[st.breakdownLabel, { color: C.text3, paddingVertical: 8 }]}>Nothing logged on this day.</Text>
+          )}
+
+          {!historyLoading && displayLogs.map(log => (
+            <View key={log.id} style={[st.breakdownRow, { alignItems: 'center' }]}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={st.breakdownLabel} numberOfLines={1}>{log.name}</Text>
+                {log.meal_name && <Text style={{ fontSize: 11, color: C.text3, marginTop: 1 }}>{log.meal_name}</Text>}
+              </View>
+              {!hideCalories && <Text style={[st.breakdownValue, { marginRight: 10 }]}>{log.kcal.toLocaleString()} kcal</Text>}
+              {isToday && (
+                <Pressable onPress={() => onDeleteLog(log.id)} hitSlop={8}>
+                  <Ionicons name="trash-outline" size={15} color={C.danger} />
+                </Pressable>
+              )}
+            </View>
+          ))}
+        </ScrollView>
       </View>
     </Modal>
   )
@@ -1312,6 +1374,8 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
       name: pendingFood.name,
       kcal: Math.round(pendingFood.kcal * qty),
       protein_g: pendingFood.protein_g ? Math.round(pendingFood.protein_g * qty * 10) / 10 : null,
+      fat_g: null,
+      carb_g: null,
     }])
     setPendingFood(null)
     setPendingQty('1')
@@ -1368,7 +1432,7 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
     const g = parseFloat(scanAmount) || 0
     if (g <= 0) return
     const kcal = Math.round(scannedProduct.kcalPer100g * g / 100)
-    setItems(prev => [...prev, { name: `${scannedProduct.name} (${g}g)`, kcal, protein_g: null }])
+    setItems(prev => [...prev, { name: `${scannedProduct.name} (${g}g)`, kcal, protein_g: null, fat_g: null, carb_g: null }])
     setScannedProduct(null)
     lastScannedRef.current = null
     setScanMode(false)
@@ -1789,6 +1853,9 @@ const st = StyleSheet.create({
   mealActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: C.surface2 },
   mealActionBtnCoral: { backgroundColor: C.accent2Bg },
   mealActionText: { fontSize: 12, fontWeight: '600', color: C.accent },
+  mealSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, marginTop: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider },
+  mealSummaryLabel: { fontSize: 13, fontWeight: '700', color: C.text2 },
+  mealSummaryValue: { fontSize: 13, fontWeight: '700', color: C.accent },
 
   // Quick add
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.surface2, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 8 },
