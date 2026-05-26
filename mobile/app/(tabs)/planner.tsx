@@ -298,7 +298,7 @@ export default function PlannerScreen() {
 
     const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes, userSportsRes, programRes] = await Promise.all([
       supabase.from('users').select('weight_kg, ftp_watts, on_period, period_severity, onboarding_data, preferred_workout_time, max_hr').eq('id', user.id).single(),
-      supabase.from('activities').select('id, type, distance_m, duration_sec').eq('user_id', user.id),
+      supabase.from('activities').select('id, type, distance_m, duration_sec, avg_hr').eq('user_id', user.id),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
       supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
@@ -325,34 +325,24 @@ export default function PlannerScreen() {
     setSportSettings(settingsRes.data ?? [])
     setTodayPlans(plansRes.data ?? [])
 
-    // Build per-zone pace map from historical run/jog laps
-    const runActIds = (activitiesRes.data ?? [])
-      .filter((a: any) => /run|jog/i.test(a.type))
-      .map((a: any) => a.id)
-      .filter(Boolean)
-    if (runActIds.length > 0) {
-      const { data: laps } = await supabase
-        .from('activity_laps')
-        .select('avg_speed_ms, avg_hr')
-        .in('activity_id', runActIds)
-        .not('avg_speed_ms', 'is', null)
-        .not('avg_hr', 'is', null)
-      const zoneSpeedSums: Record<string, { sum: number; count: number }> = {}
-      for (const lap of (laps ?? [])) {
-        const matched = effectiveZones.find(
-          (z: HeartRateZone) => lap.avg_hr >= z.min_bpm && lap.avg_hr <= z.max_bpm
-        )
-        if (!matched) continue
-        if (!zoneSpeedSums[matched.id]) zoneSpeedSums[matched.id] = { sum: 0, count: 0 }
-        zoneSpeedSums[matched.id].sum += lap.avg_speed_ms
-        zoneSpeedSums[matched.id].count++
-      }
-      const paceMap: Record<string, number> = {}
-      for (const [zId, { sum, count }] of Object.entries(zoneSpeedSums)) {
-        paceMap[zId] = sum / count
-      }
-      setZonePaceMap(paceMap)
+    // Build per-zone pace map from activity-level avg_hr + speed (more reliably populated than per-lap HR)
+    const zoneSpeedSums: Record<string, { sum: number; count: number }> = {}
+    for (const act of (activitiesRes.data ?? [])) {
+      if (!act.avg_hr || act.distance_m <= 0 || act.duration_sec <= 0) continue
+      const speedMs = act.distance_m / act.duration_sec
+      const matched = effectiveZones.find(
+        (z: HeartRateZone) => act.avg_hr >= z.min_bpm && act.avg_hr <= z.max_bpm
+      )
+      if (!matched) continue
+      if (!zoneSpeedSums[matched.id]) zoneSpeedSums[matched.id] = { sum: 0, count: 0 }
+      zoneSpeedSums[matched.id].sum += speedMs
+      zoneSpeedSums[matched.id].count++
     }
+    const paceMap: Record<string, number> = {}
+    for (const [zId, { sum, count }] of Object.entries(zoneSpeedSums)) {
+      paceMap[zId] = sum / count
+    }
+    setZonePaceMap(paceMap)
 
     const userSportNames: string[] = (userSportsRes.data ?? []).map((s: any) => s.sport_name)
     let sportList: string[]
