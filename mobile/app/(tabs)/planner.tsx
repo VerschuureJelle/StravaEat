@@ -485,15 +485,31 @@ export default function PlannerScreen() {
         }
         durationMin = (totalPaceSec * dist) / 60
 
-        // Derive zone from historical lap pace data
+        // Derive zone monotonically: faster pace = higher zone number.
+        // "Closest speed" is wrong — a fast Z1 recovery run can be numerically
+        // closer to 3:00/km than a Z3 long run, producing nonsense results.
         if (Object.keys(zonePaceMap).length > 0) {
           const enteredSpeedMs = 1000 / totalPaceSec
-          let bestDiff = Infinity
-          for (const [zId, avgSpeed] of Object.entries(zonePaceMap)) {
-            const diff = Math.abs(avgSpeed - enteredSpeedMs)
-            if (diff < bestDiff) {
-              bestDiff = diff
-              zone = activeZones.find(z => z.id === zId)
+          // Only consider zones we have historical data for, ordered by zone number
+          const sorted = activeZones
+            .filter(z => zonePaceMap[z.id] !== undefined)
+            .sort((a, b) => a.zone_number - b.zone_number)
+          if (sorted.length > 0) {
+            const slowest = sorted[0]
+            const fastest = sorted[sorted.length - 1]
+            if (enteredSpeedMs >= zonePaceMap[fastest.id]) {
+              // Faster than any historical zone average → highest zone in map
+              zone = fastest
+            } else if (enteredSpeedMs <= zonePaceMap[slowest.id]) {
+              // Slower than any historical zone average → lowest zone in map
+              zone = slowest
+            } else {
+              // Within range → find the two adjacent zones by speed and pick the closer
+              let bestDiff = Infinity
+              for (const z of sorted) {
+                const diff = Math.abs(zonePaceMap[z.id] - enteredSpeedMs)
+                if (diff < bestDiff) { bestDiff = diff; zone = z }
+              }
             }
           }
         }
