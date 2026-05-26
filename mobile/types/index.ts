@@ -66,6 +66,8 @@ export interface MealPresetItem {
   fat_g: number | null
   carb_g: number | null
   sort_order: number
+  ingredient_id?: string | null
+  amount_g?: number | null
 }
 
 export interface MealPreset {
@@ -74,6 +76,18 @@ export interface MealPreset {
   name: string
   sort_order: number
   items?: MealPresetItem[]
+}
+
+export interface Ingredient {
+  id: string
+  user_id: string
+  name: string
+  kcal_per_100g: number
+  protein_per_100g: number | null
+  fat_per_100g: number | null
+  carb_per_100g: number | null
+  barcode: string | null
+  created_at: string
 }
 
 export interface HeartRateZone {
