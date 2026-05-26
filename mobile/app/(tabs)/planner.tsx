@@ -104,10 +104,12 @@ type PlannerMode = 'build' | 'ai' | 'programs'
 
 interface WorkoutSegment {
   id: string
-  inputType: 'distance' | 'time'
+  inputType: 'distance' | 'time' | 'pace'
   value: string
   zoneId: string
   repeats: string
+  paceMin: string
+  paceSec: string
 }
 
 interface SegmentResult {
@@ -233,7 +235,7 @@ export default function PlannerScreen() {
 
   // build mode
   const [segments, setSegments] = useState<WorkoutSegment[]>([
-    { id: '1', inputType: 'distance', value: '', zoneId: '', repeats: '1' },
+    { id: '1', inputType: 'distance', value: '', zoneId: '', repeats: '1', paceMin: '', paceSec: '' },
   ])
   const [segResult, setSegResult] = useState<SegmentResult | null>(null)
 
@@ -275,6 +277,7 @@ export default function PlannerScreen() {
 
   const [saving, setSaving] = useState(false)
   const [sportDropdownOpen, setSportDropdownOpen] = useState(false)
+  const [hasActivityData, setHasActivityData] = useState(false)
 
   // Period tracking
   const [onPeriod, setOnPeriod] = useState(false)
@@ -372,6 +375,7 @@ export default function PlannerScreen() {
       }
     }
     setAvgSpeedBySport(speedMap)
+    setHasActivityData((activitiesRes.data ?? []).length > 0)
 
     const prog = programRes.data as TrainingProgram | null
     setActiveProgram(prog)
@@ -421,7 +425,7 @@ export default function PlannerScreen() {
   // ─── build mode ─────────────────────────────────────────────────────────────
 
   function addSegment() {
-    setSegments(prev => [...prev, { id: String(Date.now()), inputType: 'distance', value: '', zoneId: '', repeats: '1' }])
+    setSegments(prev => [...prev, { id: String(Date.now()), inputType: 'distance', value: '', zoneId: '', repeats: '1', paceMin: '', paceSec: '' }])
     setSegResult(null)
   }
 
@@ -445,7 +449,7 @@ export default function PlannerScreen() {
 
     for (const seg of segments) {
       const val = parseFloat(seg.value)
-      if (isNaN(val) || val <= 0) {
+      if (seg.inputType !== 'pace' && (isNaN(val) || val <= 0)) {
         Alert.alert('Invalid segment', 'All segments need a positive distance or time value.')
         return
       }
@@ -460,6 +464,17 @@ export default function PlannerScreen() {
       if (seg.inputType === 'time') {
         durationMin = val
         label = `${val} min @ ${zone.name}`
+      } else if (seg.inputType === 'pace') {
+        const pMin = parseInt(seg.paceMin || '0')
+        const pSec = parseInt(seg.paceSec || '0')
+        const totalPaceSec = pMin * 60 + pSec
+        const dist = parseFloat(seg.value)
+        if (totalPaceSec <= 0 || dist <= 0) {
+          Alert.alert('Missing input', 'Enter both pace and distance for pace segments.')
+          return
+        }
+        durationMin = (totalPaceSec * dist) / 60
+        label = `${dist} km @ ${pMin}:${String(pSec).padStart(2, '0')}/km`
       } else {
         const avgSpeed = avgSpeedBySport[selectedSport]
         if (!avgSpeed) {
@@ -896,6 +911,14 @@ export default function PlannerScreen() {
               </Pressable>
             ) : (
             <>
+            {!hasActivityData && (
+              <View style={st.noDataBanner}>
+                <Ionicons name="information-circle-outline" size={16} color={C.text3} />
+                <Text style={st.noDataBannerText}>
+                  No Strava data yet — pace estimates won't be available. Connect Strava in Settings, or use Time segments.
+                </Text>
+              </View>
+            )}
             <Text style={st.label}>Workout segments</Text>
 
             {segments.map((seg, idx) => {
@@ -925,8 +948,77 @@ export default function PlannerScreen() {
                     >
                       <Text style={[st.segToggleText, seg.inputType === 'time' && { color: C.white }]}>Time</Text>
                     </Pressable>
+                    {(/run|jog/i.test(selectedSport)) && (
+                      <Pressable
+                        style={[st.segToggleBtn, seg.inputType === 'pace' && { backgroundColor: C.accent, borderColor: C.accent }]}
+                        onPress={() => updateSegment(seg.id, { inputType: 'pace', value: '' })}
+                      >
+                        <Text style={[st.segToggleText, seg.inputType === 'pace' && { color: C.white }]}>Pace</Text>
+                      </Pressable>
+                    )}
                   </View>
 
+                  {seg.inputType === 'pace' ? (
+                    <View style={{ gap: 10, marginBottom: 10 }}>
+                      <View style={st.segInputRow}>
+                        <View style={st.segInputGroup}>
+                          <View style={st.paceInputRow}>
+                            <TextInput
+                              style={[st.segInput, { width: 52 }]}
+                              value={seg.paceMin}
+                              onChangeText={v => updateSegment(seg.id, { paceMin: v })}
+                              placeholder="5"
+                              placeholderTextColor={C.text3}
+                              keyboardType="number-pad"
+                            />
+                            <Text style={st.paceSep}>:</Text>
+                            <TextInput
+                              style={[st.segInput, { width: 52 }]}
+                              value={seg.paceSec}
+                              onChangeText={v => updateSegment(seg.id, { paceSec: v })}
+                              placeholder="30"
+                              placeholderTextColor={C.text3}
+                              keyboardType="number-pad"
+                            />
+                          </View>
+                          <Text style={st.segInputUnit}>/km</Text>
+                        </View>
+                        <View style={st.segInputGroup}>
+                          <TextInput
+                            style={st.segInput}
+                            value={seg.value}
+                            onChangeText={v => updateSegment(seg.id, { value: v })}
+                            placeholder="e.g. 5"
+                            placeholderTextColor={C.text3}
+                            keyboardType="decimal-pad"
+                          />
+                          <Text style={st.segInputUnit}>km</Text>
+                        </View>
+                        <View style={st.segRepeatGroup}>
+                          <TextInput
+                            style={st.segInput}
+                            value={seg.repeats}
+                            onChangeText={v => updateSegment(seg.id, { repeats: v })}
+                            placeholder="1"
+                            placeholderTextColor={C.text3}
+                            keyboardType="number-pad"
+                          />
+                          <Text style={st.segInputUnit}>repeats</Text>
+                        </View>
+                      </View>
+                      {seg.paceMin && seg.value ? (() => {
+                        const pMin = parseInt(seg.paceMin || '0')
+                        const pSec = parseInt(seg.paceSec || '0')
+                        const totalPaceSec = pMin * 60 + pSec
+                        const dist = parseFloat(seg.value)
+                        if (totalPaceSec > 0 && dist > 0) {
+                          const durationMin = Math.round((totalPaceSec * dist) / 60)
+                          return <Text style={st.segZoneDetail}>≈ {durationMin} min</Text>
+                        }
+                        return null
+                      })() : null}
+                    </View>
+                  ) : (
                   <View style={st.segInputRow}>
                     <View style={st.segInputGroup}>
                       <TextInput
@@ -951,17 +1043,28 @@ export default function PlannerScreen() {
                       <Text style={st.segInputUnit}>repeats</Text>
                     </View>
                   </View>
+                  )}
 
                   <View style={st.segZoneRow}>
-                    {activeZones.map(z => (
-                      <Pressable
-                        key={z.id}
-                        style={[st.segZoneBtn, seg.zoneId === z.id && { backgroundColor: zoneBarColor(z.zone_number), borderColor: zoneBarColor(z.zone_number) }]}
-                        onPress={() => updateSegment(seg.id, { zoneId: z.id })}
-                      >
-                        <Text style={[st.segZoneBtnNum, seg.zoneId === z.id && { color: C.white }]}>Z{z.zone_number}</Text>
-                      </Pressable>
-                    ))}
+                    {activeZones.map(z => {
+                      const zColor = zoneBarColor(z.zone_number)
+                      const isSelected = seg.zoneId === z.id
+                      return (
+                        <Pressable
+                          key={z.id}
+                          style={[
+                            st.segZoneBtn,
+                            { borderColor: zColor },
+                            isSelected && { backgroundColor: zColor },
+                          ]}
+                          onPress={() => updateSegment(seg.id, { zoneId: z.id })}
+                        >
+                          <Text style={[st.segZoneBtnNum, { color: isSelected ? '#fff' : zColor }]}>
+                            Z{z.zone_number}
+                          </Text>
+                        </Pressable>
+                      )
+                    })}
                   </View>
                   {selZone && (
                     <Text style={st.segZoneDetail}>{selZone.name} · {selZone.min_bpm}–{selZone.max_bpm} bpm</Text>
@@ -1768,7 +1871,7 @@ const st = StyleSheet.create({
   segZoneRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   segZoneBtn: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
-    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface3,
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: '#fff',
   },
   segZoneBtnNum: { fontSize: 13, fontWeight: '800', color: C.text2 },
   segZoneDetail: { fontSize: 11, color: C.text3, marginTop: 7 },
@@ -1996,5 +2099,13 @@ const st = StyleSheet.create({
   },
   aiGoalLabel: { fontSize: 14, fontWeight: '700', color: C.text1 },
   aiGoalNote: { fontSize: 11, color: C.text3 },
+
+  // No activity data banner
+  noDataBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: C.surface2, borderRadius: 10, padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: C.border,
+  },
+  noDataBannerText: { flex: 1, fontSize: 13, color: C.text3, lineHeight: 18 },
 
 })
