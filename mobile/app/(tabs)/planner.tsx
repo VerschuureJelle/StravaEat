@@ -1045,29 +1045,33 @@ export default function PlannerScreen() {
                   </View>
                   )}
 
-                  <View style={st.segZoneRow}>
-                    {activeZones.map(z => {
-                      const zColor = zoneBarColor(z.zone_number)
-                      const isSelected = seg.zoneId === z.id
-                      return (
-                        <Pressable
-                          key={z.id}
-                          style={[
-                            st.segZoneBtn,
-                            { borderColor: zColor },
-                            isSelected && { backgroundColor: zColor },
-                          ]}
-                          onPress={() => updateSegment(seg.id, { zoneId: z.id })}
-                        >
-                          <Text style={[st.segZoneBtnNum, { color: isSelected ? '#fff' : zColor }]}>
-                            Z{z.zone_number}
-                          </Text>
-                        </Pressable>
-                      )
-                    })}
-                  </View>
-                  {selZone && (
-                    <Text style={st.segZoneDetail}>{selZone.name} · {selZone.min_bpm}–{selZone.max_bpm} bpm</Text>
+                  {seg.inputType !== 'pace' && (
+                    <>
+                      <View style={st.segZoneRow}>
+                        {activeZones.map(z => {
+                          const zColor = zoneBarColor(z.zone_number)
+                          const isSelected = seg.zoneId === z.id
+                          return (
+                            <Pressable
+                              key={z.id}
+                              style={[
+                                st.segZoneBtn,
+                                { borderColor: zColor },
+                                isSelected && { backgroundColor: zColor },
+                              ]}
+                              onPress={() => updateSegment(seg.id, { zoneId: z.id })}
+                            >
+                              <Text style={[st.segZoneBtnNum, { color: isSelected ? '#fff' : zColor }]}>
+                                Z{z.zone_number}
+                              </Text>
+                            </Pressable>
+                          )
+                        })}
+                      </View>
+                      {selZone && (
+                        <Text style={st.segZoneDetail}>{selZone.name} · {selZone.min_bpm}–{selZone.max_bpm} bpm</Text>
+                      )}
+                    </>
                   )}
                 </View>
               )
