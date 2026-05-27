@@ -95,7 +95,6 @@ export default function TodayScreen() {
 
   // My meals
   const [allPresets, setAllPresets] = useState<MealPreset[]>([])
-  const [showMealBuilder, setShowMealBuilder] = useState(false)
   const [editingPreset, setEditingPreset] = useState<MealPreset | null>(null)
   const [myMealsExpanded, setMyMealsExpanded] = useState(false)
 
@@ -679,9 +678,9 @@ export default function TodayScreen() {
             <Pressable style={st.cardHeader} onPress={() => setMyMealsExpanded(v => !v)}>
               <Text style={st.cardTitle}>My Meals</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Pressable style={st.addBtn} onPress={e => { e.stopPropagation?.(); setShowMealBuilder(true) }}>
-                  <Ionicons name="add" size={16} color="#fff" />
-                  <Text style={st.addBtnText}>New</Text>
+                <Pressable onPress={e => { e.stopPropagation?.(); router.push('/(tabs)/settings') }} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Text style={{ fontSize: 12, color: C.text3 }}>Manage</Text>
+                  <Ionicons name="arrow-forward" size={12} color={C.text3} />
                 </Pressable>
                 <Ionicons
                   name={myMealsExpanded ? 'chevron-up' : 'chevron-down'}
@@ -693,7 +692,7 @@ export default function TodayScreen() {
             {myMealsExpanded && (
               <>
                 {allPresets.length === 0 && (
-                  <Text style={st.emptyNote}>No meal presets yet — tap New to build one.</Text>
+                  <Text style={st.emptyNote}>No meal templates yet — create them in Settings.</Text>
                 )}
                 {allPresets.map(preset => {
                   const total = (preset.items ?? []).reduce((s, it) => s + it.kcal, 0)
@@ -769,14 +768,14 @@ export default function TodayScreen() {
 
       {userId && (
         <MealBuilderModal
-          visible={showMealBuilder || editingPreset != null}
+          visible={editingPreset != null}
           userId={userId}
           customFoods={customFoods}
           mealSlots={meals}
           editPreset={editingPreset ?? undefined}
           initialSlots={editingPreset ? presetSlotMap[editingPreset.id] : undefined}
           onSave={async () => { await refreshPresets(userId) }}
-          onClose={() => { setShowMealBuilder(false); setEditingPreset(null) }}
+          onClose={() => { setEditingPreset(null) }}
         />
       )}
 
@@ -886,6 +885,29 @@ function parseGrams(label: string): number | null {
   return m ? parseFloat(m[1]) : null
 }
 
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) => Array(n + 1).fill(0).map((_, j) => i === 0 ? j : j === 0 ? i : 0))
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+  return dp[m][n]
+}
+
+function fuzzyFoodMatch(name: string, query: string): boolean {
+  const n = name.toLowerCase()
+  const q = query.trim().toLowerCase()
+  if (!q) return false
+  if (n.includes(q)) return true
+  // Multi-word: every token must appear somewhere in the name
+  const tokens = q.split(/\s+/).filter(Boolean)
+  if (tokens.length > 1) return tokens.every(t => n.includes(t))
+  // Single word: check edit distance against each word in the food name
+  const nameWords = n.split(/[\s,\/()]+/).filter(Boolean)
+  const threshold = Math.floor(Math.max(q.length, 3) * 0.35)
+  return nameWords.some(w => levenshtein(w, q) <= threshold)
+}
+
 function defaultServingLabel(food: { name: string; amount_label?: string | null }): string {
   if (food.amount_label) return food.amount_label
   const m = food.name.match(/\((\d+(?:\.\d+)?\s*(?:ml|l|g|kg))\)/i)
@@ -935,10 +957,10 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   }, [visible])
 
   const searchResults = useMemo(() => {
-    const q = search.trim().toLowerCase()
+    const q = search.trim()
     if (!q) return []
-    const customHits = customFoods.filter(f => f.name.toLowerCase().includes(q))
-    const commonHits = COMMON_FOOD_CATEGORIES.flatMap(c => c.items).filter(f => f.name.toLowerCase().includes(q))
+    const customHits = customFoods.filter(f => fuzzyFoodMatch(f.name, q))
+    const commonHits = COMMON_FOOD_CATEGORIES.flatMap(c => c.items).filter(f => fuzzyFoodMatch(f.name, q))
     return [...customHits, ...commonHits].slice(0, 20) as (CommonFood & { amount_label?: string | null })[]
   }, [search, customFoods])
 

@@ -4,6 +4,7 @@ export interface CommonFood {
   protein_g?: number
   fat_g?: number
   carb_g?: number
+  amount_label?: string
 }
 
 export const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[] = [
@@ -60,13 +61,13 @@ export const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[]
   {
     category: 'Bread & Grains',
     items: [
-      { name: 'Slice of bread (white)', kcal: 79, carb_g: 15, protein_g: 3, fat_g: 1 },
-      { name: 'Slice of bread (whole wheat)', kcal: 69, carb_g: 12, protein_g: 4, fat_g: 1 },
-      { name: 'Sourdough (slice)', kcal: 90, carb_g: 18, protein_g: 4, fat_g: 1 },
-      { name: 'Bagel (plain)', kcal: 270, carb_g: 53, protein_g: 10, fat_g: 2 },
-      { name: 'Croissant', kcal: 231, carb_g: 26, protein_g: 5, fat_g: 12 },
-      { name: 'Wrap / tortilla (medium)', kcal: 210, carb_g: 36, protein_g: 5, fat_g: 5 },
-      { name: 'Pita bread (1 piece)', kcal: 165, carb_g: 33, protein_g: 5, fat_g: 1 },
+      { name: 'Slice of bread (white)', kcal: 79, carb_g: 15, protein_g: 3, fat_g: 1, amount_label: '1 slice' },
+      { name: 'Slice of bread (whole wheat)', kcal: 69, carb_g: 12, protein_g: 4, fat_g: 1, amount_label: '1 slice' },
+      { name: 'Sourdough (slice)', kcal: 90, carb_g: 18, protein_g: 4, fat_g: 1, amount_label: '1 slice' },
+      { name: 'Bagel (plain)', kcal: 270, carb_g: 53, protein_g: 10, fat_g: 2, amount_label: '1 bagel' },
+      { name: 'Croissant', kcal: 231, carb_g: 26, protein_g: 5, fat_g: 12, amount_label: '1 piece' },
+      { name: 'Wrap / tortilla (medium)', kcal: 210, carb_g: 36, protein_g: 5, fat_g: 5, amount_label: '1 wrap' },
+      { name: 'Pita bread (1 piece)', kcal: 165, carb_g: 33, protein_g: 5, fat_g: 1, amount_label: '1 piece' },
       { name: 'Oats (50g uncooked)', kcal: 188, protein_g: 6, fat_g: 3, carb_g: 33 },
       { name: 'Muesli (50g)', kcal: 185, protein_g: 5, fat_g: 4, carb_g: 33 },
       { name: 'Granola (50g)', kcal: 225, protein_g: 5, fat_g: 8, carb_g: 33 },
@@ -96,7 +97,7 @@ export const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[]
       { name: 'Beef steak (100g)', kcal: 271, protein_g: 26, fat_g: 18 },
       { name: 'Pork tenderloin (100g)', kcal: 143, protein_g: 26, fat_g: 4 },
       { name: 'Pork chop (100g)', kcal: 231, protein_g: 25, fat_g: 14 },
-      { name: 'Bacon (2 rashers)', kcal: 86, protein_g: 6, fat_g: 7 },
+      { name: 'Bacon (2 rashers)', kcal: 86, protein_g: 6, fat_g: 7, amount_label: '2 rashers' },
       { name: 'Ham / cooked (50g)', kcal: 65, protein_g: 9, fat_g: 2, carb_g: 2 },
       { name: 'Salmon (100g)', kcal: 208, protein_g: 20, fat_g: 13 },
       { name: 'Cod (100g)', kcal: 82, protein_g: 18, fat_g: 1 },
@@ -113,9 +114,9 @@ export const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[]
   {
     category: 'Dairy & Eggs',
     items: [
-      { name: 'Egg (large)', kcal: 72, protein_g: 6, fat_g: 5 },
-      { name: 'Egg white (large)', kcal: 17, protein_g: 4 },
-      { name: 'Scrambled eggs (2 eggs)', kcal: 182, protein_g: 13, fat_g: 14 },
+      { name: 'Egg (large)', kcal: 72, protein_g: 6, fat_g: 5, amount_label: '1 egg' },
+      { name: 'Egg white (large)', kcal: 17, protein_g: 4, amount_label: '1 white' },
+      { name: 'Scrambled eggs (2 eggs)', kcal: 182, protein_g: 13, fat_g: 14, amount_label: '2 eggs' },
       { name: 'Greek yogurt (150g)', kcal: 133, protein_g: 15, fat_g: 5, carb_g: 6 },
       { name: 'Natural yogurt (150g)', kcal: 86, protein_g: 7, fat_g: 4, carb_g: 6 },
       { name: 'Skyr (150g)', kcal: 90, protein_g: 15, fat_g: 0, carb_g: 6 },
@@ -134,13 +135,17 @@ export const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[]
     category: 'Drinks',
     items: [
       { name: 'Water (500ml)', kcal: 0 },
-      { name: 'Cup of coffee (black)', kcal: 2 },
-      { name: 'Coffee with milk', kcal: 30, protein_g: 2, fat_g: 1 },
+      { name: 'Cup of coffee (black)', kcal: 2, amount_label: '1 cup' },
+      { name: 'Coffee with milk', kcal: 30, protein_g: 2, fat_g: 1, amount_label: '1 cup' },
       { name: 'Latte (250ml)', kcal: 120, protein_g: 6, fat_g: 5, carb_g: 10 },
       { name: 'Flat white (200ml)', kcal: 100, protein_g: 5, fat_g: 4, carb_g: 9 },
       { name: 'Cappuccino (200ml)', kcal: 80, protein_g: 4, fat_g: 3, carb_g: 8 },
-      { name: 'Cup of tea (black)', kcal: 1 },
-      { name: 'Tea with milk', kcal: 20, protein_g: 1 },
+      { name: 'Cup of tea (black)', kcal: 1, amount_label: '1 cup' },
+      { name: 'Tea with milk', kcal: 20, protein_g: 1, amount_label: '1 cup' },
+      { name: 'Smoothie (fruit, 300ml)', kcal: 180, carb_g: 40, protein_g: 2, fat_g: 1 },
+      { name: 'Smoothie (green, 300ml)', kcal: 130, carb_g: 26, protein_g: 3, fat_g: 1 },
+      { name: 'Smoothie (banana & oat, 300ml)', kcal: 220, carb_g: 42, protein_g: 5, fat_g: 3 },
+      { name: 'Protein smoothie (300ml)', kcal: 280, protein_g: 25, carb_g: 28, fat_g: 5 },
       { name: 'Coke (330ml)', kcal: 139, carb_g: 35 },
       { name: 'Diet Coke (330ml)', kcal: 1 },
       { name: 'Sparkling water (330ml)', kcal: 0 },
@@ -151,7 +156,7 @@ export const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[]
       { name: 'Soy milk (250ml)', kcal: 90, protein_g: 7, fat_g: 4, carb_g: 6 },
       { name: 'Sports drink (500ml)', kcal: 150, carb_g: 36 },
       { name: 'Energy drink (250ml)', kcal: 110, carb_g: 28 },
-      { name: 'Protein shake (scoop)', kcal: 120, protein_g: 25, carb_g: 4, fat_g: 2 },
+      { name: 'Protein shake (scoop)', kcal: 120, protein_g: 25, carb_g: 4, fat_g: 2, amount_label: '1 scoop' },
       { name: 'Beer (330ml)', kcal: 142, carb_g: 13 },
       { name: 'Wine, red (175ml)', kcal: 143, carb_g: 4 },
       { name: 'Wine, white (175ml)', kcal: 130, carb_g: 4 },
@@ -177,20 +182,20 @@ export const COMMON_FOOD_CATEGORIES: { category: string; items: CommonFood[] }[]
   {
     category: 'Snacks & Sweets',
     items: [
-      { name: 'Rice cake (plain)', kcal: 35, carb_g: 7 },
-      { name: 'Oat cake (1 piece)', kcal: 44, carb_g: 7, protein_g: 1, fat_g: 2 },
-      { name: 'Granola bar', kcal: 193, carb_g: 29, protein_g: 4, fat_g: 7 },
-      { name: 'Protein bar (avg)', kcal: 200, protein_g: 20, carb_g: 22, fat_g: 6 },
-      { name: 'Energy bar (avg)', kcal: 220, protein_g: 8, carb_g: 30, fat_g: 7 },
+      { name: 'Rice cake (plain)', kcal: 35, carb_g: 7, amount_label: '1 cake' },
+      { name: 'Oat cake (1 piece)', kcal: 44, carb_g: 7, protein_g: 1, fat_g: 2, amount_label: '1 piece' },
+      { name: 'Granola bar', kcal: 193, carb_g: 29, protein_g: 4, fat_g: 7, amount_label: '1 bar' },
+      { name: 'Protein bar (avg)', kcal: 200, protein_g: 20, carb_g: 22, fat_g: 6, amount_label: '1 bar' },
+      { name: 'Energy bar (avg)', kcal: 220, protein_g: 8, carb_g: 30, fat_g: 7, amount_label: '1 bar' },
       { name: 'Dark chocolate (30g)', kcal: 170, fat_g: 12, carb_g: 13, protein_g: 2 },
       { name: 'Milk chocolate (30g)', kcal: 160, fat_g: 9, carb_g: 18, protein_g: 2 },
-      { name: 'Medjool date (1 piece)', kcal: 66, carb_g: 18 },
-      { name: 'Banana bread (slice)', kcal: 196, carb_g: 33, protein_g: 3, fat_g: 6 },
+      { name: 'Medjool date (1 piece)', kcal: 66, carb_g: 18, amount_label: '1 date' },
+      { name: 'Banana bread (slice)', kcal: 196, carb_g: 33, protein_g: 3, fat_g: 6, amount_label: '1 slice' },
       { name: 'Crisps / chips (25g bag)', kcal: 132, carb_g: 14, fat_g: 8 },
       { name: 'Popcorn (30g)', kcal: 110, carb_g: 23, fat_g: 1, protein_g: 3 },
-      { name: 'Biscuit / cookie (1 piece)', kcal: 67, carb_g: 9, fat_g: 3 },
-      { name: 'Waffle (plain)', kcal: 218, carb_g: 25, protein_g: 6, fat_g: 11 },
-      { name: 'Pancake (plain, medium)', kcal: 86, carb_g: 11, protein_g: 2, fat_g: 4 },
+      { name: 'Biscuit / cookie (1 piece)', kcal: 67, carb_g: 9, fat_g: 3, amount_label: '1 piece' },
+      { name: 'Waffle (plain)', kcal: 218, carb_g: 25, protein_g: 6, fat_g: 11, amount_label: '1 waffle' },
+      { name: 'Pancake (plain, medium)', kcal: 86, carb_g: 11, protein_g: 2, fat_g: 4, amount_label: '1 pancake' },
     ],
   },
 ]
