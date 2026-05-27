@@ -14,14 +14,14 @@ export default function TabsLayout() {
         name="today"
         options={{
           title: 'Today',
-          tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="sunny-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="planner"
         options={{
           title: 'Planner',
-          tabBarIcon: ({ color, size }) => <Ionicons name="calculator-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="barbell-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

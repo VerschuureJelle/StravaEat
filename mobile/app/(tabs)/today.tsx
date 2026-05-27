@@ -403,6 +403,51 @@ export default function TodayScreen() {
     return          { label: 'Luteal',      color: '#9C27B0', description: 'Wind-down phase' }
   }
 
+  function getCycleCoaching(day: number, phaseLabel: string, severity: 'minor' | 'medium' | 'severe' | null): {
+    message: string; training: string; nutrition: string
+  } {
+    if (phaseLabel === 'Menstrual') {
+      const msg = severity === 'severe'
+        ? "Your body is working hard right now. Rest isn't giving up — it's the smartest training decision you can make today."
+        : severity === 'medium'
+        ? "Your body is working. That deserves respect, not guilt. Move gently if it feels good, rest if it doesn't. Either way, you're not losing progress."
+        : "Move if it feels good — rest if it doesn't. Skipping intensity today won't cost you fitness."
+      const train = severity === 'severe'
+        ? "Rest or gentle yoga — skip all structured training today"
+        : severity === 'medium'
+        ? "Light walking or stretching only — hold off on intensity"
+        : "Easy to moderate movement is fine — skip intervals or heavy lifting"
+      return { message: msg, training: train, nutrition: "Iron-rich foods + extra carbs can help ease symptoms" }
+    }
+    if (phaseLabel === 'Follicular') {
+      return {
+        message: "Energy is building. Your body responds well to hard training right now — good time to push.",
+        training: "High-intensity and strength work land well in this phase",
+        nutrition: "Standard intake — prioritise protein to support adaptation",
+      }
+    }
+    if (phaseLabel === 'Ovulation') {
+      return {
+        message: "You're at your peak. Use it.",
+        training: "Best days for your hardest sessions, long efforts, or racing",
+        nutrition: "Keep carbs up to match your high energy output",
+      }
+    }
+    // Luteal
+    const isLateLuteal = day >= cycleLength - 6
+    return {
+      message: isLateLuteal
+        ? "Lower energy is normal here — not failure. Your body needs more fuel and more sleep. Let it."
+        : "Your body is shifting gears. Steady efforts work better than all-out intensity right now.",
+      training: isLateLuteal
+        ? "Light to moderate movement — prioritise recovery and sleep"
+        : "Steady-state cardio and moderate training — dial back the high-intensity",
+      nutrition: isLateLuteal
+        ? "100–300 kcal extra is normal physiologically — don't fight it"
+        : "Slightly more carbs and healthy fats help with energy and mood",
+    }
+  }
+
   // ── Calorie helpers ────────────────────────────────────────────────────────
 
   function calorieStatusLabel() {
@@ -473,7 +518,9 @@ export default function TodayScreen() {
               }
               setShowCycleModal(true)
             }}>
-              {cycleDay != null && phase != null ? (
+              {cycleDay != null && phase != null ? (() => {
+                const coaching = getCycleCoaching(cycleDay, phase.label, periodSeverity)
+                return (
                 <>
                   <View style={st.cycleHeaderRow}>
                     <View style={[st.cyclePhaseDot, { backgroundColor: phase.color }]} />
@@ -484,7 +531,22 @@ export default function TodayScreen() {
                   <View style={st.cycleTrack}>
                     <View style={[st.cycleFill, { width: `${Math.round((cycleDay / cycleLength) * 100)}%` as any, backgroundColor: phase.color }]} />
                   </View>
-                  <Text style={st.cyclePhaseDesc}>{phase.description}</Text>
+
+                  {/* Supportive message */}
+                  <Text style={[st.cycleMessage, { color: phase.color }]}>{coaching.message}</Text>
+
+                  {/* Training + nutrition chips */}
+                  <View style={st.cycleCoachRow}>
+                    <View style={st.cycleCoachChip}>
+                      <Ionicons name="barbell-outline" size={12} color={C.text3} />
+                      <Text style={st.cycleCoachChipText}>{coaching.training}</Text>
+                    </View>
+                    <View style={st.cycleCoachChip}>
+                      <Ionicons name="nutrition-outline" size={12} color={C.text3} />
+                      <Text style={st.cycleCoachChipText}>{coaching.nutrition}</Text>
+                    </View>
+                  </View>
+
                   {cycleDay <= 5 && (
                     <View style={st.cycleSeverityRow}>
                       {(['minor', 'medium', 'severe'] as const).map(level => (
@@ -505,7 +567,8 @@ export default function TodayScreen() {
                     </View>
                   )}
                 </>
-              ) : (
+                )
+              })() : (
                 <View style={st.cycleEmpty}>
                   <Ionicons name="rose-outline" size={16} color={C.text3} />
                   <Text style={st.cycleEmptyText}>Track your cycle — tap to set up</Text>
@@ -2181,6 +2244,10 @@ const st = StyleSheet.create({
   cycleTrack:        { height: 6, backgroundColor: C.surface3, borderRadius: 3, marginBottom: 6, overflow: 'hidden' },
   cycleFill:         { height: 6, borderRadius: 3 },
   cyclePhaseDesc:    { fontSize: 12, color: C.text3, marginBottom: 8 },
+  cycleMessage:      { fontSize: 13, fontStyle: 'italic', lineHeight: 19, marginBottom: 10, marginTop: 4 },
+  cycleCoachRow:     { gap: 6, marginBottom: 10 },
+  cycleCoachChip:    { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: C.surface2, borderRadius: 8, padding: 8 },
+  cycleCoachChipText: { fontSize: 12, color: C.text2, flex: 1, lineHeight: 17 },
   cycleSeverityRow:  { flexDirection: 'row', gap: 8, marginTop: 4 },
   cycleSeverityBtn:  { flex: 1, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.border, alignItems: 'center' },
   cycleSeverityText: { fontSize: 13, fontWeight: '600', color: C.text2 },
