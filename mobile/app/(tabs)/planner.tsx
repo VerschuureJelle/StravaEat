@@ -104,10 +104,12 @@ type PlannerMode = 'build' | 'ai' | 'programs'
 
 interface WorkoutSegment {
   id: string
-  inputType: 'distance' | 'time'
+  inputType: 'distance' | 'time' | 'pace'
   value: string
   zoneId: string
   repeats: string
+  paceMin: string
+  paceSec: string
 }
 
 interface SegmentResult {
@@ -225,6 +227,7 @@ export default function PlannerScreen() {
     return zones.filter(z => !z.sport_type || z.sport_type === 'default')
   }, [zones, selectedSport])
   const [avgSpeedBySport, setAvgSpeedBySport] = useState<Record<string, number>>({})
+  const [zonePaceMap, setZonePaceMap] = useState<Record<string, number>>({})
 
   const [todayPlans, setTodayPlans] = useState<PlannedWorkout[]>([])
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null)
@@ -233,7 +236,7 @@ export default function PlannerScreen() {
 
   // build mode
   const [segments, setSegments] = useState<WorkoutSegment[]>([
-    { id: '1', inputType: 'distance', value: '', zoneId: '', repeats: '1' },
+    { id: '1', inputType: 'distance', value: '', zoneId: '', repeats: '1', paceMin: '', paceSec: '' },
   ])
   const [segResult, setSegResult] = useState<SegmentResult | null>(null)
 
@@ -275,6 +278,7 @@ export default function PlannerScreen() {
 
   const [saving, setSaving] = useState(false)
   const [sportDropdownOpen, setSportDropdownOpen] = useState(false)
+  const [hasActivityData, setHasActivityData] = useState(false)
 
   // Period tracking
   const [onPeriod, setOnPeriod] = useState(false)
@@ -294,7 +298,7 @@ export default function PlannerScreen() {
 
     const [profileRes, activitiesRes, zonesRes, burnRes, settingsRes, plansRes, userSportsRes, programRes] = await Promise.all([
       supabase.from('users').select('weight_kg, ftp_watts, on_period, period_severity, onboarding_data, preferred_workout_time, max_hr').eq('id', user.id).single(),
-      supabase.from('activities').select('type, distance_m, duration_sec').eq('user_id', user.id),
+      supabase.from('activities').select('id, type, distance_m, duration_sec, avg_hr, date').eq('user_id', user.id),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('burn_schema_points').select('*').eq('user_id', user.id).order('hr_value'),
       supabase.from('sport_energy_settings').select('*').eq('user_id', user.id),
@@ -320,6 +324,29 @@ export default function PlannerScreen() {
     setBurnSchema(burnRes.data ?? [])
     setSportSettings(settingsRes.data ?? [])
     setTodayPlans(plansRes.data ?? [])
+
+    // Build per-zone pace map from last 3 months of activities only
+    const threeMonthsAgo = new Date()
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+    const cutoff = threeMonthsAgo.toISOString().slice(0, 10)
+    const zoneSpeedSums: Record<string, { sum: number; count: number }> = {}
+    for (const act of (activitiesRes.data ?? [])) {
+      if (!act.avg_hr || act.distance_m <= 0 || act.duration_sec <= 0) continue
+      if (act.date < cutoff) continue
+      const speedMs = act.distance_m / act.duration_sec
+      const matched = effectiveZones.find(
+        (z: HeartRateZone) => act.avg_hr >= z.min_bpm && act.avg_hr <= z.max_bpm
+      )
+      if (!matched) continue
+      if (!zoneSpeedSums[matched.id]) zoneSpeedSums[matched.id] = { sum: 0, count: 0 }
+      zoneSpeedSums[matched.id].sum += speedMs
+      zoneSpeedSums[matched.id].count++
+    }
+    const paceMap: Record<string, number> = {}
+    for (const [zId, { sum, count }] of Object.entries(zoneSpeedSums)) {
+      paceMap[zId] = sum / count
+    }
+    setZonePaceMap(paceMap)
 
     const userSportNames: string[] = (userSportsRes.data ?? []).map((s: any) => s.sport_name)
     let sportList: string[]
@@ -372,6 +399,7 @@ export default function PlannerScreen() {
       }
     }
     setAvgSpeedBySport(speedMap)
+    setHasActivityData((activitiesRes.data ?? []).length > 0)
 
     const prog = programRes.data as TrainingProgram | null
     setActiveProgram(prog)
@@ -421,7 +449,7 @@ export default function PlannerScreen() {
   // ─── build mode ─────────────────────────────────────────────────────────────
 
   function addSegment() {
-    setSegments(prev => [...prev, { id: String(Date.now()), inputType: 'distance', value: '', zoneId: '', repeats: '1' }])
+    setSegments(prev => [...prev, { id: String(Date.now()), inputType: 'distance', value: '', zoneId: '', repeats: '1', paceMin: '', paceSec: '' }])
     setSegResult(null)
   }
 
@@ -444,32 +472,82 @@ export default function PlannerScreen() {
     let totalDurationMin = 0
 
     for (const seg of segments) {
-      const val = parseFloat(seg.value)
-      if (isNaN(val) || val <= 0) {
-        Alert.alert('Invalid segment', 'All segments need a positive distance or time value.')
-        return
-      }
       const repeats = Math.max(1, parseInt(seg.repeats) || 1)
-      const zone = activeZones.find(z => z.id === seg.zoneId)
-      if (!zone) { Alert.alert('Missing zone', 'Select a zone for every segment.'); return }
+      let zone: HeartRateZone | undefined
+      let kcalPerHour = 0
+      let durationMin = 0
+      let label = ''
 
-      const kcalPerHour = getKcalPerHour(zone)
-      let durationMin: number
-      let label: string
-
-      if (seg.inputType === 'time') {
-        durationMin = val
-        label = `${val} min @ ${zone.name}`
-      } else {
-        const avgSpeed = avgSpeedBySport[selectedSport]
-        if (!avgSpeed) {
-          Alert.alert('No pace data', `No historical pace found for ${selectedSport}. Use time-based segments instead.`)
+      if (seg.inputType === 'pace') {
+        const pMin = parseInt(seg.paceMin || '0')
+        const pSec = parseInt(seg.paceSec || '0')
+        const totalPaceSec = pMin * 60 + pSec
+        const dist = parseFloat(seg.value)
+        if (totalPaceSec <= 0 || isNaN(dist) || dist <= 0) {
+          Alert.alert('Missing input', 'Enter both pace and distance for pace segments.')
           return
         }
-        const isSwim = /swim/i.test(selectedSport)
-        const distM = isSwim ? val : val * 1000
-        durationMin = distM / avgSpeed / 60
-        label = isSwim ? `${val} m @ ${zone.name}` : `${val} km @ ${zone.name}`
+        durationMin = (totalPaceSec * dist) / 60
+
+        // Derive zone monotonically: faster pace = higher zone number.
+        // "Closest speed" is wrong — a fast Z1 recovery run can be numerically
+        // closer to 3:00/km than a Z3 long run, producing nonsense results.
+        if (Object.keys(zonePaceMap).length > 0) {
+          const enteredSpeedMs = 1000 / totalPaceSec
+          // Only consider zones we have historical data for, ordered by zone number
+          const sorted = activeZones
+            .filter(z => zonePaceMap[z.id] !== undefined)
+            .sort((a, b) => a.zone_number - b.zone_number)
+          if (sorted.length > 0) {
+            const slowest = sorted[0]
+            const fastest = sorted[sorted.length - 1]
+            if (enteredSpeedMs >= zonePaceMap[fastest.id]) {
+              // Faster than any historical zone average → highest zone in map
+              zone = fastest
+            } else if (enteredSpeedMs <= zonePaceMap[slowest.id]) {
+              // Slower than any historical zone average → lowest zone in map
+              zone = slowest
+            } else {
+              // Within range → find the two adjacent zones by speed and pick the closer
+              let bestDiff = Infinity
+              for (const z of sorted) {
+                const diff = Math.abs(zonePaceMap[z.id] - enteredSpeedMs)
+                if (diff < bestDiff) { bestDiff = diff; zone = z }
+              }
+            }
+          }
+        }
+
+        if (zone) {
+          kcalPerHour = getKcalPerHour(zone)
+          label = `${dist} km @ ${pMin}:${String(pSec).padStart(2, '0')}/km (${zone.name})`
+        } else {
+          label = `${dist} km @ ${pMin}:${String(pSec).padStart(2, '0')}/km`
+        }
+      } else {
+        const val = parseFloat(seg.value)
+        if (isNaN(val) || val <= 0) {
+          Alert.alert('Invalid segment', 'All segments need a positive distance or time value.')
+          return
+        }
+        zone = activeZones.find(z => z.id === seg.zoneId)
+        if (!zone) { Alert.alert('Missing zone', 'Select a zone for every segment.'); return }
+        kcalPerHour = getKcalPerHour(zone)
+
+        if (seg.inputType === 'time') {
+          durationMin = val
+          label = `${val} min @ ${zone.name}`
+        } else {
+          const avgSpeed = avgSpeedBySport[selectedSport]
+          if (!avgSpeed) {
+            Alert.alert('No pace data', `No historical pace found for ${selectedSport}. Use time-based segments instead.`)
+            return
+          }
+          const isSwim = /swim/i.test(selectedSport)
+          const distM = isSwim ? val : val * 1000
+          durationMin = distM / avgSpeed / 60
+          label = isSwim ? `${val} m @ ${zone.name}` : `${val} km @ ${zone.name}`
+        }
       }
 
       const segKcal = Math.round(kcalPerHour * (durationMin / 60)) * repeats
@@ -478,7 +556,7 @@ export default function PlannerScreen() {
         label: repeats > 1 ? `${repeats}× (${label})` : label,
         kcal: segKcal,
         durationMin: Math.round(segDurationMin),
-        zoneNumber: zone.zone_number,
+        zoneNumber: zone?.zone_number ?? 0,
         repeats,
       })
       totalKcal += segKcal
@@ -896,6 +974,14 @@ export default function PlannerScreen() {
               </Pressable>
             ) : (
             <>
+            {!hasActivityData && (
+              <View style={st.noDataBanner}>
+                <Ionicons name="information-circle-outline" size={16} color={C.text3} />
+                <Text style={st.noDataBannerText}>
+                  No Strava data yet — pace estimates won't be available. Connect Strava in Settings, or use Time segments.
+                </Text>
+              </View>
+            )}
             <Text style={st.label}>Workout segments</Text>
 
             {segments.map((seg, idx) => {
@@ -925,8 +1011,77 @@ export default function PlannerScreen() {
                     >
                       <Text style={[st.segToggleText, seg.inputType === 'time' && { color: C.white }]}>Time</Text>
                     </Pressable>
+                    {(/run|jog/i.test(selectedSport)) && (
+                      <Pressable
+                        style={[st.segToggleBtn, seg.inputType === 'pace' && { backgroundColor: C.accent, borderColor: C.accent }]}
+                        onPress={() => updateSegment(seg.id, { inputType: 'pace', zoneId: '', ...(seg.inputType !== 'pace' ? { value: '' } : {}) })}
+                      >
+                        <Text style={[st.segToggleText, seg.inputType === 'pace' && { color: C.white }]}>Pace</Text>
+                      </Pressable>
+                    )}
                   </View>
 
+                  {seg.inputType === 'pace' ? (
+                    <View style={{ gap: 10, marginBottom: 10 }}>
+                      <View style={st.segInputRow}>
+                        <View style={st.segInputGroup}>
+                          <View style={st.paceInputRow}>
+                            <TextInput
+                              style={[st.segInput, { width: 52 }]}
+                              value={seg.paceMin}
+                              onChangeText={v => updateSegment(seg.id, { paceMin: v })}
+                              placeholder="5"
+                              placeholderTextColor={C.text3}
+                              keyboardType="number-pad"
+                            />
+                            <Text style={st.paceSep}>:</Text>
+                            <TextInput
+                              style={[st.segInput, { width: 52 }]}
+                              value={seg.paceSec}
+                              onChangeText={v => updateSegment(seg.id, { paceSec: v })}
+                              placeholder="30"
+                              placeholderTextColor={C.text3}
+                              keyboardType="number-pad"
+                            />
+                          </View>
+                          <Text style={st.segInputUnit}>/km</Text>
+                        </View>
+                        <View style={st.segInputGroup}>
+                          <TextInput
+                            style={st.segInput}
+                            value={seg.value}
+                            onChangeText={v => updateSegment(seg.id, { value: v })}
+                            placeholder="e.g. 5"
+                            placeholderTextColor={C.text3}
+                            keyboardType="decimal-pad"
+                          />
+                          <Text style={st.segInputUnit}>km</Text>
+                        </View>
+                        <View style={st.segRepeatGroup}>
+                          <TextInput
+                            style={st.segInput}
+                            value={seg.repeats}
+                            onChangeText={v => updateSegment(seg.id, { repeats: v })}
+                            placeholder="1"
+                            placeholderTextColor={C.text3}
+                            keyboardType="number-pad"
+                          />
+                          <Text style={st.segInputUnit}>repeats</Text>
+                        </View>
+                      </View>
+                      {seg.paceMin && seg.value ? (() => {
+                        const pMin = parseInt(seg.paceMin || '0')
+                        const pSec = parseInt(seg.paceSec || '0')
+                        const totalPaceSec = pMin * 60 + pSec
+                        const dist = parseFloat(seg.value)
+                        if (totalPaceSec > 0 && dist > 0) {
+                          const durationMin = Math.round((totalPaceSec * dist) / 60)
+                          return <Text style={st.segZoneDetail}>≈ {durationMin} min</Text>
+                        }
+                        return null
+                      })() : null}
+                    </View>
+                  ) : (
                   <View style={st.segInputRow}>
                     <View style={st.segInputGroup}>
                       <TextInput
@@ -951,20 +1106,35 @@ export default function PlannerScreen() {
                       <Text style={st.segInputUnit}>repeats</Text>
                     </View>
                   </View>
+                  )}
 
-                  <View style={st.segZoneRow}>
-                    {activeZones.map(z => (
-                      <Pressable
-                        key={z.id}
-                        style={[st.segZoneBtn, seg.zoneId === z.id && { backgroundColor: zoneBarColor(z.zone_number), borderColor: zoneBarColor(z.zone_number) }]}
-                        onPress={() => updateSegment(seg.id, { zoneId: z.id })}
-                      >
-                        <Text style={[st.segZoneBtnNum, seg.zoneId === z.id && { color: C.white }]}>Z{z.zone_number}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  {selZone && (
-                    <Text style={st.segZoneDetail}>{selZone.name} · {selZone.min_bpm}–{selZone.max_bpm} bpm</Text>
+                  {seg.inputType !== 'pace' && (
+                    <>
+                      <View style={st.segZoneRow}>
+                        {activeZones.map(z => {
+                          const zColor = zoneBarColor(z.zone_number)
+                          const isSelected = seg.zoneId === z.id
+                          return (
+                            <Pressable
+                              key={z.id}
+                              style={[
+                                st.segZoneBtn,
+                                { borderColor: zColor },
+                                isSelected && { backgroundColor: zColor },
+                              ]}
+                              onPress={() => updateSegment(seg.id, { zoneId: z.id })}
+                            >
+                              <Text style={[st.segZoneBtnNum, { color: isSelected ? '#fff' : zColor }]}>
+                                Z{z.zone_number}
+                              </Text>
+                            </Pressable>
+                          )
+                        })}
+                      </View>
+                      {selZone && (
+                        <Text style={st.segZoneDetail}>{selZone.name} · {selZone.min_bpm}–{selZone.max_bpm} bpm</Text>
+                      )}
+                    </>
                   )}
                 </View>
               )
@@ -1007,7 +1177,7 @@ export default function PlannerScreen() {
                       <View key={i} style={[st.diagramSegment, { flex: pct, backgroundColor: color }]}>
                         {pct > 12 && (
                           <Text style={st.diagramSegmentText} numberOfLines={1}>
-                            Z{s.zoneNumber}
+                            {s.zoneNumber > 0 ? `Z${s.zoneNumber}` : '–'}
                           </Text>
                         )}
                       </View>
@@ -1020,7 +1190,7 @@ export default function PlannerScreen() {
                   {[...new Set(segResult.segments.map(s => s.zoneNumber))].sort().map(zn => (
                     <View key={zn} style={st.diagramLegendItem}>
                       <View style={[st.diagramLegendDot, { backgroundColor: zoneBarColor(zn) }]} />
-                      <Text style={st.diagramLegendText}>Z{zn}</Text>
+                      <Text style={st.diagramLegendText}>{zn > 0 ? `Z${zn}` : '–'}</Text>
                     </View>
                   ))}
                 </View>
@@ -1033,7 +1203,7 @@ export default function PlannerScreen() {
                       <Text style={st.segBreakMeta}>{formatDuration(s.durationMin)} · {s.kcal} kcal</Text>
                     </View>
                     <View style={[st.segZoneTag, { backgroundColor: zoneBarColor(s.zoneNumber) + '22' }]}>
-                      <Text style={[st.segZoneTagText, { color: zoneBarColor(s.zoneNumber) }]}>Z{s.zoneNumber}</Text>
+                      <Text style={[st.segZoneTagText, { color: zoneBarColor(s.zoneNumber) }]}>{s.zoneNumber > 0 ? `Z${s.zoneNumber}` : '–'}</Text>
                     </View>
                   </View>
                 ))}
@@ -1768,7 +1938,7 @@ const st = StyleSheet.create({
   segZoneRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   segZoneBtn: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
-    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface3,
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: '#fff',
   },
   segZoneBtnNum: { fontSize: 13, fontWeight: '800', color: C.text2 },
   segZoneDetail: { fontSize: 11, color: C.text3, marginTop: 7 },
@@ -1996,5 +2166,13 @@ const st = StyleSheet.create({
   },
   aiGoalLabel: { fontSize: 14, fontWeight: '700', color: C.text1 },
   aiGoalNote: { fontSize: 11, color: C.text3 },
+
+  // No activity data banner
+  noDataBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: C.surface2, borderRadius: 10, padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: C.border,
+  },
+  noDataBannerText: { flex: 1, fontSize: 13, color: C.text3, lineHeight: 18 },
 
 })
