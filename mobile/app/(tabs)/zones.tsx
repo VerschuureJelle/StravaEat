@@ -33,11 +33,79 @@ export default function ZonesScreen() {
   }
 
   async function saveZone(zone: HeartRateZone) {
+    const sport = zone.sport_type ?? 'default'
+    const sportZones = zones
+      .filter(z => (z.sport_type ?? 'default') === sport)
+      .sort((a, b) => a.zone_number - b.zone_number)
+    const idx = sportZones.findIndex(z => z.id === zone.id)
+    const prev = sportZones[idx - 1] ?? null
+    const next = sportZones[idx + 1] ?? null
+
+    // Validate: max can't swallow the entire next zone
+    if (next && zone.max_bpm >= next.max_bpm) {
+      Alert.alert(
+        'Range too large',
+        `Zone ${zone.zone_number} max (${zone.max_bpm}) must stay below Zone ${next.zone_number} max (${next.max_bpm} bpm).`,
+      )
+      return
+    }
+
+    // Validate: min can't swallow the entire previous zone
+    if (prev && zone.min_bpm <= prev.min_bpm) {
+      Alert.alert(
+        'Range too small',
+        `Zone ${zone.zone_number} min (${zone.min_bpm}) must stay above Zone ${prev.zone_number} min (${prev.min_bpm} bpm).`,
+      )
+      return
+    }
+
+    // Save this zone
     const { error } = await supabase.from('heart_rate_zones')
       .update({ name: zone.name, min_bpm: zone.min_bpm, max_bpm: zone.max_bpm })
       .eq('id', zone.id)
-    if (error) Alert.alert('Error', error.message)
-    else setEditingZone(null)
+    if (error) { Alert.alert('Error', error.message); return }
+
+    let updated = zones.map(z => z.id === zone.id ? zone : z)
+
+    // Auto-adjust next zone's min to stay contiguous
+    if (next && zone.max_bpm + 1 !== next.min_bpm) {
+      const newMin = zone.max_bpm + 1
+      const { error: e2 } = await supabase.from('heart_rate_zones')
+        .update({ min_bpm: newMin }).eq('id', next.id)
+      if (!e2) updated = updated.map(z => z.id === next.id ? { ...z, min_bpm: newMin } : z)
+    }
+
+    // Auto-adjust previous zone's max to stay contiguous
+    if (prev && zone.min_bpm - 1 !== prev.max_bpm) {
+      const newMax = zone.min_bpm - 1
+      const { error: e3 } = await supabase.from('heart_rate_zones')
+        .update({ max_bpm: newMax }).eq('id', prev.id)
+      if (!e3) updated = updated.map(z => z.id === prev.id ? { ...z, max_bpm: newMax } : z)
+    }
+
+    setZones(updated)
+    setEditingZone(null)
+  }
+
+  async function clearSportZones(sport: string) {
+    Alert.alert(
+      `Clear all ${sportLabel(sport)} zones?`,
+      'All zones for this sport will be permanently deleted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear all', style: 'destructive', onPress: async () => {
+            const ids = zones
+              .filter(z => (z.sport_type ?? 'default') === sport)
+              .map(z => z.id)
+            await Promise.all(ids.map(id =>
+              supabase.from('heart_rate_zones').delete().eq('id', id),
+            ))
+            setZones(prev => prev.filter(z => (z.sport_type ?? 'default') !== sport))
+          },
+        },
+      ],
+    )
   }
 
   // Group zones by sport_type, preserving DB order
@@ -57,11 +125,19 @@ export default function ZonesScreen() {
 
         {groups.map(group => (
           <View key={group.sport} style={styles.sportGroup}>
-            <View style={[styles.sportHeader, { borderLeftColor: sportColor(group.sport) }]}>
+            <View style={styles.sportHeaderRow}>
+              <View style={[styles.sportHeaderAccent, { backgroundColor: sportColor(group.sport) }]} />
               <Text style={[styles.sportLabel, { color: sportColor(group.sport) }]}>
                 {sportLabel(group.sport)}
               </Text>
+              <Pressable
+                style={styles.clearBtn}
+                onPress={() => clearSportZones(group.sport)}
+              >
+                <Text style={styles.clearBtnText}>Clear all</Text>
+              </Pressable>
             </View>
+
             {group.zones.map(zone => (
               <ZoneCard
                 key={zone.id}
@@ -112,15 +188,23 @@ function ZoneCard({
       <View style={styles.inputRow}>
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Min BPM</Text>
-          <TextInput style={styles.input} value={String(zone.min_bpm)} keyboardType="numeric"
+          <TextInput
+            style={styles.input}
+            value={String(zone.min_bpm)}
+            keyboardType="numeric"
             placeholderTextColor={C.text3}
-            onChangeText={v => onChange({ ...zone, min_bpm: parseInt(v) || 0 })} />
+            onChangeText={v => onChange({ ...zone, min_bpm: parseInt(v) || 0 })}
+          />
         </View>
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Max BPM</Text>
-          <TextInput style={styles.input} value={String(zone.max_bpm)} keyboardType="numeric"
+          <TextInput
+            style={styles.input}
+            value={String(zone.max_bpm)}
+            keyboardType="numeric"
             placeholderTextColor={C.text3}
-            onChangeText={v => onChange({ ...zone, max_bpm: parseInt(v) || 0 })} />
+            onChangeText={v => onChange({ ...zone, max_bpm: parseInt(v) || 0 })}
+          />
         </View>
       </View>
       <View style={styles.inputRow}>
@@ -141,8 +225,13 @@ const styles = StyleSheet.create({
   header: { fontSize: 22, fontWeight: '700', color: C.text1, marginBottom: 4 },
   note: { fontSize: 13, color: C.text3, marginBottom: 16 },
   sportGroup: { marginBottom: 24 },
-  sportHeader: { borderLeftWidth: 3, paddingLeft: 10, marginBottom: 8 },
-  sportLabel: { fontSize: 14, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
+  sportHeaderRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8,
+  },
+  sportHeaderAccent: { width: 3, height: 16, borderRadius: 2 },
+  sportLabel: { fontSize: 14, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6, flex: 1 },
+  clearBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: C.danger + '66' },
+  clearBtnText: { fontSize: 12, fontWeight: '600', color: C.danger },
   zoneCard: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 14, marginBottom: 8, borderRadius: 10, backgroundColor: C.surface,
