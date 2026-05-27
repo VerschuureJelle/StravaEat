@@ -5,6 +5,18 @@ import { supabase } from '../../lib/supabase'
 import { W as C } from '../../lib/themeWarm'
 import type { HeartRateZone } from '../../types'
 
+function sportColor(sport: string): string {
+  if (/swim/i.test(sport)) return C.swim
+  if (/run|jog/i.test(sport)) return C.run
+  if (/walk|hike/i.test(sport)) return C.walk
+  if (/ride|bike|cycling|virtual/i.test(sport)) return C.ride
+  return C.sport
+}
+
+function sportLabel(sport: string): string {
+  return sport === 'default' ? 'Default' : sport
+}
+
 export default function ZonesScreen() {
   const [zones, setZones] = useState<HeartRateZone[]>([])
   const [editingZone, setEditingZone] = useState<string | null>(null)
@@ -15,7 +27,8 @@ export default function ZonesScreen() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     const { data } = await supabase
-      .from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number')
+      .from('heart_rate_zones').select('*').eq('user_id', user.id)
+      .order('sport_type').order('zone_number')
     setZones(data ?? [])
   }
 
@@ -27,22 +40,40 @@ export default function ZonesScreen() {
     else setEditingZone(null)
   }
 
+  // Group zones by sport_type, preserving DB order
+  const groups: { sport: string; zones: HeartRateZone[] }[] = []
+  for (const zone of zones) {
+    const sport = zone.sport_type ?? 'default'
+    const existing = groups.find(g => g.sport === sport)
+    if (existing) existing.zones.push(zone)
+    else groups.push({ sport, zones: [zone] })
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.header}>Heart Rate Zones</Text>
         <Text style={styles.note}>Changes only apply to future syncs.</Text>
 
-        {zones.map(zone => (
-          <ZoneCard
-            key={zone.id}
-            zone={zone}
-            isEditing={editingZone === zone.id}
-            onEdit={() => setEditingZone(zone.id)}
-            onSave={saveZone}
-            onCancel={() => setEditingZone(null)}
-            onChange={updated => setZones(prev => prev.map(z => z.id === updated.id ? updated : z))}
-          />
+        {groups.map(group => (
+          <View key={group.sport} style={styles.sportGroup}>
+            <View style={[styles.sportHeader, { borderLeftColor: sportColor(group.sport) }]}>
+              <Text style={[styles.sportLabel, { color: sportColor(group.sport) }]}>
+                {sportLabel(group.sport)}
+              </Text>
+            </View>
+            {group.zones.map(zone => (
+              <ZoneCard
+                key={zone.id}
+                zone={zone}
+                isEditing={editingZone === zone.id}
+                onEdit={() => setEditingZone(zone.id)}
+                onSave={saveZone}
+                onCancel={() => setEditingZone(null)}
+                onChange={updated => setZones(prev => prev.map(z => z.id === updated.id ? updated : z))}
+              />
+            ))}
+          </View>
         ))}
       </ScrollView>
     </SafeAreaView>
@@ -109,6 +140,9 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 48 },
   header: { fontSize: 22, fontWeight: '700', color: C.text1, marginBottom: 4 },
   note: { fontSize: 13, color: C.text3, marginBottom: 16 },
+  sportGroup: { marginBottom: 24 },
+  sportHeader: { borderLeftWidth: 3, paddingLeft: 10, marginBottom: 8 },
+  sportLabel: { fontSize: 14, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
   zoneCard: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 14, marginBottom: 8, borderRadius: 10, backgroundColor: C.surface,
