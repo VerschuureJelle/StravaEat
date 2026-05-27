@@ -9,15 +9,9 @@ import { W as C } from '../lib/themeWarm'
 import { useLanguage, LANGUAGES } from '../lib/i18n'
 
 const NAV_ITEMS = [
-  { label: 'Today',     icon: 'calendar-outline'       as const, route: '/(tabs)/today'     },
-  { label: 'History',   icon: 'flash-outline'           as const, route: '/(tabs)/'          },
-  { label: 'Planner',   icon: 'calculator-outline'      as const, route: '/(tabs)/planner'   },
-  { label: 'Calendars', icon: 'calendar-clear-outline'  as const, route: '/(tabs)/calendar'  },
-  { label: 'Settings',  icon: 'settings-outline'        as const, route: '/(tabs)/settings'  },
-]
-
-const FOOD_LOGGER_ITEMS = [
-  { label: 'Week overview', icon: 'bar-chart-outline' as const, route: '/(tabs)/nutrition' },
+  { label: 'Calendar', icon: 'calendar-clear-outline' as const, route: '/(tabs)/calendar' },
+  { label: 'HR Zones', icon: 'pulse-outline'          as const, route: '/(tabs)/zones'    },
+  { label: 'Profile',  icon: 'person-outline'         as const, route: '/(tabs)/profile'  },
 ]
 
 function DrawerContent({ userName, avatarUrl, onNav, onClose }: {
@@ -45,16 +39,6 @@ function DrawerContent({ userName, avatarUrl, onNav, onClose }: {
       <View style={dr.divider} />
 
       {NAV_ITEMS.map(item => (
-        <Pressable key={item.route} style={dr.navItem} onPress={() => onNav(item.route)}>
-          <Ionicons name={item.icon} size={20} color="rgba(255,255,255,0.65)" />
-          <Text style={dr.navLabel}>{item.label}</Text>
-        </Pressable>
-      ))}
-
-      <View style={dr.sectionDivider} />
-      <Text style={dr.sectionLabel}>Food Logger</Text>
-
-      {FOOD_LOGGER_ITEMS.map(item => (
         <Pressable key={item.route} style={dr.navItem} onPress={() => onNav(item.route)}>
           <Ionicons name={item.icon} size={20} color="rgba(255,255,255,0.65)" />
           <Text style={dr.navLabel}>{item.label}</Text>

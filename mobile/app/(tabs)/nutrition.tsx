@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import {
   View, Text, TextInput, Pressable, ScrollView,
   StyleSheet, Alert, ActivityIndicator, Modal,
-  Keyboard, KeyboardAvoidingView, Platform,
+  Keyboard, KeyboardAvoidingView, Platform, useWindowDimensions,
 } from 'react-native'
+import Svg, { Rect, Line, Text as SvgText } from 'react-native-svg'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import { useRouter } from 'expo-router'
@@ -29,6 +30,14 @@ interface CustomFood {
   category: string | null
 }
 
+interface DayItem {
+  name: string
+  kcal: number
+  protein_g: number | null
+  fat_g: number | null
+  carb_g: number | null
+}
+
 interface DayData {
   dateStr: string
   dayLabel: string
@@ -41,6 +50,7 @@ interface DayData {
   protein_g: number
   fat_g: number
   carb_g: number
+  items: DayItem[]
 }
 
 type SubTab = 'nutrition' | 'meals' | 'week' | 'estimate'
@@ -119,7 +129,7 @@ function generateDays(startStr: string, endStr: string): DayData[] {
       fullDate: cur.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
       isToday: dateStr === todayStr,
       isFuture: dateStr > todayStr,
-      consumed: 0, burned: 0, target: null, protein_g: 0, fat_g: 0, carb_g: 0,
+      consumed: 0, burned: 0, target: null, protein_g: 0, fat_g: 0, carb_g: 0, items: [],
     })
     cur.setDate(cur.getDate() + 1)
   }
@@ -759,6 +769,133 @@ const mp = StyleSheet.create({
   customBtnText: { fontSize: 14, fontWeight: '600', color: C.accent },
 })
 
+// ─── Kcal bar chart ────────────────────────────────────────────────────────
+
+function KcalBarChart({ days }: { days: DayData[] }) {
+  const { width: screenWidth } = useWindowDimensions()
+  const chartWidth = screenWidth - 32 - 32
+  const chartHeight = 140
+  const padLeft = 40
+  const padRight = 8
+  const padTop = 12
+  const padBottom = 24
+  const plotW = chartWidth - padLeft - padRight
+  const plotH = chartHeight - padTop - padBottom
+
+  const pastDays = days.filter(d => !d.isFuture)
+  if (pastDays.length === 0) return null
+
+  const maxRaw = Math.max(...pastDays.filter(d => d.consumed > 0).map(d => Math.max(d.consumed, d.target ?? 0)))
+  const maxY = Math.max(maxRaw * 1.1, 1000)
+
+  const barCount = days.length
+  const barW = Math.max(2, Math.floor((plotW / barCount) * 0.6))
+  const barSpacing = plotW / barCount
+
+  // Average target line
+  const daysWithTarget = days.filter(d => d.target != null)
+  const avgTarget = daysWithTarget.length > 0
+    ? daysWithTarget.reduce((s, d) => s + d.target!, 0) / daysWithTarget.length
+    : null
+  const targetLineY = avgTarget != null ? padTop + plotH - (avgTarget / maxY) * plotH : null
+
+  // Y axis ticks
+  const ticks = [0, Math.round(maxY / 2), Math.round(maxY)]
+
+  return (
+    <Svg width={chartWidth} height={chartHeight}>
+      {/* Y axis ticks */}
+      {ticks.map(tick => {
+        const y = padTop + plotH - (tick / maxY) * plotH
+        return (
+          <SvgText
+            key={tick}
+            x={padLeft - 4}
+            y={y + 4}
+            textAnchor="end"
+            fontSize={9}
+            fill={C.text3}
+          >
+            {tick === 0 ? '0' : tick >= 1000 ? `${Math.round(tick / 100) / 10}k` : String(tick)}
+          </SvgText>
+        )
+      })}
+
+      {/* Bars */}
+      {days.map((d, i) => {
+        const ratio = d.target && d.consumed > 0 ? d.consumed / d.target : 0
+        const isMet = ratio >= 0.9 && ratio <= 1.15
+        const isOver = ratio > 1.15
+        const isUnder = !d.isFuture && d.consumed > 0 && ratio < 0.9
+        const barColor = d.isFuture ? C.surface3
+          : d.isToday ? C.accent
+          : isMet ? C.success
+          : isOver ? C.danger
+          : isUnder ? C.warning
+          : C.surface3
+
+        const barH = d.consumed > 0 ? Math.max(1, (d.consumed / maxY) * plotH) : 0
+        const x = padLeft + i * barSpacing + (barSpacing - barW) / 2
+        const y = padTop + plotH - barH
+
+        // X label
+        const showLabel = barCount <= 7
+          ? true
+          : d.fullDate.startsWith('1 ') || i % 7 === 0
+
+        return (
+          <React.Fragment key={d.dateStr}>
+            {barH > 0 && (
+              <Rect
+                x={x}
+                y={y}
+                width={barW}
+                height={barH}
+                rx={2}
+                fill={barColor}
+              />
+            )}
+            {barH === 0 && (
+              <Rect
+                x={x}
+                y={padTop + plotH - 2}
+                width={barW}
+                height={2}
+                rx={1}
+                fill={C.surface3}
+              />
+            )}
+            {showLabel && (
+              <SvgText
+                x={x + barW / 2}
+                y={chartHeight - 4}
+                textAnchor="middle"
+                fontSize={9}
+                fill={d.isToday ? C.accent : C.text3}
+              >
+                {d.dayLabel}
+              </SvgText>
+            )}
+          </React.Fragment>
+        )
+      })}
+
+      {/* Target dashed line */}
+      {targetLineY != null && (
+        <Line
+          x1={padLeft}
+          y1={targetLineY}
+          x2={chartWidth - padRight}
+          y2={targetLineY}
+          stroke={C.text3}
+          strokeWidth={1}
+          strokeDasharray="4,3"
+        />
+      )}
+    </Svg>
+  )
+}
+
 // ─── History view ──────────────────────────────────────────────────────────
 
 function DayRow({ day, last, hideCalories, expanded, onPress }: {
@@ -777,9 +914,10 @@ function DayRow({ day, last, hideCalories, expanded, onPress }: {
     : C.surface3
   const fillPct = day.isFuture ? 0 : Math.min(ratio, 1) * 100
   const hasMacros = !day.isFuture && day.consumed > 0 && (day.protein_g > 0 || day.fat_g > 0 || day.carb_g > 0)
+  const canExpand = !hideCalories && !day.isFuture && day.consumed > 0 && (day.items.length > 0 || hasMacros)
   return (
     <Pressable
-      onPress={hasMacros && !hideCalories ? onPress : undefined}
+      onPress={canExpand ? onPress : undefined}
       style={[hv.dayRow, !last && { borderBottomWidth: 1, borderBottomColor: C.divider }]}
     >
       <View style={hv.dayLabelCol}>
@@ -799,14 +937,39 @@ function DayRow({ day, last, hideCalories, expanded, onPress }: {
               </Text>
               {day.target != null && <Text style={hv.dayTarget}>/ {day.target.toLocaleString()} kcal</Text>}
             </View>
-            {hasMacros && expanded && (
-              <View style={hv.dayMacros}>
-                <Text style={hv.dayMacroChip}>{Math.round(day.protein_g)} P</Text>
-                <Text style={hv.dayMacroDot}>·</Text>
-                <Text style={hv.dayMacroChip}>{Math.round(day.fat_g)} F</Text>
-                <Text style={hv.dayMacroDot}>·</Text>
-                <Text style={hv.dayMacroChip}>{Math.round(day.carb_g)} C</Text>
-              </View>
+            {expanded && (hasMacros || day.items.length > 0) && (
+              <>
+                {hasMacros && (
+                  <View style={hv.dayMacros}>
+                    <Text style={hv.dayMacroChip}>{Math.round(day.protein_g)} P</Text>
+                    <Text style={hv.dayMacroDot}>·</Text>
+                    <Text style={hv.dayMacroChip}>{Math.round(day.fat_g)} F</Text>
+                    <Text style={hv.dayMacroDot}>·</Text>
+                    <Text style={hv.dayMacroChip}>{Math.round(day.carb_g)} C</Text>
+                  </View>
+                )}
+                {day.items.length > 0 && (
+                  <View style={hv.itemsList}>
+                    {day.items.map((item, idx) => (
+                      <View key={idx} style={[hv.itemRow, idx > 0 && hv.itemRowBorder]}>
+                        <Text style={hv.itemName} numberOfLines={1}>{item.name}</Text>
+                        <View style={hv.itemRight}>
+                          <Text style={hv.itemKcal}>{item.kcal} kcal</Text>
+                          {(item.protein_g != null || item.fat_g != null || item.carb_g != null) && (
+                            <Text style={hv.itemMacros}>
+                              {[
+                                item.protein_g != null ? `P${Math.round(item.protein_g)}` : null,
+                                item.fat_g != null ? `F${Math.round(item.fat_g)}` : null,
+                                item.carb_g != null ? `C${Math.round(item.carb_g)}` : null,
+                              ].filter(Boolean).join('  ')}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </>
             )}
           </>
         )}
@@ -857,8 +1020,8 @@ function HistoryView({ userId }: { userId: string | null }) {
     }
     const [profileRes, foodRes, actsRes] = await Promise.all([
       supabase.from('users').select('daily_kcal_target, hide_calories').eq('id', userId!).single(),
-      supabase.from('food_logs').select('date, kcal, protein_g, fat_g, carb_g').eq('user_id', userId!)
-        .gte('date', startStr).lte('date', endStr),
+      supabase.from('food_logs').select('date, name, kcal, protein_g, fat_g, carb_g, logged_at').eq('user_id', userId!)
+        .gte('date', startStr).lte('date', endStr).order('logged_at'),
       supabase.from('activities').select('date, total_kcal').eq('user_id', userId!)
         .gte('date', `${startStr}T00:00:00`).lte('date', `${endStr}T23:59:59`)
         .not('total_kcal', 'is', null),
@@ -866,12 +1029,21 @@ function HistoryView({ userId }: { userId: string | null }) {
     const baseline: number | null = profileRes.data?.daily_kcal_target ?? null
     setHideCalories(profileRes.data?.hide_calories ?? false)
     const foodByDate: Record<string, { kcal: number; protein: number; fat: number; carb: number }> = {}
+    const itemsByDate: Record<string, DayItem[]> = {}
     for (const row of (foodRes.data ?? [])) {
       if (!foodByDate[row.date]) foodByDate[row.date] = { kcal: 0, protein: 0, fat: 0, carb: 0 }
       foodByDate[row.date].kcal += row.kcal
       foodByDate[row.date].protein += row.protein_g ?? 0
       foodByDate[row.date].fat += row.fat_g ?? 0
       foodByDate[row.date].carb += row.carb_g ?? 0
+      if (!itemsByDate[row.date]) itemsByDate[row.date] = []
+      itemsByDate[row.date].push({
+        name: row.name,
+        kcal: row.kcal,
+        protein_g: row.protein_g ?? null,
+        fat_g: row.fat_g ?? null,
+        carb_g: row.carb_g ?? null,
+      })
     }
     const burnedByDate: Record<string, number> = {}
     for (const row of (actsRes.data ?? [])) {
@@ -889,6 +1061,7 @@ function HistoryView({ userId }: { userId: string | null }) {
         protein_g: Math.round((fd?.protein ?? 0) * 10) / 10,
         fat_g: Math.round((fd?.fat ?? 0) * 10) / 10,
         carb_g: Math.round((fd?.carb ?? 0) * 10) / 10,
+        items: itemsByDate[day.dateStr] ?? [],
       }
     })
     setDays(result)
@@ -1047,6 +1220,13 @@ function HistoryView({ userId }: { userId: string | null }) {
             </View>
           )}
 
+          {/* Bar chart */}
+          {days.length > 0 && days.length <= 31 && (
+            <View style={hv.chartContainer}>
+              <KcalBarChart days={days} />
+            </View>
+          )}
+
           {/* Day rows — flat for week/month/year, grouped by month for total/custom */}
           {isFixed && days.length > 0 && (
             <View style={hv.daysCard}>
@@ -1154,11 +1334,19 @@ const hv = StyleSheet.create({
   dayMacroDot: { fontSize: 11, color: C.text3 },
   statusCol: { width: 22, alignItems: 'center' },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
+  chartContainer: { backgroundColor: C.surface, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: C.border, alignItems: 'center', overflow: 'hidden' },
   loadMoreBtn: { padding: 14, borderRadius: 10, backgroundColor: C.surface2, alignItems: 'center', borderWidth: 1, borderColor: C.border },
   loadMoreText: { fontSize: 14, color: C.text2, fontWeight: '600' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 4 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendText: { fontSize: 11, color: C.text3 },
+  itemsList: { marginTop: 8, borderTopWidth: 1, borderTopColor: C.divider, paddingTop: 6 },
+  itemRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingVertical: 5, gap: 8 },
+  itemRowBorder: { borderTopWidth: 1, borderTopColor: C.divider },
+  itemName: { flex: 1, fontSize: 12, color: C.text2, fontWeight: '500' },
+  itemRight: { alignItems: 'flex-end', gap: 1 },
+  itemKcal: { fontSize: 12, fontWeight: '700', color: C.text1 },
+  itemMacros: { fontSize: 10, color: C.text3 },
   emptyNote: { fontSize: 13, color: C.text3, textAlign: 'center', paddingVertical: 24, fontStyle: 'italic' },
   modalOverlay: { flex: 1, backgroundColor: C.overlay, justifyContent: 'flex-end' },
   dropdownSheet: {

@@ -613,61 +613,87 @@ export default function TodayScreen() {
           {meals.length > 0 && (
             <View style={st.card}>
               <Text style={st.cardTitle}>Food log</Text>
-              {meals.map(meal => {
-                const presets = presetsMap[meal.meal_index] ?? []
-                const mealLogs = logs.filter(l => l.meal_index === meal.meal_index)
-                const mealKcal = mealLogs.reduce((s, l) => s + l.kcal, 0)
+              {(() => {
+                const remainingKcal = (totalTarget != null && consumedKcal != null) ? totalTarget - consumedKcal : null
+                const uncheckedMeals = meals.filter(m => !m.checked)
+                const suggestedPerMeal = (!hideCalories && remainingKcal != null && remainingKcal > 0 && uncheckedMeals.length > 0)
+                  ? Math.round(remainingKcal / uncheckedMeals.length)
+                  : null
                 return (
-                  <View key={meal.meal_index} style={[st.mealCard, meal.checked && st.mealCardChecked]}>
-                    <Pressable style={st.mealCardHeader} onPress={() => toggleMealCheck(meal)}>
-                      <View>
-                        <Text style={st.mealName}>{meal.name}</Text>
-                        <Text style={st.mealTime}>{meal.scheduled_time}{!hideCalories && meal.kcal ? ` · ${meal.kcal} kcal` : ''}</Text>
+                  <>
+                    {suggestedPerMeal != null && (
+                      <View style={st.mealSuggestionBanner}>
+                        <Text style={st.mealSuggestionText}>
+                          <Text style={{ fontWeight: '700' }}>{Math.round(remainingKcal!)} kcal</Text>
+                          {` remaining across ${uncheckedMeals.length} meal${uncheckedMeals.length !== 1 ? 's' : ''} — ~${suggestedPerMeal} per meal`}
+                        </Text>
                       </View>
-                      <View style={st.mealHeaderRight}>
-                        {mealKcal > 0 && !hideCalories && <Text style={st.mealKcalBadge}>{mealKcal} kcal</Text>}
-                        <View style={[st.checkCircle, meal.checked && st.checkCircleActive]}>
-                          {meal.checked && <Ionicons name="checkmark" size={14} color="#fff" />}
+                    )}
+                    {meals.map(meal => {
+                      const presets = presetsMap[meal.meal_index] ?? []
+                      const mealLogs = logs.filter(l => l.meal_index === meal.meal_index)
+                      const mealKcal = mealLogs.reduce((s, l) => s + l.kcal, 0)
+                      const kcalDisplay = !hideCalories
+                        ? !meal.checked && suggestedPerMeal != null
+                          ? meal.kcal
+                            ? ` · ${meal.kcal} kcal  (~${suggestedPerMeal} today)`
+                            : ` · ~${suggestedPerMeal} kcal`
+                          : meal.kcal ? ` · ${meal.kcal} kcal` : ''
+                        : ''
+                      return (
+                        <View key={meal.meal_index} style={[st.mealCard, meal.checked && st.mealCardChecked]}>
+                          <Pressable style={st.mealCardHeader} onPress={() => toggleMealCheck(meal)}>
+                            <View>
+                              <Text style={st.mealName}>{meal.name}</Text>
+                              <Text style={st.mealTime}>{meal.scheduled_time}{kcalDisplay}</Text>
+                            </View>
+                            <View style={st.mealHeaderRight}>
+                              {mealKcal > 0 && !hideCalories && <Text style={st.mealKcalBadge}>{mealKcal} kcal</Text>}
+                              <View style={[st.checkCircle, meal.checked && st.checkCircleActive]}>
+                                {meal.checked && <Ionicons name="checkmark" size={14} color="#fff" />}
+                              </View>
+                            </View>
+                          </Pressable>
+
+                          {mealLogs.map(log => (
+                            <View key={log.id} style={st.mealLogRow}>
+                              <Text style={st.mealLogName} numberOfLines={1}>{log.name}</Text>
+                              {!hideCalories && <Text style={st.mealLogKcal}>{log.kcal} kcal</Text>}
+                              <Pressable onPress={() => deleteLog(log.id)} hitSlop={8}>
+                                <Ionicons name="close-outline" size={16} color={C.text3} />
+                              </Pressable>
+                            </View>
+                          ))}
+
+                          <View style={st.mealActions}>
+                            {presets.length > 0 && (
+                              <Pressable style={st.mealActionBtn} onPress={() => setPickerMeal(meal)}>
+                                <Ionicons name="bookmark-outline" size={13} color={C.accent} />
+                                <Text style={st.mealActionText}>Preset</Text>
+                              </Pressable>
+                            )}
+                            <Pressable style={[st.mealActionBtn, st.mealActionBtnCoral]} onPress={() => { setFoodLoggerMealIndex(meal.meal_index); setShowFoodLogger(true) }}>
+                              <Ionicons name="add-outline" size={13} color={C.accent2} />
+                              <Text style={[st.mealActionText, { color: C.accent2 }]}>Add food</Text>
+                            </Pressable>
+                          </View>
                         </View>
-                      </View>
-                    </Pressable>
-
-                    {mealLogs.map(log => (
-                      <View key={log.id} style={st.mealLogRow}>
-                        <Text style={st.mealLogName} numberOfLines={1}>{log.name}</Text>
-                        {!hideCalories && <Text style={st.mealLogKcal}>{log.kcal} kcal</Text>}
-                        <Pressable onPress={() => deleteLog(log.id)} hitSlop={8}>
-                          <Ionicons name="close-outline" size={16} color={C.text3} />
-                        </Pressable>
-                      </View>
-                    ))}
-
-                    <View style={st.mealActions}>
-                      {presets.length > 0 && (
-                        <Pressable style={st.mealActionBtn} onPress={() => setPickerMeal(meal)}>
-                          <Ionicons name="bookmark-outline" size={13} color={C.accent} />
-                          <Text style={st.mealActionText}>Preset</Text>
-                        </Pressable>
-                      )}
-                      <Pressable style={[st.mealActionBtn, st.mealActionBtnCoral]} onPress={() => { setFoodLoggerMealIndex(meal.meal_index); setShowFoodLogger(true) }}>
-                        <Ionicons name="add-outline" size={13} color={C.accent2} />
-                        <Text style={[st.mealActionText, { color: C.accent2 }]}>Add food</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                )
-              })}
-              {!hideCalories && (() => {
-                const target = totalTarget
-                const totalLogged = logs.filter(l => l.meal_index != null).reduce((s, l) => s + l.kcal, 0)
-                if (target == null && totalLogged === 0) return null
-                return (
-                  <View style={st.mealSummaryRow}>
-                    <Text style={st.mealSummaryLabel}>Total</Text>
-                    <Text style={st.mealSummaryValue}>
-                      {totalLogged > 0 ? `${totalLogged} / ` : ''}{target != null ? `${target} kcal` : `${totalLogged} kcal`}
-                    </Text>
-                  </View>
+                      )
+                    })}
+                    {!hideCalories && (() => {
+                      const target = totalTarget
+                      const totalLogged = logs.filter(l => l.meal_index != null).reduce((s, l) => s + l.kcal, 0)
+                      if (target == null && totalLogged === 0) return null
+                      return (
+                        <View style={st.mealSummaryRow}>
+                          <Text style={st.mealSummaryLabel}>Total</Text>
+                          <Text style={st.mealSummaryValue}>
+                            {totalLogged > 0 ? `${totalLogged} / ` : ''}{target != null ? `${target} kcal` : `${totalLogged} kcal`}
+                          </Text>
+                        </View>
+                      )
+                    })()}
+                  </>
                 )
               })()}
             </View>
@@ -2047,6 +2073,8 @@ const st = StyleSheet.create({
   mealActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: C.surface2 },
   mealActionBtnCoral: { backgroundColor: C.accent2Bg },
   mealActionText: { fontSize: 12, fontWeight: '600', color: C.accent },
+  mealSuggestionBanner: { backgroundColor: C.accentBg, borderRadius: 10, padding: 10, marginBottom: 8 },
+  mealSuggestionText: { fontSize: 13, color: C.text2, lineHeight: 18 },
   mealSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, marginTop: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider },
   mealSummaryLabel: { fontSize: 13, fontWeight: '700', color: C.text2 },
   mealSummaryValue: { fontSize: 13, fontWeight: '700', color: C.accent },
