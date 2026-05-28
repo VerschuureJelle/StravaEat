@@ -232,6 +232,10 @@ export default function PlannerScreen() {
   const [todayPlans, setTodayPlans] = useState<PlannedWorkout[]>([])
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null)
 
+  // Week overview
+  const [weekActivities, setWeekActivities] = useState<{ type: string; date: string }[]>([])
+  const [weekPlans, setWeekPlans] = useState<{ sport_type: string; planned_for: string; status: string | null; is_key: boolean }[]>([])
+
   const [mode, setMode] = useState<PlannerMode>('build')
 
   // build mode
@@ -400,6 +404,18 @@ export default function PlannerScreen() {
     }
     setAvgSpeedBySport(speedMap)
     setHasActivityData((activitiesRes.data ?? []).length > 0)
+
+    // Week overview data
+    const now = new Date()
+    const daysFromMonday = (now.getDay() + 6) % 7
+    const weekStart = new Date(now.getTime() - daysFromMonday * 86400000).toISOString().split('T')[0]
+    const weekEnd = new Date(now.getTime() + (6 - daysFromMonday) * 86400000).toISOString().split('T')[0]
+    const [weekActsRes, weekPlansRes] = await Promise.all([
+      supabase.from('activities').select('type, date').eq('user_id', user.id).gte('date', weekStart).lte('date', weekEnd),
+      supabase.from('planned_workouts').select('sport_type, planned_for, status, is_key').eq('user_id', user.id).gte('planned_for', weekStart).lte('planned_for', weekEnd),
+    ])
+    setWeekActivities(weekActsRes.data ?? [])
+    setWeekPlans(weekPlansRes.data ?? [])
 
     const prog = programRes.data as TrainingProgram | null
     setActiveProgram(prog)
@@ -874,6 +890,7 @@ export default function PlannerScreen() {
         </View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
+        <WeekBar activities={weekActivities} plans={weekPlans} />
         <Text style={st.screenTitle}>Workout Planner</Text>
 
         {/* Today's plan */}
@@ -1837,6 +1854,87 @@ export default function PlannerScreen() {
     </SafeAreaView>
   )
 }
+
+// ─── Week overview bar ─────────────────────────────────────────────────────
+
+const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+
+function WeekBar({
+  activities,
+  plans,
+}: {
+  activities: { type: string; date: string }[]
+  plans: { sport_type: string; planned_for: string; status: string | null; is_key: boolean }[]
+}) {
+  const today = new Date()
+  const todayStr = today.toISOString().split('T')[0]
+  const daysFromMonday = (today.getDay() + 6) % 7
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today.getTime() + (i - daysFromMonday) * 86400000)
+    const dateStr = d.toISOString().split('T')[0]
+    return {
+      label: DAY_LABELS[i],
+      date: d.getDate(),
+      dateStr,
+      isToday: dateStr === todayStr,
+      acts: activities.filter(a => a.date.slice(0, 10) === dateStr),
+      plans: plans.filter(p => p.planned_for === dateStr),
+    }
+  })
+
+  return (
+    <View style={wb.container}>
+      {days.map((day, i) => {
+        const act = day.acts[0]
+        const activePlan = day.plans.find(p => p.status !== 'skipped')
+        const skipped = !act && !activePlan && day.plans.some(p => p.status === 'skipped')
+        const sport = act?.type ?? activePlan?.sport_type ?? null
+        const color = sport ? getSportColor(sport) : null
+
+        return (
+          <View key={i} style={wb.cell}>
+            <Text style={[wb.dayLabel, day.isToday && { color: C.accent }]}>{day.label}</Text>
+            <View style={[wb.dateCircle, day.isToday && { backgroundColor: C.accent }]}>
+              <Text style={[wb.dateNum, day.isToday && wb.dateNumToday]}>{day.date}</Text>
+            </View>
+            {act && color ? (
+              <View style={[wb.dot, { backgroundColor: color }]}>
+                <Text style={wb.dotLetter}>{sport![0].toUpperCase()}</Text>
+              </View>
+            ) : activePlan && color ? (
+              <View style={[wb.dotOutline, { borderColor: color }]}>
+                <Text style={[wb.dotLetter, { color }]}>{sport![0].toUpperCase()}</Text>
+              </View>
+            ) : skipped ? (
+              <Text style={wb.dotSkipped}>✗</Text>
+            ) : (
+              <View style={wb.dotEmpty} />
+            )}
+          </View>
+        )
+      })}
+    </View>
+  )
+}
+
+const wb = StyleSheet.create({
+  container: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    backgroundColor: C.surface2, borderRadius: 14, padding: 12,
+    marginBottom: 20, borderWidth: 1, borderColor: C.border,
+  },
+  cell: { alignItems: 'center', gap: 3, flex: 1 },
+  dayLabel: { fontSize: 10, fontWeight: '600', color: C.text3, textTransform: 'uppercase' },
+  dateCircle: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  dateNum: { fontSize: 12, fontWeight: '600', color: C.text2 },
+  dateNumToday: { color: '#fff', fontWeight: '800' },
+  dot: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  dotOutline: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  dotEmpty: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.border, marginTop: 9 },
+  dotLetter: { fontSize: 9, fontWeight: '800', color: '#fff' },
+  dotSkipped: { fontSize: 12, color: '#EF5350', marginTop: 4 },
+})
 
 // ─── styles ────────────────────────────────────────────────────────────────
 

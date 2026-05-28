@@ -182,6 +182,8 @@ export interface PlannedWorkout {
   created_at: string
   distance_m: number | null
   workout_description: string | null
+  status: 'completed' | 'skipped' | null
+  is_key: boolean
 }
 
 export interface UserSport {
