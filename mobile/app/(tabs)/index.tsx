@@ -390,7 +390,7 @@ export default function ActivitiesScreen() {
   function deleteActivity(id: string) {
     Alert.alert(
       'Remove activity?',
-      'It will be removed from StravaEat. It will reappear on your next Strava sync.',
+      'It will be removed from StravaEat. If it is among your 40 most recent Strava activities, it will reappear on your next sync.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

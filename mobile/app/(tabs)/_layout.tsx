@@ -14,7 +14,14 @@ export default function TabsLayout() {
         name="today"
         options={{
           title: 'Today',
-          tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="sunny-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="planner"
+        options={{
+          title: 'Planner',
+          tabBarIcon: ({ color, size }) => <Ionicons name="barbell-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -25,16 +32,21 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="nutrition"
+        options={{
+          title: 'Food log',
+          tabBarIcon: ({ color, size }) => <Ionicons name="bar-chart-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
           tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
         }}
       />
-      <Tabs.Screen name="nutrition" options={{ href: null }} />
       <Tabs.Screen name="calendar" options={{ href: null }} />
       <Tabs.Screen name="home" options={{ href: null }} />
-      <Tabs.Screen name="planner" options={{ href: null }} />
       <Tabs.Screen name="coach" options={{ href: null }} />
       <Tabs.Screen name="meals" options={{ href: null }} />
       <Tabs.Screen name="zones" options={{ href: null }} />
