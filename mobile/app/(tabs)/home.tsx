@@ -866,7 +866,7 @@ function PlannedWorkoutList({ workouts, fuelingSettings, onPeriod, periodSeverit
               <Text style={pw.sport}>{w.sport_type}</Text>
               {isAI && (
                 <View style={[pw.aiBadge, { backgroundColor: C.accent2Bg }]}>
-                  <Text style={[pw.aiBadgeText, { color: C.accent2 }]}>AI Coach</Text>
+                  <Text style={[pw.aiBadgeText, { color: C.accent2 }]}>Coach</Text>
                 </View>
               )}
               {periodAdj && (

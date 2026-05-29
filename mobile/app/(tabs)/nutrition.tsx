@@ -929,7 +929,7 @@ function DayRow({ day, last, hideCalories, expanded, onPress }: {
           <View style={[hv.barFill, { width: `${fillPct}%` as any, backgroundColor: barColor }]} />
           {isOver && <View style={[hv.barOverflow, { backgroundColor: C.danger }]} />}
         </View>
-        {!hideCalories && (
+        {!hideCalories ? (
           <>
             <View style={hv.dayNumbers}>
               <Text style={[hv.dayConsumed, (day.isFuture || day.consumed === 0) && { color: C.text3 }]}>
@@ -972,6 +972,12 @@ function DayRow({ day, last, hideCalories, expanded, onPress }: {
               </>
             )}
           </>
+        ) : (
+          !day.isFuture && day.consumed > 0 ? (
+            <Text style={[hv.hideCalStatus, { color: (isMet || isOver) ? C.success : C.warning }]}>
+              {(isMet || isOver) ? 'You reached your minimum' : 'You did not reach your minimum'}
+            </Text>
+          ) : null
         )}
       </View>
       <View style={hv.statusCol}>
@@ -1327,6 +1333,7 @@ const hv = StyleSheet.create({
   barFill: { height: 7, borderRadius: 4 },
   barOverflow: { position: 'absolute', right: 0, top: 0, width: 4, height: 7, borderRadius: 2 },
   dayNumbers: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
+  hideCalStatus: { fontSize: 11, fontWeight: '700', marginTop: 3 },
   dayConsumed: { fontSize: 13, fontWeight: '700', color: C.text1 },
   dayTarget: { fontSize: 11, color: C.text3 },
   dayMacros: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },

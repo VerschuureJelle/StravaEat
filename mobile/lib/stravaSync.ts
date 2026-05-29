@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
-const COOLDOWN_MS = 3 * 60 * 1000  // 3 minutes between syncs
+const COOLDOWN_MS = 60 * 1000  // 1 minute between syncs (server has its own 20s dedup)
 
 let _lastSyncAt = 0
 let _inFlight = false

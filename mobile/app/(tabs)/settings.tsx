@@ -18,6 +18,7 @@ import { W as C } from '../../lib/themeWarm'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import { SEVERITY_LABELS, SEVERITY_DESCRIPTIONS } from '../../lib/periodConfig'
 import type { UserProfile, HeartRateZone, MealTemplate, MealPreset, MealPresetItem, UserSport, PeriodSeverity } from '../../types'
+import { getCreditBalance } from '../../lib/purchases'
 import FoodPickerModal from '../../components/FoodPickerModal'
 import IngredientPickerModal from '../../components/IngredientPickerModal'
 import type { IngredientPickResult } from '../../components/IngredientPickerModal'
@@ -75,6 +76,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets()
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile')
   const [userId, setUserId] = useState<string | null>(null)
+  const [creditBalance, setCreditBalance] = useState<number | null>(null)
 
   // Profile
   const [savedProfile, setSavedProfile] = useState<Partial<UserProfile>>({})
@@ -96,6 +98,7 @@ export default function SettingsScreen() {
   // Planner sports
   const [userSports, setUserSports] = useState<UserSport[]>([])
   const [newSportInput, setNewSportInput] = useState('')
+  const [newZoneSportInput, setNewZoneSportInput] = useState('')
 
   // Derived: union of Strava activity types + planner sports — auto-updates on either change
   const activitySports = useMemo(() =>
@@ -160,6 +163,7 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     load()
+    getCreditBalance().then(setCreditBalance)
     isAppleCalConnected().then(setAppleCalConnected)
     const stravaListener = Linking.addEventListener('url', handleStravaDeepLink)
     const calListener = Linking.addEventListener('url', handleCalendarDeepLink)
@@ -465,6 +469,26 @@ export default function SettingsScreen() {
     if (error) { Alert.alert('Error', error.message); return }
     setUserSports(prev => prev.some(s => s.id === (data as UserSport).id) ? prev : [...prev, data as UserSport])
     setNewSportInput('')
+  }
+
+  async function addAndCustomizeSport(name: string) {
+    const trimmed = name.trim()
+    if (!userId || !trimmed) return
+    // Add to user_sports if not already tracked via Strava or planner
+    const alreadyKnown = activitySports.some(s => s.toLowerCase() === trimmed.toLowerCase())
+    if (!alreadyKnown) {
+      const { data, error } = await supabase.from('user_sports')
+        .upsert({ user_id: userId, sport_name: trimmed, sort_order: userSports.length }, { onConflict: 'user_id,sport_name' })
+        .select().single()
+      if (error) { Alert.alert('Error', error.message); return }
+      setUserSports(prev => prev.some(s => s.id === (data as UserSport).id) ? prev : [...prev, data as UserSport])
+    }
+    // Find correct casing from activitySports if already known
+    const canonical = activitySports.find(s => s.toLowerCase() === trimmed.toLowerCase()) ?? trimmed
+    setSelectedZoneSport(canonical)
+    const hasZones = allZones.some(z => (z.sport_type ?? 'default') === canonical)
+    if (!hasZones) await customizeSportZones(canonical)
+    setNewZoneSportInput('')
   }
 
   async function removePlannerSport(id: string) {
@@ -1203,6 +1227,28 @@ export default function SettingsScreen() {
             </View>
 
 
+            {/* ── AI Credits ──────────────────────────────────── */}
+            <View style={styles.creditsCard}>
+              <View style={styles.creditsRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.creditsLabel}>Coach credits</Text>
+                  <Text style={styles.creditsBalance}>
+                    {creditBalance == null ? '—' : creditBalance} remaining
+                  </Text>
+                </View>
+                <Pressable
+                  style={styles.creditsBtn}
+                  onPress={() => router.push('/(tabs)/paywall')}
+                >
+                  <Ionicons name="sparkles-outline" size={14} color={C.accent} />
+                  <Text style={styles.creditsBtnText}>Get more</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.creditsNote}>
+                Each Coach response costs 1 credit. New users receive {process.env.EXPO_PUBLIC_CREDITS_SIGNUP ?? '10'} free credits.
+              </Text>
+            </View>
+
             <Pressable style={styles.signOutBtn} onPress={async () => {
               if (userId) {
                 await supabase.from('users').update({ push_token: null }).eq('id', userId)
@@ -1244,11 +1290,33 @@ export default function SettingsScreen() {
                 </Pressable>
               ))}
             </ScrollView>
-            {activitySports.length === 0 && (
-              <Text style={styles.zoneSportHint}>
-                No sports yet — add them in the Planner sports section below ↓
-              </Text>
-            )}
+            {/* Add sport for zones */}
+            <View style={styles.addZoneSportSection}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
+                  {COMMON_SPORTS.filter(s => !activitySports.some(a => a.toLowerCase() === s.toLowerCase())).map(s => (
+                    <Pressable key={s} style={styles.presetChip} onPress={() => addAndCustomizeSport(s)}>
+                      <Ionicons name="add" size={13} color={C.accent} />
+                      <Text style={styles.presetChipText}>{s}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </ScrollView>
+              <View style={styles.addSportRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                  value={newZoneSportInput}
+                  onChangeText={setNewZoneSportInput}
+                  placeholder="Custom sport…"
+                  placeholderTextColor={C.text3}
+                  returnKeyType="done"
+                  onSubmitEditing={() => addAndCustomizeSport(newZoneSportInput)}
+                />
+                <Pressable style={styles.addSportBtn} onPress={() => addAndCustomizeSport(newZoneSportInput)}>
+                  <Text style={styles.addSportBtnText}>Add</Text>
+                </Pressable>
+              </View>
+            </View>
 
             {displayedZones.length > 0 ? (
               <>
@@ -1291,7 +1359,7 @@ export default function SettingsScreen() {
               <>
                 <Text style={[styles.sectionHeader, { marginTop: 32 }]}>Energy method per sport</Text>
                 <Text style={styles.sectionNote}>
-                  Standard uses MET × weight. Custom uses your own HR → kcal/hr schema per sport (enter any HR values you like). "Same as" shares another sport's schema.
+                  Here you can customise your heart rate zones and energy expenditure to get a more accurate estimate of your daily caloric needs.
                 </Text>
 
                 {activitySports.map(sport => {
@@ -2224,6 +2292,14 @@ const styles = StyleSheet.create({
   signOutBtn: { padding: 20, alignItems: 'center' },
   signOutText: { color: C.text3, fontSize: 14 },
 
+  creditsCard: { borderWidth: 1, borderColor: C.border, borderRadius: 14, padding: 14, marginTop: 16, marginBottom: 4 },
+  creditsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  creditsLabel: { fontSize: 13, fontWeight: '700', color: C.text1 },
+  creditsBalance: { fontSize: 22, fontWeight: '800', color: C.accent, marginTop: 2 },
+  creditsBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.accentBg, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
+  creditsBtnText: { fontSize: 13, fontWeight: '700', color: C.accent },
+  creditsNote: { fontSize: 11, color: C.text3, lineHeight: 16 },
+
   // Zone cards
   zoneSportRow: { paddingHorizontal: 0, paddingVertical: 10, gap: 8, flexDirection: 'row' },
   zoneSportPill: {
@@ -2234,6 +2310,7 @@ const styles = StyleSheet.create({
   zoneSportPillText: { fontSize: 13, fontWeight: '600', color: C.text2 },
   zoneSportPillTextActive: { color: C.white },
   zoneSportHint: { fontSize: 12, color: C.text3, marginTop: 8, marginBottom: 4 },
+  addZoneSportSection: { marginTop: 4, marginBottom: 12 },
   noZonesBox: { paddingVertical: 16, gap: 12, alignItems: 'flex-start' },
   customizeZonesBtn: {
     backgroundColor: C.accentBg, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9,

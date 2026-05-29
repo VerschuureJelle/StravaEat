@@ -293,7 +293,7 @@ export default function ActivitiesScreen() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
-  const [syncBanner, setSyncBanner] = useState<{ count: number } | null>(null)
+  const [syncBanner, setSyncBanner] = useState<{ count: number; type?: 'cooldown' } | null>(null)
   const [period, setPeriod] = useState<Period>('total')
   const [anchor, setAnchor] = useState(new Date())
   const [monthsBack, setMonthsBack] = useState(5)
@@ -345,7 +345,11 @@ export default function ActivitiesScreen() {
     try {
       const result = await callSyncRecent()
       if (!result.ok) {
-        if ('skipped' in result) return
+        if ('skipped' in result) {
+          setSyncBanner({ count: 0, type: 'cooldown' })
+          setTimeout(() => setSyncBanner(null), 3000)
+          return
+        }
         if (result.error === 'strava_not_connected') {
           Alert.alert('Strava not connected', 'Link your Strava account via the Settings tab.')
           return
@@ -492,16 +496,18 @@ export default function ActivitiesScreen() {
       )}
 
       {syncBanner && (
-        <View style={[st.syncBanner, syncBanner.count === 0 && st.syncBannerNeutral]}>
+        <View style={[st.syncBanner, (syncBanner.count === 0) && st.syncBannerNeutral]}>
           <Ionicons
-            name={syncBanner.count === 0 ? 'checkmark-circle-outline' : 'cloud-download-outline'}
+            name={syncBanner.type === 'cooldown' ? 'time-outline' : syncBanner.count === 0 ? 'checkmark-circle-outline' : 'cloud-download-outline'}
             size={16}
-            color={syncBanner.count === 0 ? C.text2 : C.accent}
+            color={syncBanner.type === 'cooldown' ? C.text2 : syncBanner.count === 0 ? C.text2 : C.accent}
           />
-          <Text style={[st.syncBannerText, syncBanner.count === 0 && st.syncBannerTextNeutral]}>
-            {syncBanner.count === 0
-              ? 'You are completely up to date'
-              : `${syncBanner.count} new ${syncBanner.count === 1 ? 'activity' : 'activities'} synced`}
+          <Text style={[st.syncBannerText, (syncBanner.count === 0) && st.syncBannerTextNeutral]}>
+            {syncBanner.type === 'cooldown'
+              ? 'Please wait a moment before syncing again'
+              : syncBanner.count === 0
+                ? 'You are completely up to date'
+                : `${syncBanner.count} new ${syncBanner.count === 1 ? 'activity' : 'activities'} synced`}
           </Text>
         </View>
       )}
@@ -584,7 +590,9 @@ export default function ActivitiesScreen() {
               <View style={st.cardRight}>
                 {!hideCalories && (a.total_kcal != null
                   ? <><Text style={st.kcal}>{Math.round(a.total_kcal)}</Text><Text style={st.kcalLbl}>kcal</Text></>
-                  : <Text style={st.noData}>—</Text>)}
+                  : a.avg_hr != null
+                    ? <Text style={st.kcalPending}>sync{'\n'}for kcal</Text>
+                    : <Text style={st.noData}>—</Text>)}
                 <Pressable
                   style={st.deleteBtn}
                   onPress={e => { e.stopPropagation?.(); deleteActivity(a.id) }}
@@ -705,6 +713,7 @@ const st = StyleSheet.create({
   kcal: { fontSize: 20, fontWeight: '800', color: C.accent },
   kcalLbl: { fontSize: 11, color: C.accent, fontWeight: '600' },
   noData: { fontSize: 20, color: C.text4, fontWeight: '300' },
+  kcalPending: { fontSize: 10, fontWeight: '600', color: C.accent, textAlign: 'right', lineHeight: 14 },
 
   loadMoreBtn: { margin: 20, padding: 14, borderRadius: 10, backgroundColor: C.surface2, alignItems: 'center' },
   loadMoreText: { fontSize: 14, color: C.text2, fontWeight: '600' },

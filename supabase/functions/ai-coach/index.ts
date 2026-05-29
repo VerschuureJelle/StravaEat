@@ -5,8 +5,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const RATE_LIMIT = 10      // max calls
-const RATE_WINDOW_MS = 60 * 60 * 1000  // per hour
+// Burst protection: max 5 calls per minute (credits handle the overall cap)
+const BURST_LIMIT = 5
+const BURST_WINDOW_MS = 60 * 1000
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -23,19 +24,28 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token)
     if (authError || !user) throw new Error('Unauthorized')
 
-    // Rate limit: max 10 calls per hour per user
-    const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
-    const { count } = await supabase
+    // Burst protection: max 5 calls per minute
+    const burstStart = new Date(Date.now() - BURST_WINDOW_MS).toISOString()
+    const { count: burstCount } = await supabase
       .from('ai_usage_log')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id)
       .eq('function_name', 'ai-coach')
-      .gte('created_at', windowStart)
+      .gte('created_at', burstStart)
 
-    if ((count ?? 0) >= RATE_LIMIT) {
+    if ((burstCount ?? 0) >= BURST_LIMIT) {
       return new Response(
-        JSON.stringify({ error: 'Rate limit exceeded. Maximum 10 AI coach requests per hour.' }),
+        JSON.stringify({ error: 'Too many requests. Please wait a moment.' }),
         { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+
+    // Credit check: deduct 1 credit atomically before calling Anthropic
+    const { data: hasCredits } = await supabase.rpc('deduct_credit', { p_user_id: user.id })
+    if (!hasCredits) {
+      return new Response(
+        JSON.stringify({ error: 'no_credits' }),
+        { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
@@ -157,7 +167,7 @@ ${safePeriodSeverity === 'severe'
       ? '\nIMPORTANT: The athlete is menstruating with minor symptoms. Slightly reduce intensities: Z2 by 20%, Z3 by 30%, Z4 by 40%.'
       : ''}`
 
-    // Log usage before calling Anthropic (counts against limit even on failure)
+    // Log usage for burst tracking (credit already deducted above)
     await supabase.from('ai_usage_log').insert({ user_id: user.id, function_name: 'ai-coach' })
 
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {

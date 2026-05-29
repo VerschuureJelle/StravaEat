@@ -631,7 +631,19 @@ export default function PlannerScreen() {
       }
       setAiResult(res.data as AiResult)
     } catch (e: any) {
-      Alert.alert('Coach error', e?.message ?? 'Could not reach Coach.')
+      const msg: string = e?.message ?? ''
+      if (msg === 'no_credits') {
+        Alert.alert(
+          'No credits remaining',
+          'Get more credits to keep using the Coach.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Get credits', onPress: () => router.push('/(tabs)/paywall') },
+          ],
+        )
+      } else {
+        Alert.alert('Coach error', msg || 'Could not reach Coach.')
+      }
     } finally {
       setAiLoading(false)
     }
@@ -640,7 +652,7 @@ export default function PlannerScreen() {
   async function planFromAIMode() {
     if (!aiResult || !userId) return
     const kcal = aiResult.estimated_kcal
-    if (!kcal) { Alert.alert('No estimate', 'The AI response did not include a kcal estimate.'); return }
+    if (!kcal) { Alert.alert('No estimate', 'The Coach response did not include a kcal estimate.'); return }
     setSaving(true)
     const { data: newWorkout, error } = await supabase.from('planned_workouts').insert({
       user_id: userId,
@@ -653,9 +665,9 @@ export default function PlannerScreen() {
     if (error) { Alert.alert('Error', error.message); return }
     if (newWorkout?.id) {
       supabase.functions.invoke('cal-push-workout', { body: { workout_id: newWorkout.id, action: 'create' } }).catch(() => {})
-      addWorkoutToAppleCal(newWorkout.id, `${selectedSport || 'Workout'} — AI Plan`, localDate(), undefined, preferredWorkoutTime).catch(() => {})
+      addWorkoutToAppleCal(newWorkout.id, `${selectedSport || 'Workout'} — Coach Plan`, localDate(), undefined, preferredWorkoutTime).catch(() => {})
     }
-    Alert.alert('Planned!', "AI workout added to today's plan.")
+    Alert.alert('Planned!', "Coach workout added to today's plan.")
     load()
   }
 
@@ -1245,7 +1257,7 @@ export default function PlannerScreen() {
             <View style={st.aiInfoBox}>
               <Ionicons name="sparkles-outline" size={14} color={C.accent2} />
               <Text style={st.aiInfoText}>
-                Set your goal and duration — the AI Coach will design a workout around your HR zones and historical pace.
+                Set your goal and duration — our coach will design a workout around your HR zones and historical pace.
               </Text>
             </View>
 

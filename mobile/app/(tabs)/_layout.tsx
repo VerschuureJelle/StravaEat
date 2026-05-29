@@ -45,6 +45,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen name="paywall" options={{ href: null }} />
       <Tabs.Screen name="calendar" options={{ href: null }} />
       <Tabs.Screen name="home" options={{ href: null }} />
       <Tabs.Screen name="coach" options={{ href: null }} />
