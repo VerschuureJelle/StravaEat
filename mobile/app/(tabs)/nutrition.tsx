@@ -1468,24 +1468,44 @@ function BarcodeScannerModal({ visible, loading, result, onBarcodeScanned, onApp
                   : <Text style={bs.amountHint}>e.g. one slice</Text>
                 }
               </View>
+              {perPiece && (perPiece.protein_g != null || perPiece.fat_g != null || perPiece.carb_g != null) && (
+                <Text style={bs.macroLine}>
+                  {[
+                    perPiece.protein_g != null ? `P ${perPiece.protein_g}g` : null,
+                    perPiece.fat_g != null ? `F ${perPiece.fat_g}g` : null,
+                    perPiece.carb_g != null ? `C ${perPiece.carb_g}g` : null,
+                  ].filter(Boolean).join(' · ')} per piece
+                </Text>
+              )}
 
               {/* Step 2: piece count — only shown once unit size is valid */}
               {validUnit && (
-                <View style={bs.stepRow}>
-                  <Text style={bs.stepLabel}>Pieces</Text>
-                  <TextInput
-                    style={bs.amountInput}
-                    value={piecesStr}
-                    onChangeText={setPiecesStr}
-                    keyboardType="decimal-pad"
-                    returnKeyType="done"
-                    selectTextOnFocus
-                  />
-                  {totalKcal != null
-                    ? <Text style={bs.amountComputed}>= {totalKcal} kcal</Text>
-                    : <Text style={bs.amountHint}>how many?</Text>
-                  }
-                </View>
+                <>
+                  <View style={bs.stepRow}>
+                    <Text style={bs.stepLabel}>Pieces</Text>
+                    <TextInput
+                      style={bs.amountInput}
+                      value={piecesStr}
+                      onChangeText={setPiecesStr}
+                      keyboardType="decimal-pad"
+                      returnKeyType="done"
+                      selectTextOnFocus
+                    />
+                    {totalKcal != null
+                      ? <Text style={bs.amountComputed}>= {totalKcal} kcal</Text>
+                      : <Text style={bs.amountHint}>how many?</Text>
+                    }
+                  </View>
+                  {totalKcal != null && perPiece && (perPiece.protein_g != null || perPiece.fat_g != null || perPiece.carb_g != null) && (
+                    <Text style={bs.macroLine}>
+                      {[
+                        perPiece.protein_g != null ? `P ${Math.round(perPiece.protein_g * pieces * 10) / 10}g` : null,
+                        perPiece.fat_g != null ? `F ${Math.round(perPiece.fat_g * pieces * 10) / 10}g` : null,
+                        perPiece.carb_g != null ? `C ${Math.round(perPiece.carb_g * pieces * 10) / 10}g` : null,
+                      ].filter(Boolean).join(' · ')} total
+                    </Text>
+                  )}
+                </>
               )}
 
               {/* Save to My Foods */}
@@ -1583,6 +1603,7 @@ const bs = StyleSheet.create({
   },
   amountComputed: { fontSize: 14, fontWeight: '700', color: C.accent },
   amountHint: { fontSize: 13, color: C.text3, fontStyle: 'italic' },
+  macroLine: { fontSize: 12, fontWeight: '600', color: C.text2, paddingLeft: 120 },
   saveFoodRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   saveFoodBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   saveFoodText: { fontSize: 13, fontWeight: '600', color: C.accent2 },
