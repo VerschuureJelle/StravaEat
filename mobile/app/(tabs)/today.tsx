@@ -352,11 +352,12 @@ export default function TodayScreen() {
   async function addFood(name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, mealIndex: number | null = null) {
     if (!userId) return
     const meal = mealIndex != null ? meals.find(m => m.meal_index === mealIndex) : null
-    const { data: inserted } = await supabase.from('food_logs').insert({
+    const { data: inserted, error } = await supabase.from('food_logs').insert({
       user_id: userId, date: todayStr, name, kcal,
       protein_g: protein, fat_g: fat, carb_g: carb,
       meal_index: mealIndex, meal_name: meal?.name ?? null,
     }).select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').single()
+    if (error) { Alert.alert('Error', error.message); return }
     if (inserted) {
       setLogs(prev => [...prev, inserted as FoodLog])
       setConsumedKcal(prev => prev + inserted.kcal)
@@ -431,7 +432,7 @@ export default function TodayScreen() {
     }
   }
 
-  async function logMealBundle(preset: MealPreset) {
+  async function logMealBundle(preset: MealPreset, mealIndex: number | null = null) {
     if (!userId) return
     const items = preset.items ?? []
     if (!items.length) return
@@ -441,14 +442,18 @@ export default function TodayScreen() {
       fat: acc.fat + (it.fat_g ?? 0),
       carb: acc.carb + (it.carb_g ?? 0),
     }), { kcal: 0, protein: 0, fat: 0, carb: 0 })
-    const { data: inserted } = await supabase.from('food_logs').insert({
+    const meal = mealIndex != null ? meals.find(m => m.meal_index === mealIndex) : null
+    const { data: inserted, error } = await supabase.from('food_logs').insert({
       user_id: userId, date: todayStr,
       name: preset.name,
       kcal: total.kcal,
       protein_g: total.protein || null,
       fat_g: total.fat || null,
       carb_g: total.carb || null,
+      meal_index: mealIndex,
+      meal_name: meal?.name ?? null,
     }).select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').single()
+    if (error) { Alert.alert('Error', error.message); return }
     if (inserted) {
       setLogs(prev => [...prev, inserted as FoodLog])
       setConsumedKcal(prev => prev + total.kcal)
@@ -1002,7 +1007,7 @@ export default function TodayScreen() {
         onAdd={async (name, kcal, protein, fat, carb) => {
           await addFood(name, kcal, protein, fat, carb, foodLoggerMealIndex)
         }}
-        onLogPreset={logMealBundle}
+        onLogPreset={(preset) => logMealBundle(preset, foodLoggerMealIndex)}
         onClose={() => { setShowFoodLogger(false); setFoodLoggerMealIndex(null) }}
       />
 
@@ -1603,6 +1608,26 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                         )
                       ) : (
                         <>
+                          {(() => {
+                            const uncategorized = customFoods.filter(f => !f.category)
+                            if (!uncategorized.length) return null
+                            return (
+                              <>
+                                <Text style={loggerSt.sectionLabel}>My Foods</Text>
+                                {uncategorized.map((food, i) => (
+                                  <Pressable
+                                    key={food.id}
+                                    style={[loggerSt.resultRow, i > 0 && loggerSt.resultRowBorder]}
+                                    onPress={() => selectFood(food as any)}
+                                  >
+                                    <Text style={loggerSt.resultName}>{food.name}</Text>
+                                    {!hideCalories && <Text style={loggerSt.resultMeta}>{food.kcal} kcal</Text>}
+                                  </Pressable>
+                                ))}
+                                <Text style={[loggerSt.sectionLabel, { marginTop: 14 }]}>Common foods</Text>
+                              </>
+                            )
+                          })()}
                           {allPresets.length > 0 && (
                             <>
                               <Text style={loggerSt.sectionLabel}>My Meals</Text>
@@ -1619,7 +1644,9 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                                   </Pressable>
                                 )
                               })}
-                              <Text style={[loggerSt.sectionLabel, { marginTop: 14 }]}>Common foods</Text>
+                              {!customFoods.filter(f => !f.category).length && (
+                                <Text style={[loggerSt.sectionLabel, { marginTop: 14 }]}>Common foods</Text>
+                              )}
                             </>
                           )}
                           {COMMON_FOOD_CATEGORIES.map(cat => (
