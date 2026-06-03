@@ -460,6 +460,26 @@ export default function TodayScreen() {
     }
   }
 
+  async function saveCustomFood(name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) {
+    if (!userId) return
+    const { data } = await supabase.from('custom_foods').insert({
+      user_id: userId, name, kcal, protein_g: protein, fat_g: fat, carb_g: carb,
+    }).select('id, name, kcal, protein_g, fat_g, carb_g, amount_label, category').single()
+    if (data) setCustomFoods(prev => [...prev, data as CustomFood])
+  }
+
+  async function savePresetFromFood(name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) {
+    if (!userId) return
+    const { data: preset } = await supabase.from('meal_presets').insert({
+      user_id: userId, name, sort_order: 0,
+    }).select('id').single()
+    if (!preset) return
+    await supabase.from('meal_preset_items').insert({
+      preset_id: preset.id, name, kcal, protein_g: protein, fat_g: fat, carb_g: carb, sort_order: 0,
+    })
+    await refreshPresets(userId)
+  }
+
   async function deleteMealPreset(preset: MealPreset) {
     Alert.alert('Delete meal?', `Remove "${preset.name}"?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -1008,6 +1028,8 @@ export default function TodayScreen() {
           await addFood(name, kcal, protein, fat, carb, mealIdx)
         }}
         onLogPreset={(preset) => logMealBundle(preset, foodLoggerMealIndex)}
+        onSaveToMyFoods={saveCustomFood}
+        onSaveAsPreset={savePresetFromFood}
         onClose={() => { setShowFoodLogger(false); setFoodLoggerMealIndex(null) }}
       />
 
@@ -1300,7 +1322,7 @@ function defaultServingLabel(food: { name: string; amount_label?: string | null 
 
 // ─── Unified food logger ───────────────────────────────────────────────────────
 
-function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods, hideCalories, onAdd, onLogPreset, onClose }: {
+function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods, hideCalories, onAdd, onLogPreset, onSaveToMyFoods, onSaveAsPreset, onClose }: {
   visible: boolean
   mealIndex: number | null
   meals: MealItem[]
@@ -1309,6 +1331,8 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   hideCalories: boolean
   onAdd: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, mealIdx: number | null) => Promise<void>
   onLogPreset: (preset: MealPreset) => Promise<void>
+  onSaveToMyFoods: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) => Promise<void>
+  onSaveAsPreset: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) => Promise<void>
   onClose: () => void
 }) {
   const [tab, setTab] = useState<'search' | 'scan' | 'manual'>('search')
@@ -1331,12 +1355,15 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   const [manualFat, setManualFat] = useState('')
   const [manualCarb, setManualCarb] = useState('')
   const [adding, setAdding] = useState(false)
+  const [saveToMyFoods, setSaveToMyFoods] = useState(false)
+  const [saveAsPreset, setSaveAsPreset] = useState(false)
   const insets = useSafeAreaInsets()
   useEffect(() => {
     if (!visible) {
       setTab('search'); setSearch(''); setPendingFood(null)
       setScannedProduct(null); lastScannedRef.current = null
       setManualName(''); setManualKcal(''); setManualProtein(''); setManualFat(''); setManualCarb('')
+      setSaveToMyFoods(false); setSaveAsPreset(false)
     }
   }, [visible])
 
@@ -1426,16 +1453,19 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   async function submitManual() {
     const k = parseInt(manualKcal)
     if (!manualName.trim() || isNaN(k) || k <= 0) { Alert.alert('Invalid', 'Enter a name and calories.'); return }
+    const name = manualName.trim()
+    const protein = manualProtein ? parseFloat(manualProtein.replace(',', '.')) : null
+    const fat = manualFat ? parseFloat(manualFat.replace(',', '.')) : null
+    const carb = manualCarb ? parseFloat(manualCarb.replace(',', '.')) : null
     setAdding(true)
-    await onAdd(
-      manualName.trim(), k,
-      manualProtein ? parseFloat(manualProtein.replace(',', '.')) : null,
-      manualFat ? parseFloat(manualFat.replace(',', '.')) : null,
-      manualCarb ? parseFloat(manualCarb.replace(',', '.')) : null,
-      mealIndex,
-    )
+    await onAdd(name, k, protein, fat, carb, mealIndex)
+    await Promise.all([
+      saveToMyFoods ? onSaveToMyFoods(name, k, protein, fat, carb) : Promise.resolve(),
+      saveAsPreset  ? onSaveAsPreset(name, k, protein, fat, carb)  : Promise.resolve(),
+    ])
     setAdding(false)
     setManualName(''); setManualKcal(''); setManualProtein(''); setManualFat(''); setManualCarb('')
+    setSaveToMyFoods(false); setSaveAsPreset(false)
     onClose()
   }
 
@@ -1737,6 +1767,20 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                         onChangeText={v => setManualCarb(v.replace(',', '.'))}
                         placeholder="Carbs g" placeholderTextColor={C.text3} keyboardType="decimal-pad"
                         returnKeyType="done" onSubmitEditing={submitManual} />
+                    </View>
+                    <View style={st.saveToggleGroup}>
+                      <Pressable style={st.saveToggleRow} onPress={() => setSaveToMyFoods(v => !v)}>
+                        <View style={[st.saveToggleCheck, saveToMyFoods && st.saveToggleCheckActive]}>
+                          {saveToMyFoods && <Ionicons name="checkmark" size={11} color="#fff" />}
+                        </View>
+                        <Text style={st.saveToggleLabel}>Save to My Foods</Text>
+                      </Pressable>
+                      <Pressable style={st.saveToggleRow} onPress={() => setSaveAsPreset(v => !v)}>
+                        <View style={[st.saveToggleCheck, saveAsPreset && st.saveToggleCheckActive]}>
+                          {saveAsPreset && <Ionicons name="checkmark" size={11} color="#fff" />}
+                        </View>
+                        <Text style={st.saveToggleLabel}>Save as preset</Text>
+                      </Pressable>
                     </View>
                     <Pressable style={[st.addFormBtn, adding && { opacity: 0.6 }]} onPress={submitManual} disabled={adding}>
                       <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
@@ -2508,6 +2552,11 @@ const st = StyleSheet.create({
   addFormMacroInput: { flex: 1, paddingHorizontal: 10 },
   addFormBtn: { backgroundColor: C.accent, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   addFormBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  saveToggleGroup: { gap: 8, marginTop: 4 },
+  saveToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  saveToggleCheck: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface2, alignItems: 'center', justifyContent: 'center' },
+  saveToggleCheckActive: { backgroundColor: C.accent, borderColor: C.accent },
+  saveToggleLabel: { fontSize: 13, color: C.text2 },
   qtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   qtyLabel: { fontSize: 13, color: C.text2, flex: 1 },
   qtyInput: { borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 16, color: C.text1, width: 80, textAlign: 'center', backgroundColor: C.surface2 },
