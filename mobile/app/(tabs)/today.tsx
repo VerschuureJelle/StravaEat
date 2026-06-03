@@ -1004,8 +1004,8 @@ export default function TodayScreen() {
         allPresets={allPresets}
         customFoods={customFoods}
         hideCalories={hideCalories}
-        onAdd={async (name, kcal, protein, fat, carb) => {
-          await addFood(name, kcal, protein, fat, carb, foodLoggerMealIndex)
+        onAdd={async (name, kcal, protein, fat, carb, mealIdx) => {
+          await addFood(name, kcal, protein, fat, carb, mealIdx)
         }}
         onLogPreset={(preset) => logMealBundle(preset, foodLoggerMealIndex)}
         onClose={() => { setShowFoodLogger(false); setFoodLoggerMealIndex(null) }}
@@ -1307,7 +1307,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   allPresets: MealPreset[]
   customFoods: CustomFood[]
   hideCalories: boolean
-  onAdd: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) => Promise<void>
+  onAdd: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, mealIdx: number | null) => Promise<void>
   onLogPreset: (preset: MealPreset) => Promise<void>
   onClose: () => void
 }) {
@@ -1367,7 +1367,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
     const fat = pendingFood.fat_g != null ? Math.round(pendingFood.fat_g * qty * scale * 10) / 10 : null
     const carb = pendingFood.carb_g != null ? Math.round(pendingFood.carb_g * qty * scale * 10) / 10 : null
     setAdding(true)
-    await onAdd(pendingFood.name, kcal, protein, fat, carb)
+    await onAdd(pendingFood.name, kcal, protein, fat, carb, mealIndex)
     setAdding(false)
     setPendingFood(null)
     onClose()
@@ -1416,6 +1416,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
       scannedProduct.proteinPer100g != null ? Math.round(scannedProduct.proteinPer100g * r * 10) / 10 : null,
       scannedProduct.fatPer100g != null ? Math.round(scannedProduct.fatPer100g * r * 10) / 10 : null,
       scannedProduct.carbPer100g != null ? Math.round(scannedProduct.carbPer100g * r * 10) / 10 : null,
+      mealIndex,
     )
     setAdding(false)
     setScannedProduct(null); lastScannedRef.current = null
@@ -1431,6 +1432,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
       manualProtein ? parseFloat(manualProtein.replace(',', '.')) : null,
       manualFat ? parseFloat(manualFat.replace(',', '.')) : null,
       manualCarb ? parseFloat(manualCarb.replace(',', '.')) : null,
+      mealIndex,
     )
     setAdding(false)
     setManualName(''); setManualKcal(''); setManualProtein(''); setManualFat(''); setManualCarb('')

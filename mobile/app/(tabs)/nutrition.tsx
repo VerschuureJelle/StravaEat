@@ -1106,6 +1106,10 @@ function HistoryView({ userId }: { userId: string | null }) {
   }).length
   const n = daysWithData.length
   const avgConsumed = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.consumed, 0) / n) : null
+  const daysWithTarget = daysWithData.filter(d => d.target != null)
+  const avgTarget = daysWithTarget.length > 0
+    ? Math.round(daysWithTarget.reduce((s, d) => s + d.target!, 0) / daysWithTarget.length)
+    : null
   const avgProtein = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.protein_g, 0) / n) : null
   const avgFat     = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.fat_g, 0) / n) : null
   const avgCarb    = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.carb_g, 0) / n) : null
@@ -1192,12 +1196,12 @@ function HistoryView({ userId }: { userId: string | null }) {
                     <View style={hv.summaryDivider} />
                     <View style={hv.summaryItem}>
                       <Text style={hv.summaryNum}>{avgConsumed?.toLocaleString() ?? '—'}</Text>
-                      <Text style={hv.summaryLabel}>avg kcal/day</Text>
+                      <Text style={hv.summaryLabel}>avg eaten/day</Text>
                     </View>
                     <View style={hv.summaryDivider} />
                     <View style={hv.summaryItem}>
-                      <Text style={hv.summaryNum}>{daysWithData.length}</Text>
-                      <Text style={hv.summaryLabel}>days logged</Text>
+                      <Text style={hv.summaryNum}>{avgTarget?.toLocaleString() ?? '—'}</Text>
+                      <Text style={hv.summaryLabel}>avg target/day</Text>
                     </View>
                   </View>
                   {(avgProtein != null || avgFat != null || avgCarb != null) && (
