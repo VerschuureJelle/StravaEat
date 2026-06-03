@@ -43,7 +43,7 @@ const FEEDBACK_DELTAS: Record<1 | 2 | 3 | 4, number> = {
 }
 
 export const FEEDBACK_LABELS: Record<1 | 2 | 3 | 4, string> = {
-  1: 'Much too easy',
+  1: 'too easy',
   2: 'Slightly easy',
   3: 'Slightly hard',
   4: 'Too hard',
