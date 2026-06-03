@@ -3,8 +3,9 @@ import { CameraView, useCameraPermissions } from 'expo-camera'
 import {
   View, Text, TextInput, Pressable, ScrollView,
   StyleSheet, Alert, ActivityIndicator, Modal,
-  Keyboard, KeyboardAvoidingView, Platform, useWindowDimensions,
+  Keyboard, KeyboardAvoidingView, useWindowDimensions,
 } from 'react-native'
+import { KAV_BEHAVIOR } from '../../lib/platform'
 import Svg, { Rect, Line, Text as SvgText } from 'react-native-svg'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
@@ -1430,7 +1431,7 @@ function BarcodeScannerModal({ visible, loading, result, onBarcodeScanned, onApp
 
         <KeyboardAvoidingView
           style={bs.kavWrapper}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={KAV_BEHAVIOR}
         >
         <View style={bs.sheet}>
           {loading && (
@@ -2197,7 +2198,7 @@ function QuickAddQtyModal({
     <Modal visible transparent animationType="slide">
       <KeyboardAvoidingView
         style={qa.kav}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={KAV_BEHAVIOR}
       >
         <Pressable style={StyleSheet.absoluteFillObject} onPress={dismiss} />
 

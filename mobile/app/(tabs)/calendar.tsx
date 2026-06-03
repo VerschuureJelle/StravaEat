@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   View, Text, Pressable, ScrollView, StyleSheet, Modal,
-  ActivityIndicator, RefreshControl, TextInput, Switch, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, RefreshControl, TextInput, Switch, Alert, KeyboardAvoidingView,
 } from 'react-native'
+import { KAV_BEHAVIOR } from '../../lib/platform'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
@@ -520,7 +521,7 @@ export default function CalendarScreen() {
 
           {/* Create event modal */}
           <Modal visible={createModal} transparent animationType="slide" onRequestClose={() => setCreateModal(false)}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            <KeyboardAvoidingView behavior={KAV_BEHAVIOR} style={{ flex: 1 }}>
               <Pressable style={s.backdrop} onPress={() => setCreateModal(false)}>
                 <Pressable style={s.createSheet} onPress={e => e.stopPropagation()}>
                   <View style={s.createHandle} />

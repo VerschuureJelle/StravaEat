@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView,
-  StyleSheet, Alert, useWindowDimensions, KeyboardAvoidingView, Platform,
+  StyleSheet, Alert, useWindowDimensions, KeyboardAvoidingView,
 } from 'react-native'
+import { KAV_BEHAVIOR } from '../../lib/platform'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import Svg, { Polyline, Line, Text as SvgText, Circle } from 'react-native-svg'
@@ -87,7 +88,7 @@ export default function BurnSchemaScreen() {
         <Text style={styles.backText}>Back</Text>
       </Pressable>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={KAV_BEHAVIOR}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Burn schema</Text>
         <Text style={styles.title}>{sport}</Text>

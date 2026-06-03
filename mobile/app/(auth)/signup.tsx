@@ -2,8 +2,9 @@ import { useState } from 'react'
 import {
   View, Text, TextInput, Pressable, StyleSheet,
   ActivityIndicator, Alert, ScrollView,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView,
 } from 'react-native'
+import { KAV_BEHAVIOR_IOS_ONLY, isIOS } from '../../lib/platform'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
@@ -106,8 +107,8 @@ export default function SignUpScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+        behavior={KAV_BEHAVIOR_IOS_ONLY}
+        keyboardVerticalOffset={isIOS ? 60 : 0}
       >
       <ScrollView
         style={{ backgroundColor: C.bg }}

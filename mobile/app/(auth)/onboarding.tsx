@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView } from 'react-native'
+import { KAV_BEHAVIOR_IOS_ONLY } from '../../lib/platform'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import * as Linking from 'expo-linking'
@@ -181,7 +182,7 @@ export default function OnboardingScreen() {
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={KAV_BEHAVIOR_IOS_ONLY}
       >
       <ScrollView
         contentContainerStyle={styles.content}

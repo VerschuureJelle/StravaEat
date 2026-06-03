@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView, Modal,
-  StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
+  StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView,
 } from 'react-native'
+import { KAV_BEHAVIOR } from '../../lib/platform'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
@@ -900,7 +901,7 @@ export default function PlannerScreen() {
           <Text style={st.topBarTitle}>Planner</Text>
           <View style={{ width: 34 }} />
         </View>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={KAV_BEHAVIOR}>
       <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
         <WeekBar activities={weekActivities} plans={weekPlans} />
         <Text style={st.screenTitle}>Workout Planner</Text>

@@ -1,4 +1,5 @@
-import { Platform, NativeModules } from 'react-native'
+import { NativeModules } from 'react-native'
+import { isIOS } from './platform'
 import { supabase } from './supabase'
 
 // react-native-purchases requires native code — not available in Expo Go.
@@ -17,7 +18,7 @@ export const ENTITLEMENT_PRO     = 'pro'
 
 export async function initPurchases(userId: string) {
   if (!Purchases) return
-  const apiKey = Platform.OS === 'ios' ? RC_API_KEY_IOS : RC_API_KEY_ANDROID
+  const apiKey = isIOS ? RC_API_KEY_IOS : RC_API_KEY_ANDROID
   if (!apiKey) return
   Purchases.setLogLevel(RC.LOG_LEVEL.ERROR)
   Purchases.configure({ apiKey })

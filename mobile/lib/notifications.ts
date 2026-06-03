@@ -1,5 +1,5 @@
 import * as Notifications from 'expo-notifications'
-import { Platform } from 'react-native'
+import { isAndroid } from './platform'
 import { supabase } from './supabase'
 
 Notifications.setNotificationHandler({
@@ -26,7 +26,7 @@ export async function registerForNotifications(): Promise<void> {
   }
   if (finalStatus !== 'granted') return
 
-  if (Platform.OS === 'android') {
+  if (isAndroid) {
     await Notifications.setNotificationChannelAsync('default', {
       name: 'StravaEat',
       importance: Notifications.AndroidImportance.HIGH,
@@ -113,7 +113,7 @@ export async function scheduleMealNotifications(
       content: {
         title: `${meal.name} overdue`,
         body: `Your ${meal.name} was scheduled for ${meal.scheduled_time} and hasn't been checked off after ${delayLabel}. Don't forget to eat!`,
-        ...(Platform.OS === 'android' && { channelId: 'meals' }),
+        ...(isAndroid && { channelId: 'meals' }),
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,

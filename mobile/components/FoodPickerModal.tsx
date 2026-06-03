@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Modal, View, Text, TextInput, Pressable, ScrollView,
-  StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView,
 } from 'react-native'
+import { KAV_BEHAVIOR } from '../lib/platform'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../lib/supabase'
@@ -383,7 +384,7 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
                 </View>
 
                 {/* Bottom sheet lifted by keyboard */}
-                <KeyboardAvoidingView style={fp.scanKav} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                <KeyboardAvoidingView style={fp.scanKav} behavior={KAV_BEHAVIOR}>
                 <View style={fp.scanSheet}>
                   {scanLoading && (
                     <View style={fp.scanSheetCenter}>
@@ -481,7 +482,7 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
         const c = computedFromPending()
         const isServing = pendingItem.unit === 'serving'
         return (
-          <KeyboardAvoidingView style={fp.pendingOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <KeyboardAvoidingView style={fp.pendingOverlay} behavior={KAV_BEHAVIOR}>
             <Pressable style={fp.pendingBackdrop} onPress={() => setPendingItem(null)} />
             <View style={fp.pendingSheet}>
               <Text style={fp.pendingName} numberOfLines={2}>{pendingItem.name}</Text>

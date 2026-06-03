@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, Pressable, TextInput,
-  Modal, Alert, Platform, KeyboardAvoidingView, ActivityIndicator, Image,
+  Modal, Alert, KeyboardAvoidingView, ActivityIndicator, Image,
 } from 'react-native'
+import { KAV_BEHAVIOR } from '../../lib/platform'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
@@ -583,7 +584,7 @@ export default function TodayScreen() {
     <SafeAreaView style={st.container} edges={['top']}>
       <AppDrawer>
         {openDrawer => (
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={KAV_BEHAVIOR}>
         <ScrollView contentContainerStyle={st.scroll} keyboardShouldPersistTaps="handled">
 
           {/* ── Top bar ── */}
@@ -1505,7 +1506,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
       ) : (
         <KeyboardAvoidingView
           style={{ flex: 1, backgroundColor: C.surface }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={KAV_BEHAVIOR}
         >
           <View style={{ flex: 1, paddingTop: insets.top }}>
             <View style={[loggerSt.header, { paddingHorizontal: 20, paddingVertical: 16 }]}>
@@ -2101,7 +2102,7 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
                 </Pressable>
               </View>
             ) : scannedProduct ? (
-              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={st.builderScanSheet}>
+              <KeyboardAvoidingView behavior={KAV_BEHAVIOR} style={st.builderScanSheet}>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: C.text1, marginBottom: 4 }}>{scannedProduct.name}</Text>
                 <Text style={{ fontSize: 13, color: C.text3, marginBottom: 16 }}>{scannedProduct.kcalPer100g} kcal per 100g</Text>
                 <View style={st.qtyRow}>
@@ -2171,7 +2172,7 @@ function MealBuilderModal({ visible, userId, customFoods, mealSlots, editPreset,
             )}
           </View>
         ) : (
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={KAV_BEHAVIOR}>
             <ScrollView style={{ flex: 1 }} contentContainerStyle={st.builderScroll} keyboardShouldPersistTaps="handled">
 
               <TextInput

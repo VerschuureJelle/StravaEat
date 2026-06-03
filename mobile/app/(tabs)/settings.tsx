@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView, Image,
-  StyleSheet, Alert, Switch, Modal, InputAccessoryView, Keyboard, Platform, KeyboardAvoidingView,
+  StyleSheet, Alert, Switch, Modal, InputAccessoryView, Keyboard, KeyboardAvoidingView,
 } from 'react-native'
+import { KAV_BEHAVIOR, isIOS } from '../../lib/platform'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
@@ -828,7 +829,7 @@ export default function SettingsScreen() {
         ))}
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={KAV_BEHAVIOR}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
         {/* ── Profile ──────────────────────────────────────── */}
@@ -1737,7 +1738,7 @@ export default function SettingsScreen() {
             <View style={{ width: 22 }} />
           </View>
 
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={KAV_BEHAVIOR}>
           <ScrollView
             contentContainerStyle={styles.editorScroll}
             keyboardShouldPersistTaps="handled"
@@ -1784,7 +1785,7 @@ export default function SettingsScreen() {
                         placeholder="100"
                         placeholderTextColor={C.text3}
                         keyboardType="decimal-pad"
-                        inputAccessoryViewID={Platform.OS === 'ios' ? 'preset-done' : undefined}
+                        inputAccessoryViewID={isIOS ? 'preset-done' : undefined}
                         returnKeyType="done"
                       />
                       <Text style={styles.draftUnitLabel}>g</Text>
@@ -1814,7 +1815,7 @@ export default function SettingsScreen() {
                         placeholder="100"
                         placeholderTextColor={C.text3}
                         keyboardType="decimal-pad"
-                        inputAccessoryViewID={Platform.OS === 'ios' ? 'preset-done' : undefined}
+                        inputAccessoryViewID={isIOS ? 'preset-done' : undefined}
                         returnKeyType="done"
                       />
                       <Text style={styles.draftUnitLabel}>{item.unit || 'g'}</Text>
@@ -1841,7 +1842,7 @@ export default function SettingsScreen() {
                       placeholder="kcal"
                       placeholderTextColor={C.text3}
                       keyboardType="numeric"
-                      inputAccessoryViewID={Platform.OS === 'ios' ? 'preset-done' : undefined}
+                      inputAccessoryViewID={isIOS ? 'preset-done' : undefined}
                       returnKeyType="done"
                     />
                     <Pressable
@@ -1922,7 +1923,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* iOS keyboard Done toolbar */}
-        {Platform.OS === 'ios' && (
+        {isIOS && (
           <InputAccessoryView nativeID="preset-done">
             <View style={styles.keyboardDoneBar}>
               <Pressable onPress={() => Keyboard.dismiss()} style={styles.keyboardDoneBtn}>

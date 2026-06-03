@@ -1,12 +1,12 @@
 import * as Calendar from 'expo-calendar'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { Platform } from 'react-native'
+import { isIOS } from './platform'
 
 const EVENTS_KEY = 'apple_cal_events'
 const CONNECTED_KEY = 'apple_cal_connected'
 
 export async function requestAppleCalPermission(): Promise<boolean> {
-  if (Platform.OS !== 'ios') return false
+  if (!isIOS) return false
   const { status } = await Calendar.requestCalendarPermissionsAsync()
   if (status === 'granted') {
     await AsyncStorage.setItem(CONNECTED_KEY, 'true')
@@ -16,7 +16,7 @@ export async function requestAppleCalPermission(): Promise<boolean> {
 }
 
 export async function isAppleCalConnected(): Promise<boolean> {
-  if (Platform.OS !== 'ios') return false
+  if (!isIOS) return false
   const stored = await AsyncStorage.getItem(CONNECTED_KEY)
   if (stored !== 'true') return false
   const { status } = await Calendar.getCalendarPermissionsAsync()

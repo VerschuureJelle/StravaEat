@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import {
   Modal, View, Text, TextInput, Pressable, FlatList,
-  StyleSheet, KeyboardAvoidingView, Platform, ScrollView,
+  StyleSheet, KeyboardAvoidingView, ScrollView,
 } from 'react-native'
+import { KAV_BEHAVIOR } from '../lib/platform'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../lib/supabase'
@@ -107,7 +108,7 @@ export default function IngredientPickerModal({ visible, userId, onSelect, onClo
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top', 'bottom']}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={KAV_BEHAVIOR}>
 
           {/* Header */}
           <View style={s.header}>
