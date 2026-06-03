@@ -1,9 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// 'production' → claude-opus-4-7  |  'dev' → claude-haiku-4-5-20251001
-const ENVIRONMENT: 'production' | 'dev' = 'production'
-const AI_MODEL = ENVIRONMENT === 'production' ? 'claude-opus-4-7' : 'claude-haiku-4-5-20251001'
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -182,7 +178,7 @@ ${safePeriodSeverity === 'severe'
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: AI_MODEL,
+        model: Deno.env.get('ENVIRONMENT') === 'production' ? 'claude-opus-4-7' : 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         system: systemPrompt,
         // User input is isolated in its own turn, clearly separated from system context
