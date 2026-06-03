@@ -28,11 +28,19 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "GOOGLE_MAPS_API_KEY_PLACEHOLDER"
+        }
+      },
       "permissions": [
+        "android.permission.INTERNET",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
       ]
     },
     "web": {
@@ -44,7 +52,14 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "StravaEat uses your location to show local weather."
+          "locationWhenInUsePermission": "StravaEat uses your location to show local weather.",
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "StravaEat uses the camera to scan food barcodes."
         }
       ],
       [

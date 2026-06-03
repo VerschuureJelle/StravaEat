@@ -8,6 +8,9 @@
       "developmentClient": true,
       "distribution": "internal",
       "channel": "development",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://sgwwvgxdkbeligpycwhx.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNnd3d2Z3hka2JlbGlncHljd2h4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MDkxNDMsImV4cCI6MjA5MzM4NTE0M30.fC8qt2tS0vXcFhoKzQREY0T07nqXyUj4A_vhEFbVwlQ",
