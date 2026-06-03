@@ -76,7 +76,7 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
   const [scanAmount, setScanAmount] = useState('')
   const [saveToMyFoods, setSaveToMyFoods] = useState(false)
   const [saveCategory, setSaveCategory] = useState<string | null>(null)
-  const [showCatPicker, setShowCatPicker] = useState(false)
+
   const lastScannedRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -88,7 +88,7 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
       setScanAmount('')
       setSaveToMyFoods(false)
       setSaveCategory(null)
-      setShowCatPicker(false)
+
       setPendingItem(null)
       lastScannedRef.current = null
     }
@@ -426,7 +426,7 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
 
                       <Pressable
                         style={fp.saveToggle}
-                        onPress={() => { setSaveToMyFoods(v => !v); setShowCatPicker(false); setSaveCategory(null) }}
+                        onPress={() => { setSaveToMyFoods(v => !v); setSaveCategory(null) }}
                       >
                         <View style={[fp.checkbox, saveToMyFoods && fp.checkboxChecked]}>
                           {saveToMyFoods && <Ionicons name="checkmark" size={12} color={C.white} />}

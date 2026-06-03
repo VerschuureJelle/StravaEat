@@ -133,7 +133,7 @@ const dr = StyleSheet.create({
   appName:     { fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: '600', letterSpacing: 1.2, textTransform: 'uppercase' },
   divider:        { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 10 },
   sectionDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginTop: 10, marginBottom: 14 },
-  sectionLabel:   { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.35)', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2 },
+
   navItem:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14 },
   navLabel:    { fontSize: 17, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
   signOut:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 16, marginBottom: 8 },
@@ -144,6 +144,5 @@ const dr = StyleSheet.create({
   langBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.06)' },
   langBtnActive: { borderColor: 'rgba(255,255,255,0.45)', backgroundColor: 'rgba(255,255,255,0.14)' },
   langFlag:    { fontSize: 18 },
-  langLabel:   { fontSize: 13, color: 'rgba(255,255,255,0.5)', fontWeight: '500' },
-  langLabelActive: { color: '#fff', fontWeight: '700' },
+
 })

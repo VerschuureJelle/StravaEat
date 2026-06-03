@@ -155,7 +155,7 @@ export interface Lap {
   total_elevation_gain: number | null
 }
 
-export interface ActivityZoneSplit {
+interface ActivityZoneSplit {
   id: string
   activity_id: string
   zone_id: string
