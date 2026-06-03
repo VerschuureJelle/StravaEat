@@ -40,5 +40,5 @@ yarn-error.*
 /ios
 /android
 
-# Android Firebase config (download from Firebase Console, see google-services.json.example)
-google-services.json
+# google-services.json is intentionally tracked — Firebase API key is public
+# (embedded in the APK anyway). Security comes from Firebase security rules.

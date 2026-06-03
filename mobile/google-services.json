@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "885607297746",
+    "project_id": "stravaeat-d7dad",
+    "storage_bucket": "stravaeat-d7dad.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:885607297746:android:ca02af28cd19dd71d5f30b",
+        "android_client_info": {
+          "package_name": "com.verschuurejelle.stravaeat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAyhZGMh7CPFtKAkjRgphJNSkjVkbO_g3M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
