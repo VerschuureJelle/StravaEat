@@ -63,10 +63,19 @@ export default function TodayScreen() {
 
   // Cycle tracking
   const [cycleLength, setCycleLength] = useState(28)
+  const [periodLength, setPeriodLength] = useState(5)
+  const [cycleType, setCycleType] = useState<'regular' | 'irregular'>('regular')
   const [lastPeriodStart, setLastPeriodStart] = useState<string | null>(null)
   const [showCycleModal, setShowCycleModal] = useState(false)
   const [cycleLengthDraft, setCycleLengthDraft] = useState('28')
-  const [lastPeriodDraft, setLastPeriodDraft] = useState('')
+  const [periodLengthDraft, setPeriodLengthDraft] = useState('5')
+  const [cycleTypeDraft, setCycleTypeDraft] = useState<'regular' | 'irregular'>('regular')
+  // Date fields — DD / MM / YYYY as separate inputs
+  const [dateDd, setDateDd] = useState('')
+  const [dateMm, setDateMm] = useState('')
+  const [dateYyyy, setDateYyyy] = useState('')
+  const dateInputMm = useRef<any>(null)
+  const dateInputYyyy = useRef<any>(null)
 
   // Calories
   const [burnedKcal, setBurnedKcal] = useState(0)
@@ -134,7 +143,7 @@ export default function TodayScreen() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       supabase.from('users')
-        .select('hide_calories, daily_kcal_target, max_kcal_target, meal_notif_delay_min, cycle_length, last_period_start, on_period, period_severity')
+        .select('hide_calories, daily_kcal_target, max_kcal_target, meal_notif_delay_min, cycle_length, period_length, cycle_type, last_period_start, on_period, period_severity')
         .eq('id', user.id).single()
         .then(({ data }) => {
           if (!data) return
@@ -143,6 +152,8 @@ export default function TodayScreen() {
           setMaxKcalTarget(data.max_kcal_target)
           setMealNotifDelayMin(data.meal_notif_delay_min ?? 60)
           setCycleLength(data.cycle_length ?? 28)
+          setPeriodLength(data.period_length ?? 5)
+          setCycleType(data.cycle_type ?? 'regular')
           setLastPeriodStart(data.last_period_start ?? null)
           setOnPeriod(data.on_period ?? false)
           setPeriodSeverity(data.period_severity ?? null)
@@ -159,7 +170,7 @@ export default function TodayScreen() {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
 
     const [profileRes, activitiesRes, plannedRes, logsRes, templatesRes, checksRes, presetsRes, customRes, allPresetsRes] = await Promise.all([
-      supabase.from('users').select('name, avatar_url, sex, daily_kcal_target, max_kcal_target, hide_calories, on_period, period_severity, meal_notif_delay_min, cycle_length, last_period_start').eq('id', user.id).single(),
+      supabase.from('users').select('name, avatar_url, sex, daily_kcal_target, max_kcal_target, hide_calories, on_period, period_severity, meal_notif_delay_min, cycle_length, period_length, cycle_type, last_period_start').eq('id', user.id).single(),
       supabase.from('activities').select('id, name, type, total_kcal').eq('user_id', user.id).gte('date', todayStr).lt('date', tomorrow).not('total_kcal', 'is', null),
       supabase.from('planned_workouts').select('id, sport_type, target_kcal, workout_description, status, is_key').eq('user_id', user.id).eq('planned_for', todayStr),
       supabase.from('food_logs').select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').eq('user_id', user.id).eq('date', todayStr).order('logged_at'),
@@ -181,17 +192,22 @@ export default function TodayScreen() {
       setPeriodSeverity(profileRes.data.period_severity ?? null)
       setMealNotifDelayMin(profileRes.data.meal_notif_delay_min ?? 60)
       const cl = profileRes.data.cycle_length ?? 28
+      const pl = profileRes.data.period_length ?? 5
+      const ct: 'regular' | 'irregular' = profileRes.data.cycle_type ?? 'regular'
       const lps: string | null = profileRes.data.last_period_start ?? null
       setCycleLength(cl)
+      setPeriodLength(pl)
+      setCycleType(ct)
       setLastPeriodStart(lps)
-      // Auto-clear on_period if we're past menstrual phase (day > 5)
+      // Auto-clear on_period if we're past menstrual phase
       const day = lps ? (() => {
         const start = new Date(lps)
         const today = new Date(); today.setHours(0,0,0,0); start.setHours(0,0,0,0)
         const diff = Math.floor((today.getTime() - start.getTime()) / 86400000)
-        return diff >= 0 ? (diff % cl) + 1 : null
+        if (diff < 0) return null
+        return ct === 'regular' ? (diff % cl) + 1 : diff + 1
       })() : null
-      if (day !== null && day > 5 && profileRes.data.on_period) {
+      if (day !== null && day > pl && profileRes.data.on_period) {
         setOnPeriod(false)
         setPeriodSeverity(null)
         supabase.from('users').update({ on_period: false, period_severity: null }).eq('id', user.id)
@@ -516,14 +532,21 @@ export default function TodayScreen() {
     today.setHours(0,0,0,0); start.setHours(0,0,0,0)
     const diff = Math.floor((today.getTime() - start.getTime()) / 86400000)
     if (diff < 0) return null
+    if (cycleType === 'irregular') return diff + 1
     return (diff % cycleLength) + 1
   }
 
   function getCyclePhase(day: number): { label: string; color: string; description: string } {
-    if (day <= 5)  return { label: 'Menstrual',  color: '#E91E8C', description: 'Period phase' }
-    if (day <= 13) return { label: 'Follicular', color: '#66BB6A', description: 'Energy rising' }
-    if (day <= 15) return { label: 'Ovulation',  color: '#FFCA28', description: 'Peak energy' }
-    return          { label: 'Luteal',      color: '#9C27B0', description: 'Wind-down phase' }
+    if (day <= periodLength) return { label: 'Menstrual',  color: '#E91E8C', description: 'Period phase' }
+    if (cycleType === 'irregular') {
+      // Without a known cycle length we only know we're in a post-menstrual phase
+      return { label: 'Post-menstrual', color: '#66BB6A', description: 'Recovery phase' }
+    }
+    const ovStart = Math.round(cycleLength * 0.46)  // ~day 13 for 28-day
+    const ovEnd   = ovStart + 2
+    if (day <= ovStart) return { label: 'Follicular', color: '#66BB6A', description: 'Energy rising' }
+    if (day <= ovEnd)   return { label: 'Ovulation',  color: '#FFCA28', description: 'Peak energy' }
+    return                     { label: 'Luteal',      color: '#9C27B0', description: 'Wind-down phase' }
   }
 
   function getCycleCoaching(day: number, phaseLabel: string, severity: 'minor' | 'medium' | 'severe' | null): {
@@ -557,7 +580,7 @@ export default function TodayScreen() {
       }
     }
     // Luteal
-    const isLateLuteal = day >= cycleLength - 6
+    const isLateLuteal = cycleType === 'regular' && day >= cycleLength - 6
     return {
       message: isLateLuteal
         ? "Lower energy is normal here — not failure. Your body needs more fuel and more sleep. Let it."
@@ -633,11 +656,15 @@ export default function TodayScreen() {
           {sex === 'female' && (
             <Pressable style={[st.cycleCard, { marginHorizontal: 16 }]} onPress={() => {
               setCycleLengthDraft(String(cycleLength))
+              setPeriodLengthDraft(String(periodLength))
+              setCycleTypeDraft(cycleType)
               if (lastPeriodStart) {
                 const [y, mo, d] = lastPeriodStart.split('-')
-                setLastPeriodDraft(`${d}-${mo}-${y}`)
+                setDateDd(d)
+                setDateMm(mo)
+                setDateYyyy(y)
               } else {
-                setLastPeriodDraft('')
+                setDateDd(''); setDateMm(''); setDateYyyy('')
               }
               setShowCycleModal(true)
             }}>
@@ -648,12 +675,17 @@ export default function TodayScreen() {
                   <View style={st.cycleHeaderRow}>
                     <View style={[st.cyclePhaseDot, { backgroundColor: phase.color }]} />
                     <Text style={st.cyclePhaseLabel}>{phase.label}</Text>
-                    <Text style={st.cycleDayText}>Day {cycleDay} of {cycleLength}</Text>
+                    {cycleType === 'regular'
+                      ? <Text style={st.cycleDayText}>Day {cycleDay} of {cycleLength}</Text>
+                      : <Text style={st.cycleDayText}>Day {cycleDay}</Text>
+                    }
                     <Ionicons name="chevron-forward" size={14} color={C.text3} style={{ marginLeft: 'auto' }} />
                   </View>
-                  <View style={st.cycleTrack}>
-                    <View style={[st.cycleFill, { width: `${Math.round((cycleDay / cycleLength) * 100)}%` as any, backgroundColor: phase.color }]} />
-                  </View>
+                  {cycleType === 'regular' && (
+                    <View style={st.cycleTrack}>
+                      <View style={[st.cycleFill, { width: `${Math.round((cycleDay / cycleLength) * 100)}%` as any, backgroundColor: phase.color }]} />
+                    </View>
+                  )}
 
                   {/* Supportive message */}
                   <Text style={[st.cycleMessage, { color: phase.color }]}>{coaching.message}</Text>
@@ -670,7 +702,7 @@ export default function TodayScreen() {
                     </View>
                   </View>
 
-                  {cycleDay <= 5 && (
+                  {cycleDay <= periodLength && (
                     <View style={st.cycleSeverityRow}>
                       {(['minor', 'medium', 'severe'] as const).map(level => (
                         <Pressable
@@ -1058,57 +1090,148 @@ export default function TodayScreen() {
             </Pressable>
           </View>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24, gap: 24 }}>
+
+            {/* Regular / Irregular toggle */}
             <View>
-              <Text style={st.cycleModalLabel}>First day of last period</Text>
-              <TextInput
-                style={st.cycleModalInput}
-                value={lastPeriodDraft}
-                placeholder="DD-MM-YYYY"
-                placeholderTextColor={C.text3}
-                keyboardType="numbers-and-punctuation"
-                onChangeText={v => setLastPeriodDraft(v)}
-              />
-            </View>
-            <View>
-              <Text style={st.cycleModalLabel}>Cycle length (days)</Text>
-              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                {[21, 24, 26, 28, 30, 32, 35].map(n => (
+              <Text style={st.cycleModalLabel}>Cycle type</Text>
+              <View style={st.cycleTypeRow}>
+                {(['regular', 'irregular'] as const).map(t => (
                   <Pressable
-                    key={n}
-                    style={[st.cycleLenBtn, cycleLengthDraft === String(n) && st.cycleLenBtnActive]}
-                    onPress={() => setCycleLengthDraft(String(n))}
+                    key={t}
+                    style={[st.cycleTypeBtn, cycleTypeDraft === t && st.cycleTypeBtnActive]}
+                    onPress={() => setCycleTypeDraft(t)}
                   >
-                    <Text style={[st.cycleLenBtnText, cycleLengthDraft === String(n) && st.cycleLenBtnTextActive]}>{n}</Text>
+                    <Text style={[st.cycleTypeBtnText, cycleTypeDraft === t && st.cycleTypeBtnTextActive]}>
+                      {t === 'regular' ? 'Regular' : 'Irregular'}
+                    </Text>
+                    <Text style={[st.cycleTypeBtnSub, cycleTypeDraft === t && { color: '#E91E8C' }]}>
+                      {t === 'regular' ? 'Predictable length' : 'Varies each cycle'}
+                    </Text>
                   </Pressable>
                 ))}
               </View>
-              <TextInput
-                style={[st.cycleModalInput, { marginTop: 8 }]}
-                value={cycleLengthDraft}
-                placeholder="Custom (days)"
-                placeholderTextColor={C.text3}
-                keyboardType="number-pad"
-                onChangeText={v => setCycleLengthDraft(v)}
-              />
             </View>
+
+            {/* First day of last period — 3-field date input */}
+            <View>
+              <Text style={st.cycleModalLabel}>First day of last period</Text>
+              <View style={st.cycleDateRow}>
+                <TextInput
+                  style={[st.cycleDateField, { flex: 1 }]}
+                  value={dateDd}
+                  placeholder="DD"
+                  placeholderTextColor={C.text3}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  returnKeyType="next"
+                  onChangeText={v => {
+                    const n = v.replace(/\D/g, '').slice(0, 2)
+                    setDateDd(n)
+                    if (n.length === 2) dateInputMm.current?.focus()
+                  }}
+                />
+                <Text style={st.cycleDateSep}>/</Text>
+                <TextInput
+                  ref={dateInputMm}
+                  style={[st.cycleDateField, { flex: 1 }]}
+                  value={dateMm}
+                  placeholder="MM"
+                  placeholderTextColor={C.text3}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  returnKeyType="next"
+                  onChangeText={v => {
+                    const n = v.replace(/\D/g, '').slice(0, 2)
+                    setDateMm(n)
+                    if (n.length === 2) dateInputYyyy.current?.focus()
+                  }}
+                />
+                <Text style={st.cycleDateSep}>/</Text>
+                <TextInput
+                  ref={dateInputYyyy}
+                  style={[st.cycleDateField, { flex: 2 }]}
+                  value={dateYyyy}
+                  placeholder="YYYY"
+                  placeholderTextColor={C.text3}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  returnKeyType="done"
+                  onChangeText={v => setDateYyyy(v.replace(/\D/g, '').slice(0, 4))}
+                />
+              </View>
+            </View>
+
+            {/* Period duration */}
+            <View>
+              <Text style={st.cycleModalLabel}>Period duration (days)</Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                {[3, 4, 5, 6, 7, 8].map(n => (
+                  <Pressable
+                    key={n}
+                    style={[st.cycleLenBtn, periodLengthDraft === String(n) && st.cycleLenBtnActive]}
+                    onPress={() => setPeriodLengthDraft(String(n))}
+                  >
+                    <Text style={[st.cycleLenBtnText, periodLengthDraft === String(n) && st.cycleLenBtnTextActive]}>{n}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {/* Cycle length — only for regular cycles */}
+            {cycleTypeDraft === 'regular' && (
+              <View>
+                <Text style={st.cycleModalLabel}>Cycle length (days)</Text>
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                  {[21, 24, 26, 28, 30, 32, 35].map(n => (
+                    <Pressable
+                      key={n}
+                      style={[st.cycleLenBtn, cycleLengthDraft === String(n) && st.cycleLenBtnActive]}
+                      onPress={() => setCycleLengthDraft(String(n))}
+                    >
+                      <Text style={[st.cycleLenBtnText, cycleLengthDraft === String(n) && st.cycleLenBtnTextActive]}>{n}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  style={[st.cycleModalInput, { marginTop: 8 }]}
+                  value={cycleLengthDraft}
+                  placeholder="Custom (days)"
+                  placeholderTextColor={C.text3}
+                  keyboardType="number-pad"
+                  onChangeText={v => setCycleLengthDraft(v)}
+                />
+              </View>
+            )}
           </ScrollView>
           <View style={{ padding: 24 }}>
             <Pressable
               style={st.cycleModalSave}
               onPress={async () => {
+                // Build ISO date from 3 separate fields
                 let isoDate: string | null = null
-                const parts = lastPeriodDraft.replace(/\//g, '-').split('-')
-                if (parts.length === 3) {
-                  const [dd, mm, yyyy] = parts
-                  if (dd && mm && yyyy && yyyy.length === 4) {
-                    isoDate = `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`
+                const dd = dateDd.padStart(2, '0')
+                const mm = dateMm.padStart(2, '0')
+                const yyyy = dateYyyy
+                if (dd && mm && yyyy.length === 4) {
+                  const candidate = `${yyyy}-${mm}-${dd}`
+                  const parsed = new Date(candidate)
+                  if (!isNaN(parsed.getTime()) && parsed.getFullYear() === parseInt(yyyy)) {
+                    isoDate = candidate
                   }
                 }
                 const len = parseInt(cycleLengthDraft) || 28
+                const pLen = parseInt(periodLengthDraft) || 5
                 setCycleLength(len)
+                setPeriodLength(pLen)
+                setCycleType(cycleTypeDraft)
                 setLastPeriodStart(isoDate)
                 if (userId) {
-                  await supabase.from('users').update({ cycle_length: len, last_period_start: isoDate }).eq('id', userId)
+                  await supabase.from('users').update({
+                    cycle_length: len,
+                    period_length: pLen,
+                    cycle_type: cycleTypeDraft,
+                    last_period_start: isoDate,
+                  }).eq('id', userId)
                 }
                 setShowCycleModal(false)
               }}
@@ -2644,9 +2767,18 @@ const st = StyleSheet.create({
   cycleModalSave:     { backgroundColor: C.accent, borderRadius: 14, padding: 16, alignItems: 'center' },
   cycleModalSaveText: { fontSize: 16, fontWeight: '700', color: C.white },
   cycleLenBtn:        { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
-  cycleLenBtnActive:  { borderColor: C.accent, backgroundColor: 'rgba(28,25,23,0.06)' },
+  cycleLenBtnActive:  { borderColor: '#E91E8C', backgroundColor: 'rgba(233,30,140,0.06)' },
   cycleLenBtnText:    { fontSize: 14, color: C.text2, fontWeight: '500' },
-  cycleLenBtnTextActive: { color: C.accent, fontWeight: '700' },
+  cycleLenBtnTextActive: { color: '#E91E8C', fontWeight: '700' },
+  cycleTypeRow:       { flexDirection: 'row', gap: 10 },
+  cycleTypeBtn:       { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },
+  cycleTypeBtnActive: { borderColor: '#E91E8C', backgroundColor: 'rgba(233,30,140,0.06)' },
+  cycleTypeBtnText:   { fontSize: 15, fontWeight: '700', color: C.text1, marginBottom: 2 },
+  cycleTypeBtnTextActive: { color: '#E91E8C' },
+  cycleTypeBtnSub:    { fontSize: 12, color: C.text3 },
+  cycleDateRow:       { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cycleDateField:     { backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 14, fontSize: 18, color: C.text1, textAlign: 'center', fontWeight: '600' },
+  cycleDateSep:       { fontSize: 20, color: C.text3, fontWeight: '300' },
 })
 
 const loggerSt = StyleSheet.create({
