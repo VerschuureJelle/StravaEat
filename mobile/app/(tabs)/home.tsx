@@ -10,6 +10,7 @@ import * as Location from 'expo-location'
 import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
+import { onSyncComplete } from '../../lib/stravaSync'
 import { W as C } from '../../lib/themeWarm'
 import {
   bayesianUpdate, calibrationLabel, calibrationConfidencePct,
@@ -272,6 +273,8 @@ export default function HomeScreen() {
 
   useEffect(() => { loadWeather() }, [])
   useFocusEffect(useCallback(() => { loadProfileAndActivities() }, []))
+  // Re-load when a background sync (e.g. startup) completes so new activities appear immediately
+  useEffect(() => onSyncComplete(() => loadProfileAndActivities()), [])
 
   async function loadProfileAndActivities() {
     const { data: { user } } = await supabase.auth.getUser()

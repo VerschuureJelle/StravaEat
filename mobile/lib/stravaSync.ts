@@ -6,6 +6,14 @@ const COOLDOWN_MS = 60 * 1000  // 1 minute between syncs (server has its own 20s
 let _lastSyncAt = 0
 let _inFlight = false
 
+// Listeners called after every successful sync (including startup background sync)
+const _listeners: (() => void)[] = []
+
+export function onSyncComplete(cb: () => void): () => void {
+  _listeners.push(cb)
+  return () => { const i = _listeners.indexOf(cb); if (i >= 0) _listeners.splice(i, 1) }
+}
+
 export type SyncResult =
   | { ok: true; synced: number; json: any }
   | { ok: false; skipped: true }
@@ -42,6 +50,7 @@ export async function callSyncRecent(): Promise<SyncResult> {
     }
 
     _lastSyncAt = Date.now()
+    _listeners.forEach(cb => cb())
     return { ok: true, synced: json.synced ?? 0, json }
   } finally {
     _inFlight = false

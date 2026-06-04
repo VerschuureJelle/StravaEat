@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { supabase } from '../../lib/supabase'
-import { callSyncRecent } from '../../lib/stravaSync'
+import { callSyncRecent, onSyncComplete } from '../../lib/stravaSync'
 import { cancelMealNotification, scheduleMealNotifications } from '../../lib/notifications'
 import { W as C } from '../../lib/themeWarm'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
@@ -126,6 +126,8 @@ export default function TodayScreen() {
   // ── Load ───────────────────────────────────────────────────────────────────
 
   useFocusEffect(useCallback(() => { if (Date.now() - lastLoadRef.current > 60_000) load() }, []))
+  // Re-load when a background sync (e.g. startup) completes so new activities appear immediately
+  useEffect(() => onSyncComplete(() => load()), [])
 
   // Always re-fetch profile fields on focus so settings changes are reflected immediately
   useFocusEffect(useCallback(() => {
