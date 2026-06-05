@@ -5,22 +5,31 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Credits granted per subscription tier per renewal — configured via Supabase secrets
-function getCreditsByProduct(): Record<string, number> {
-  return {
-    straveat_starter_monthly: parseInt(Deno.env.get('STARTER_CREDITS') ?? '30'),
-    straveat_pro_monthly:     parseInt(Deno.env.get('PRO_CREDITS')     ?? '100'),
-  }
+const CREDITS_BY_ENTITLEMENT: Record<string, number> = {
+  starter: parseInt(Deno.env.get('STARTER_CREDITS') ?? '30'),
+  pro:     parseInt(Deno.env.get('PRO_CREDITS')     ?? '100'),
+}
+
+// Resolve credits + tier from a RevenueCat event.
+// Prefers entitlement_ids (stable) over product_id (fragile across store renames).
+function creditsForEvent(event: any): { credits: number; tier: string } | null {
+  const entitlements: string[] = event.entitlement_ids ?? []
+  if (entitlements.includes('pro'))     return { credits: CREDITS_BY_ENTITLEMENT.pro,     tier: 'pro'     }
+  if (entitlements.includes('starter')) return { credits: CREDITS_BY_ENTITLEMENT.starter, tier: 'starter' }
+  const productId: string = event.product_id ?? ''
+  if (productId.includes('pro'))     return { credits: CREDITS_BY_ENTITLEMENT.pro,     tier: 'pro'     }
+  if (productId.includes('starter')) return { credits: CREDITS_BY_ENTITLEMENT.starter, tier: 'starter' }
+  return null
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    // Verify RevenueCat webhook authorization
+    // RevenueCat sends the shared secret as the Authorization header value
     const authHeader = req.headers.get('authorization')
     const webhookSecret = Deno.env.get('REVENUECAT_WEBHOOK_SECRET')
-    if (!authHeader || authHeader !== webhookSecret) {
+    if (!webhookSecret || authHeader !== webhookSecret) {
       return new Response('Unauthorized', { status: 401 })
     }
 
@@ -31,34 +40,29 @@ Deno.serve(async (req) => {
 
     const body = await req.json()
     const event = body.event
-
     if (!event) return new Response('No event', { status: 400 })
 
-    // app_user_id is the Supabase user ID (set via Purchases.logIn)
-    const userId: string = event.app_user_id
-    const productId: string = event.product_id ?? ''
+    const userId: string = event.app_user_id  // set via Purchases.logIn(userId)
     const eventType: string = event.type
 
-    // Grant credits on purchase or renewal
+    // Grant credits on first purchase or monthly renewal
     if (eventType === 'INITIAL_PURCHASE' || eventType === 'RENEWAL') {
-      const credits = getCreditsByProduct()[productId]
-      if (!credits) {
-        console.error(`Unknown product_id: ${productId}`)
+      const result = creditsForEvent(event)
+      if (!result) {
+        console.error('Unknown entitlement/product:', event.entitlement_ids, event.product_id)
         return new Response('Unknown product', { status: 400 })
       }
 
       await supabase.from('credit_transactions').insert({
         user_id: userId,
-        amount: credits,
+        amount: result.credits,
         reason: 'subscription_monthly',
       })
 
-      // Track subscription tier on users table for display purposes
-      const tier = productId.includes('pro') ? 'pro' : 'starter'
-      await supabase.from('users').update({ subscription_tier: tier }).eq('id', userId)
+      await supabase.from('users').update({ subscription_tier: result.tier }).eq('id', userId)
     }
 
-    // On cancellation/expiry, clear the tier
+    // On cancellation/expiry, clear the subscription tier (credits already granted stay)
     if (eventType === 'CANCELLATION' || eventType === 'EXPIRATION') {
       await supabase.from('users').update({ subscription_tier: 'free' }).eq('id', userId)
     }

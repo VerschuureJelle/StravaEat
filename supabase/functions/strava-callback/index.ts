@@ -102,14 +102,7 @@ Deno.serve(async (req) => {
       return Response.redirect(`${appScheme}?error=user_creation_failed`)
     }
     userId = newUser.user.id
-
-    // New user — grant signup bonus (idempotent: only if not already given)
-    const signupBonus = parseInt(Deno.env.get('SIGNUP_BONUS_CREDITS') ?? '10')
-    await supabase.from('credit_transactions').insert({
-      user_id: userId,
-      amount: signupBonus,
-      reason: 'signup_bonus',
-    })
+    // Signup bonus is now granted by the handle_new_user DB trigger for all users
   }
 
   await supabase.from('users').upsert({ id: userId, email, ...stravaTokenData })
