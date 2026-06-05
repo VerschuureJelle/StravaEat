@@ -402,6 +402,8 @@ export default function TodayScreen() {
     }
 
     const meal = mealIndex != null ? meals.find(m => m.meal_index === mealIndex) : null
+    // Check before insert: is this the first item going into this meal slot?
+    const mealWasEmpty = mealIndex != null && !logs.some(l => l.meal_index === mealIndex)
     const { data: inserted, error } = await supabase.from('food_logs').insert({
       user_id: userId, date: todayStr, name, kcal,
       protein_g: protein, fat_g: fat, carb_g: carb,
@@ -411,6 +413,17 @@ export default function TodayScreen() {
     if (inserted) {
       setLogs(prev => [...prev, inserted as FoodLog])
       setConsumedKcal(prev => prev + inserted.kcal)
+      // Auto-check the meal when the very first item is added to it
+      if (mealWasEmpty) {
+        setMeals(prev => prev.map(m => m.meal_index === mealIndex ? { ...m, checked: true } : m))
+        await Promise.all([
+          supabase.from('meal_checks').upsert(
+            { user_id: userId, meal_index: mealIndex, date: todayStr },
+            { onConflict: 'user_id,meal_index,date' }
+          ),
+          cancelMealNotification(mealIndex!),
+        ])
+      }
     }
   }
 
