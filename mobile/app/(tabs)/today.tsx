@@ -369,6 +369,38 @@ export default function TodayScreen() {
 
   async function addFood(name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, mealIndex: number | null = null) {
     if (!userId) return
+
+    // Stack duplicate entries: if the same food is already logged in the same meal slot today,
+    // update it to "Nx name" with summed kcal/macros instead of inserting a second row.
+    const existing = logs.find(l => {
+      if (l.meal_index !== mealIndex) return false
+      const m = l.name.match(/^(\d+)× (.+)$/)
+      return (m ? m[2] : l.name) === name
+    })
+
+    if (existing) {
+      const prevCount = existing.name.match(/^(\d+)× /)
+      const count = prevCount ? parseInt(prevCount[1]) : 1
+      const newName = `${count + 1}× ${name}`
+      const newKcal = existing.kcal + kcal
+      const newProtein = (protein != null || existing.protein_g != null)
+        ? Math.round(((existing.protein_g ?? 0) + (protein ?? 0)) * 10) / 10 : null
+      const newFat = (fat != null || existing.fat_g != null)
+        ? Math.round(((existing.fat_g ?? 0) + (fat ?? 0)) * 10) / 10 : null
+      const newCarb = (carb != null || existing.carb_g != null)
+        ? Math.round(((existing.carb_g ?? 0) + (carb ?? 0)) * 10) / 10 : null
+      const { data: updated } = await supabase.from('food_logs')
+        .update({ name: newName, kcal: newKcal, protein_g: newProtein, fat_g: newFat, carb_g: newCarb })
+        .eq('id', existing.id)
+        .select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at')
+        .single()
+      if (updated) {
+        setLogs(prev => prev.map(l => l.id === existing.id ? updated as FoodLog : l))
+        setConsumedKcal(prev => prev + kcal)
+      }
+      return
+    }
+
     const meal = mealIndex != null ? meals.find(m => m.meal_index === mealIndex) : null
     const { data: inserted, error } = await supabase.from('food_logs').insert({
       user_id: userId, date: todayStr, name, kcal,
@@ -1441,8 +1473,19 @@ function fuzzyFoodMatch(name: string, query: string): boolean {
 
 function defaultServingLabel(food: { name: string; amount_label?: string | null }): string {
   if (food.amount_label) return food.amount_label
-  const m = food.name.match(/\((\d+(?:\.\d+)?\s*(?:ml|l|g|kg))\)/i)
-  return m ? m[1] : '100g'
+  const n = food.name
+  // Find a gram/ml measure anywhere inside "(…)": "(100g)", "(50g uncooked)", "(banana & oat, 300ml)"
+  const gramMatch = n.match(/\([^)]*?(\d+(?:\.\d+)?\s*(?:ml|l|g|kg))[^)]*\)/i)
+  if (gramMatch) return gramMatch[1].trim()
+  // "(half)" → unicode fraction
+  if (/\(half\)/i.test(n)) return '½'
+  // "(medium)" / "(medium, boiled)" / "(large)" etc.
+  const sizeMatch = n.match(/\((small|medium|large|xl|extra large)[^)]*\)/i)
+  if (sizeMatch) return `1 ${sizeMatch[1].toLowerCase()}`
+  // "(1 piece)" / "(1 clove)" / "(2 rashers)" / "(1 tbsp)" — starts with digit
+  const countMatch = n.match(/\((\d+[^)]+)\)/i)
+  if (countMatch) return countMatch[1].trim()
+  return '100g'
 }
 
 // ─── Unified food logger ───────────────────────────────────────────────────────
