@@ -51,7 +51,16 @@ export default function PaywallScreen() {
     setPurchasing(pkg.identifier)
     try {
       await purchasePackage(pkg)
-      Alert.alert('Subscribed!', 'Your credits will appear shortly.')
+      // Poll for the webhook-granted credits (RevenueCat → Edge Function → DB)
+      // Try twice: once after 2s, once more after 4s, then show the balance.
+      let newBalance = balance
+      for (const delay of [2000, 4000]) {
+        await new Promise(r => setTimeout(r, delay))
+        const b = await getCreditBalance()
+        if (b !== balance) { newBalance = b; break }
+      }
+      setBalance(newBalance)
+      Alert.alert('Subscribed! 🎉', `${newBalance} credits are now available.`)
       router.back()
     } catch (e: any) {
       if (!e.userCancelled) Alert.alert('Purchase failed', e.message)
