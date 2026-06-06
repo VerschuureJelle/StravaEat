@@ -12,10 +12,6 @@ const Purchases = RC?.default ?? null
 const RC_API_KEY_IOS     = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_IOS ?? ''
 const RC_API_KEY_ANDROID = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID ?? ''
 
-export function debugInfo() {
-  return `NativeModules.RNPurchases: ${isAvailable ? 'YES' : 'NO'}\nPurchases: ${Purchases ? 'YES' : 'NO'}\nAPIKey: ${RC_API_KEY_IOS ? RC_API_KEY_IOS.slice(0, 8) + '...' : 'MISSING'}`
-}
-
 export const ENTITLEMENT_STARTER = 'starter'
 export const ENTITLEMENT_PRO     = 'pro'
 
