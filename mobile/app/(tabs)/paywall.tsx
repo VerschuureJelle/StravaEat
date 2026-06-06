@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { W as C } from '../../lib/themeWarm'
 import {
-  getOfferings, purchasePackage, restorePurchases, getCreditBalance,
+  getOfferings, purchasePackage, restorePurchases, getCreditBalance, debugInfo,
 } from '../../lib/purchases'
 import type { PurchasesOffering, PurchasesPackage } from 'react-native-purchases'
 
@@ -39,8 +39,10 @@ export default function PaywallScreen() {
   const [restoring, setRestoring] = useState(false)
 
   useEffect(() => {
+    Alert.alert('Debug', debugInfo())
     Promise.all([getOfferings(), getCreditBalance()])
       .then(([offerings, credits]) => {
+        Alert.alert('Offerings', `current: ${offerings?.current?.identifier ?? 'null'}\npackages: ${offerings?.current?.availablePackages?.length ?? 0}`)
         setOffering(offerings?.current ?? null)
         setBalance(credits)
       })
