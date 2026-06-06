@@ -26,7 +26,16 @@ export async function initPurchases(userId: string) {
 
 export async function getOfferings() {
   if (!Purchases) return null
-  try { return await Purchases.getOfferings() } catch { return null }
+  // Retry up to 3x with 1s delay — initPurchases is fire-and-forget so configure()
+  // may not have run yet when the paywall mounts immediately after login.
+  for (let i = 0; i < 3; i++) {
+    try {
+      const result = await Purchases.getOfferings()
+      if (result?.current) return result
+    } catch { /* not configured yet */ }
+    await new Promise(r => setTimeout(r, 1000))
+  }
+  return null
 }
 
 export async function purchasePackage(pkg: any) {
