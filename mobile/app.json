@@ -40,7 +40,6 @@
     },
     "plugins": [
       "expo-router",
-      "react-native-purchases",
       "expo-web-browser",
       [
         "expo-location",
