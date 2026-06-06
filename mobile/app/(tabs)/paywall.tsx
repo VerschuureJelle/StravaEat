@@ -109,7 +109,6 @@ export default function PaywallScreen() {
         <View style={s.tiers}>
           {TIERS.map(tier => {
             const pkg = offering.availablePackages.find(p =>
-              p.packageType === 'MONTHLY' &&
               p.product.identifier.includes(tier.entitlement),
             )
             if (!pkg) return null
