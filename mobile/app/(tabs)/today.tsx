@@ -370,9 +370,14 @@ export default function TodayScreen() {
   async function addFood(name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, mealIndex: number | null = null) {
     if (!userId) return
 
-    // Stack duplicate entries: if the same food is already logged in the same meal slot today,
-    // update it to "Nx name" with summed kcal/macros instead of inserting a second row.
-    const existing = logs.find(l => {
+    // Stack duplicate entries: query DB directly to avoid stale-closure issues with logs state.
+    const { data: existingRows } = await supabase
+      .from('food_logs')
+      .select('id, name, kcal, protein_g, fat_g, carb_g, meal_index')
+      .eq('user_id', userId)
+      .eq('date', todayStr)
+
+    const existing = (existingRows ?? []).find(l => {
       if (l.meal_index !== mealIndex) return false
       const m = l.name.match(/^(\d+)× (.+)$/)
       return (m ? m[2] : l.name) === name
