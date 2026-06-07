@@ -1572,9 +1572,10 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
     if (!pendingFood) return
     const qty = parseFloat(servingQty) || 0
     if (qty <= 0) return
+    const isCustomFood = !!(pendingFood as any).id
     const origGrams = parseGrams(defaultServingLabel(pendingFood))
     const curGrams = parseGrams(servingLabel)
-    const scale = origGrams && curGrams ? curGrams / origGrams : 1
+    const scale = isCustomFood ? 1 : (origGrams && curGrams ? curGrams / origGrams : 1)
     const kcal = Math.round(pendingFood.kcal * qty * scale)
     const protein = pendingFood.protein_g != null ? Math.round(pendingFood.protein_g * qty * scale * 10) / 10 : null
     const fat = pendingFood.fat_g != null ? Math.round(pendingFood.fat_g * qty * scale * 10) / 10 : null
@@ -1751,54 +1752,83 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
             <View style={{ flex: 1, paddingHorizontal: 20 }}>
               {tab === 'search' && (
                 <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-                  {pendingFood ? (
-                    <View style={{ gap: 10 }}>
-                      <Text style={loggerSt.sectionLabel}>{pendingFood.name}</Text>
-                      <View style={st.qtyRow}>
-                        <Text style={st.qtyLabel}>1 serving =</Text>
-                        <TextInput
-                          style={st.qtyInput}
-                          value={servingLabel}
-                          onChangeText={setServingLabel}
-                          placeholder="e.g. 100g"
-                          placeholderTextColor={C.text3}
-                          returnKeyType="next"
-                          selectTextOnFocus
-                        />
+                  {pendingFood ? (() => {
+                    const isCustomFood = !!(pendingFood as any).id
+                    const qty = parseFloat(servingQty) || 0
+                    const origG = parseGrams(defaultServingLabel(pendingFood))
+                    const curG = parseGrams(servingLabel)
+                    const scale = isCustomFood ? 1 : (origG && curG ? curG / origG : 1)
+                    const previewKcal = qty > 0 ? Math.round(pendingFood.kcal * qty * scale) : null
+                    const pFood = pendingFood as any
+                    const previewProtein = pFood.protein_g != null && qty > 0 ? Math.round(pFood.protein_g * qty * scale * 10) / 10 : null
+                    const previewFat = pFood.fat_g != null && qty > 0 ? Math.round(pFood.fat_g * qty * scale * 10) / 10 : null
+                    const previewCarb = pFood.carb_g != null && qty > 0 ? Math.round(pFood.carb_g * qty * scale * 10) / 10 : null
+                    return (
+                      <View style={{ gap: 10 }}>
+                        <Text style={loggerSt.sectionLabel}>{pendingFood.name}</Text>
+                        {isCustomFood && !hideCalories && (
+                          <Text style={{ fontSize: 12, color: C.text3 }}>
+                            per serving: {pendingFood.kcal} kcal
+                            {pFood.protein_g != null ? ` · P ${pFood.protein_g}g` : ''}
+                            {pFood.fat_g != null ? ` · F ${pFood.fat_g}g` : ''}
+                            {pFood.carb_g != null ? ` · C ${pFood.carb_g}g` : ''}
+                          </Text>
+                        )}
+                        {!isCustomFood && (
+                          <View style={st.qtyRow}>
+                            <Text style={st.qtyLabel}>1 serving =</Text>
+                            <TextInput
+                              style={st.qtyInput}
+                              value={servingLabel}
+                              onChangeText={setServingLabel}
+                              placeholder="e.g. 100g"
+                              placeholderTextColor={C.text3}
+                              returnKeyType="next"
+                              selectTextOnFocus
+                            />
+                          </View>
+                        )}
+                        <View style={st.qtyRow}>
+                          <Text style={st.qtyLabel}>{isCustomFood ? 'Servings' : 'Number of servings'}</Text>
+                          <TextInput
+                            style={st.qtyInput}
+                            value={servingQty}
+                            onChangeText={v => setServingQty(v.replace(',', '.'))}
+                            keyboardType="decimal-pad"
+                            returnKeyType="done"
+                            autoFocus
+                            selectTextOnFocus
+                          />
+                        </View>
+                        {!hideCalories && previewKcal != null && (
+                          <>
+                            <Text style={st.qtyPreview}>{previewKcal} kcal</Text>
+                            {(previewProtein != null || previewFat != null || previewCarb != null) && (
+                              <Text style={{ fontSize: 12, color: C.text2 }}>
+                                {[
+                                  previewProtein != null ? `P ${previewProtein}g` : null,
+                                  previewFat != null ? `F ${previewFat}g` : null,
+                                  previewCarb != null ? `C ${previewCarb}g` : null,
+                                ].filter(Boolean).join(' · ')}
+                              </Text>
+                            )}
+                          </>
+                        )}
+                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                          <Pressable style={[st.addFormBtn, { flex: 1, backgroundColor: C.surface2 }]} onPress={() => setPendingFood(null)}>
+                            <Text style={[st.addFormBtnText, { color: C.text2 }]}>Back</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[st.addFormBtn, { flex: 1 }, (adding || qty <= 0) && { opacity: 0.5 }]}
+                            onPress={confirmPending}
+                            disabled={adding || qty <= 0}
+                          >
+                            <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
+                          </Pressable>
+                        </View>
                       </View>
-                      <View style={st.qtyRow}>
-                        <Text style={st.qtyLabel}>Number of servings</Text>
-                        <TextInput
-                          style={st.qtyInput}
-                          value={servingQty}
-                          onChangeText={v => setServingQty(v.replace(',', '.'))}
-                          keyboardType="decimal-pad"
-                          returnKeyType="done"
-                          autoFocus
-                          selectTextOnFocus
-                        />
-                      </View>
-                      {!hideCalories && parseFloat(servingQty) > 0 && (() => {
-                        const qty = parseFloat(servingQty) || 0
-                        const origG = parseGrams(defaultServingLabel(pendingFood))
-                        const curG = parseGrams(servingLabel)
-                        const scale = origG && curG ? curG / origG : 1
-                        return <Text style={st.qtyPreview}>{Math.round(pendingFood.kcal * qty * scale)} kcal</Text>
-                      })()}
-                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-                        <Pressable style={[st.addFormBtn, { flex: 1, backgroundColor: C.surface2 }]} onPress={() => setPendingFood(null)}>
-                          <Text style={[st.addFormBtnText, { color: C.text2 }]}>Back</Text>
-                        </Pressable>
-                        <Pressable
-                          style={[st.addFormBtn, { flex: 1 }, (adding || parseFloat(servingQty) <= 0) && { opacity: 0.5 }]}
-                          onPress={confirmPending}
-                          disabled={adding || parseFloat(servingQty) <= 0}
-                        >
-                          <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  ) : (
+                    )
+                  })() : (
                     <>
                       <View style={[st.searchRow, { marginBottom: 8 }]}>
                         <Ionicons name="search-outline" size={15} color={C.text3} />
