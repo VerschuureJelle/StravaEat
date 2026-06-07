@@ -1622,16 +1622,16 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
     const servings = parseFloat(scanServings) || 1
     if (g <= 0) return
     const r = (g * servings) / 100
+    const name = scannedProduct.name
+    const kcal = Math.round(scannedProduct.kcalPer100g * r)
+    const protein = scannedProduct.proteinPer100g != null ? Math.round(scannedProduct.proteinPer100g * r * 10) / 10 : null
+    const fat = scannedProduct.fatPer100g != null ? Math.round(scannedProduct.fatPer100g * r * 10) / 10 : null
+    const carb = scannedProduct.carbPer100g != null ? Math.round(scannedProduct.carbPer100g * r * 10) / 10 : null
     setAdding(true)
-    await onAdd(
-      scannedProduct.name,
-      Math.round(scannedProduct.kcalPer100g * r),
-      scannedProduct.proteinPer100g != null ? Math.round(scannedProduct.proteinPer100g * r * 10) / 10 : null,
-      scannedProduct.fatPer100g != null ? Math.round(scannedProduct.fatPer100g * r * 10) / 10 : null,
-      scannedProduct.carbPer100g != null ? Math.round(scannedProduct.carbPer100g * r * 10) / 10 : null,
-      mealIndex,
-    )
+    await onAdd(name, kcal, protein, fat, carb, mealIndex)
+    if (saveToMyFoods) await onSaveToMyFoods(name, kcal, protein, fat, carb)
     setAdding(false)
+    setSaveToMyFoods(false)
     setScannedProduct(null); lastScannedRef.current = null
     onClose()
   }
@@ -1889,49 +1889,77 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
               )}
 
               {tab === 'scan' && scannedProduct && (
-                <View style={{ gap: 10 }}>
-                  <Text style={loggerSt.sectionLabel}>{scannedProduct.name}</Text>
-                  {!hideCalories && <Text style={{ fontSize: 12, color: C.text3 }}>{scannedProduct.kcalPer100g} kcal per 100g</Text>}
-                  <View style={st.qtyRow}>
-                    <Text style={st.qtyLabel}>1 serving =</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                  <View style={{ gap: 10 }}>
+                    <Text style={loggerSt.sectionLabel}>{scannedProduct.name}</Text>
+                    {!hideCalories && (
+                      <Text style={{ fontSize: 12, color: C.text3 }}>
+                        {'per 100g: '}{scannedProduct.kcalPer100g} kcal
+                        {scannedProduct.proteinPer100g != null ? ` · P ${Math.round(scannedProduct.proteinPer100g * 10) / 10}g` : ''}
+                        {scannedProduct.fatPer100g != null ? ` · F ${Math.round(scannedProduct.fatPer100g * 10) / 10}g` : ''}
+                        {scannedProduct.carbPer100g != null ? ` · C ${Math.round(scannedProduct.carbPer100g * 10) / 10}g` : ''}
+                      </Text>
+                    )}
+                    <View style={st.qtyRow}>
+                      <Text style={st.qtyLabel}>1 serving =</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <TextInput
+                          style={st.qtyInput}
+                          value={scanAmount}
+                          onChangeText={v => setScanAmount(v.replace(',', '.'))}
+                          keyboardType="decimal-pad"
+                          returnKeyType="next"
+                          autoFocus
+                          selectTextOnFocus
+                        />
+                        <Text style={{ color: C.text3, fontSize: 13 }}>g</Text>
+                      </View>
+                    </View>
+                    <View style={st.qtyRow}>
+                      <Text style={st.qtyLabel}>Number of servings</Text>
                       <TextInput
                         style={st.qtyInput}
-                        value={scanAmount}
-                        onChangeText={v => setScanAmount(v.replace(',', '.'))}
+                        value={scanServings}
+                        onChangeText={v => setScanServings(v.replace(',', '.'))}
                         keyboardType="decimal-pad"
-                        returnKeyType="next"
-                        autoFocus
+                        returnKeyType="done"
                         selectTextOnFocus
                       />
-                      <Text style={{ color: C.text3, fontSize: 13 }}>g</Text>
+                    </View>
+                    {!hideCalories && parseFloat(scanAmount) > 0 && parseFloat(scanServings) > 0 && (() => {
+                      const r = parseFloat(scanAmount) * (parseFloat(scanServings) || 1) / 100
+                      const p = scannedProduct.proteinPer100g != null ? Math.round(scannedProduct.proteinPer100g * r * 10) / 10 : null
+                      const f = scannedProduct.fatPer100g != null ? Math.round(scannedProduct.fatPer100g * r * 10) / 10 : null
+                      const c = scannedProduct.carbPer100g != null ? Math.round(scannedProduct.carbPer100g * r * 10) / 10 : null
+                      return (
+                        <>
+                          <Text style={st.qtyPreview}>= {Math.round(scannedProduct.kcalPer100g * r)} kcal</Text>
+                          {(p != null || f != null || c != null) && (
+                            <Text style={{ fontSize: 12, color: C.text2 }}>
+                              {[p != null ? `P ${p}g` : null, f != null ? `F ${f}g` : null, c != null ? `C ${c}g` : null].filter(Boolean).join(' · ')}
+                            </Text>
+                          )}
+                        </>
+                      )
+                    })()}
+                    <View style={st.saveToggleGroup}>
+                      <Pressable style={st.saveToggleRow} onPress={() => setSaveToMyFoods(v => !v)}>
+                        <View style={[st.saveToggleCheck, saveToMyFoods && st.saveToggleCheckActive]}>
+                          {saveToMyFoods && <Ionicons name="checkmark" size={11} color="#fff" />}
+                        </View>
+                        <Text style={st.saveToggleLabel}>Save to My Foods</Text>
+                      </Pressable>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                      <Pressable style={[st.addFormBtn, { flex: 1, backgroundColor: C.surface2 }]} onPress={() => { setScannedProduct(null); lastScannedRef.current = null; setSaveToMyFoods(false) }}>
+                        <Text style={[st.addFormBtnText, { color: C.text2 }]}>Scan again</Text>
+                      </Pressable>
+                      <Pressable style={[st.addFormBtn, { flex: 1 }, adding && { opacity: 0.5 }]} onPress={confirmScan} disabled={adding}>
+                        <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
+                      </Pressable>
                     </View>
                   </View>
-                  <View style={st.qtyRow}>
-                    <Text style={st.qtyLabel}>Number of servings</Text>
-                    <TextInput
-                      style={st.qtyInput}
-                      value={scanServings}
-                      onChangeText={v => setScanServings(v.replace(',', '.'))}
-                      keyboardType="decimal-pad"
-                      returnKeyType="done"
-                      selectTextOnFocus
-                    />
-                  </View>
-                  {!hideCalories && parseFloat(scanAmount) > 0 && parseFloat(scanServings) > 0 && (
-                    <Text style={st.qtyPreview}>
-                      = {Math.round(scannedProduct.kcalPer100g * parseFloat(scanAmount) * (parseFloat(scanServings) || 1) / 100)} kcal
-                    </Text>
-                  )}
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-                    <Pressable style={[st.addFormBtn, { flex: 1, backgroundColor: C.surface2 }]} onPress={() => { setScannedProduct(null); lastScannedRef.current = null }}>
-                      <Text style={[st.addFormBtnText, { color: C.text2 }]}>Scan again</Text>
-                    </Pressable>
-                    <Pressable style={[st.addFormBtn, { flex: 1 }, adding && { opacity: 0.5 }]} onPress={confirmScan} disabled={adding}>
-                      <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
-                    </Pressable>
-                  </View>
-                </View>
+                </ScrollView>
               )}
 
               {tab === 'manual' && (
