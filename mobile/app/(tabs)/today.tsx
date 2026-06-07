@@ -250,7 +250,7 @@ export default function TodayScreen() {
       meal_index: t.meal_index, name: t.name, scheduled_time: t.scheduled_time,
       checked: checkedSet.has(t.meal_index),
       kcal: t.kcal ?? null, protein_g: t.protein_g ?? null, fat_g: t.fat_g ?? null, carb_g: t.carb_g ?? null,
-    })))
+    })).sort((a, b) => (a.scheduled_time ?? '').localeCompare(b.scheduled_time ?? '')))
 
     const pMap: Record<number, MealPreset[]> = {}
     for (const row of (presetsRes.data ?? []) as any[]) {
