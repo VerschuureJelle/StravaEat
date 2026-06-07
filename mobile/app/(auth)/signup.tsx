@@ -6,8 +6,11 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
+import * as WebBrowser from 'expo-web-browser'
 import { supabase } from '../../lib/supabase'
 import { W as C } from '../../lib/themeWarm'
+
+const TERMS_URL = 'https://verschuurejelle.github.io/StravaEat/terms.html'
 
 export default function SignUpScreen() {
   const router = useRouter()
@@ -172,17 +175,22 @@ export default function SignUpScreen() {
           maxLength={10}
         />
 
-        <Pressable
-          style={styles.termsRow}
-          onPress={() => set('termsAccepted')(!form.termsAccepted)}
-        >
-          <View style={[styles.checkbox, form.termsAccepted && styles.checkboxChecked]}>
-            {form.termsAccepted && <Text style={styles.checkmark}>✓</Text>}
-          </View>
+        <View style={styles.termsRow}>
+          <Pressable onPress={() => set('termsAccepted')(!form.termsAccepted)}>
+            <View style={[styles.checkbox, form.termsAccepted && styles.checkboxChecked]}>
+              {form.termsAccepted && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+          </Pressable>
           <Text style={styles.termsText}>
-            I accept the <Text style={styles.termsLink}>terms and conditions</Text>
+            I accept the{' '}
+            <Text
+              style={styles.termsLink}
+              onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)}
+            >
+              terms and conditions
+            </Text>
           </Text>
-        </Pressable>
+        </View>
 
         <Pressable
           style={[styles.button, loading && styles.buttonDisabled]}

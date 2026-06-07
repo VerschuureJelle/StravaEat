@@ -10,6 +10,24 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resetLoading, setResetLoading] = useState(false)
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      Alert.alert('Enter your email', 'Please enter your email address above first.')
+      return
+    }
+    setResetLoading(true)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email)
+      if (error) throw error
+      Alert.alert('Email sent', `We've sent a password reset link to ${email}. Check your inbox.`)
+    } catch (err: any) {
+      Alert.alert('Failed', err.message || 'Something went wrong')
+    } finally {
+      setResetLoading(false)
+    }
+  }
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -89,6 +107,12 @@ export default function SignInScreen() {
             : <Text style={styles.buttonText}>Sign in</Text>}
         </Pressable>
 
+        <Pressable onPress={handleForgotPassword} disabled={resetLoading} style={styles.forgotBtn}>
+          {resetLoading
+            ? <ActivityIndicator size="small" color={C.text3} />
+            : <Text style={styles.forgotText}>Forgot password?</Text>}
+        </Pressable>
+
         <Pressable onPress={() => router.replace('/(auth)/signup')}>
           <Text style={styles.switchText}>No account yet? <Text style={styles.switchLink}>Sign up</Text></Text>
         </Pressable>
@@ -117,6 +141,8 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { color: C.white, fontSize: 16, fontWeight: '700' },
-  switchText: { textAlign: 'center', marginTop: 20, color: C.text2, fontSize: 14 },
+  forgotBtn: { alignItems: 'center', marginTop: 12, paddingVertical: 8 },
+  forgotText: { fontSize: 14, color: C.text3 },
+  switchText: { textAlign: 'center', marginTop: 8, color: C.text2, fontSize: 14 },
   switchLink: { color: C.accent, fontWeight: '600' },
 })
