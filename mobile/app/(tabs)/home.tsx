@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
   ActivityIndicator, Modal, Alert,
@@ -271,10 +271,14 @@ export default function HomeScreen() {
   const projectedTotal = totalTarget != null ? Math.round(totalTarget + plannedKcalToday) : null
   const displayMaxKcal = maxKcalTarget != null ? Math.round(maxKcalTarget + burnedToday + plannedKcalToday) : null
 
+  const lastLoadRef = useRef<number>(0)
+
   useEffect(() => { loadWeather() }, [])
-  useFocusEffect(useCallback(() => { loadProfileAndActivities() }, []))
-  // Re-load when a background sync (e.g. startup) completes so new activities appear immediately
-  useEffect(() => onSyncComplete(() => loadProfileAndActivities()), [])
+  useFocusEffect(useCallback(() => {
+    if (Date.now() - lastLoadRef.current > 120_000) loadProfileAndActivities()
+  }, []))
+  // Always reload immediately after a Strava sync — bypass the TTL
+  useEffect(() => onSyncComplete(() => { lastLoadRef.current = 0; loadProfileAndActivities() }), [])
 
   async function loadProfileAndActivities() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -339,6 +343,7 @@ export default function HomeScreen() {
       tss: a.avg_hr ? computeTSS(a.duration_sec ?? 0, a.avg_hr, maxHr) : 0,
     }))
     setTrainingLoad(computeTrainingLoad(tssActivities))
+    lastLoadRef.current = Date.now()
   }
 
   async function loadWeather() {

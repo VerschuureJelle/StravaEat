@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { View, ActivityIndicator } from 'react-native'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import * as Linking from 'expo-linking'
 import { supabase } from '../lib/supabase'
 import { registerForNotifications, scheduleDailyMealNotificationsForUser } from '../lib/notifications'
 import { initPurchases } from '../lib/purchases'
@@ -21,6 +22,26 @@ export default function RootLayout() {
     setLangState(l)
     saveLanguage(l)
   }
+
+  async function handlePasswordResetLink(url: string) {
+    const hash = url.split('#')[1]
+    if (!hash) return
+    const params = new URLSearchParams(hash)
+    const type = params.get('type')
+    const accessToken = params.get('access_token')
+    const refreshToken = params.get('refresh_token')
+    if (type === 'recovery' && accessToken && refreshToken) {
+      await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+      router.replace('/(auth)/reset-password')
+    }
+  }
+
+  useEffect(() => {
+    // Handle password reset deep links (stravaeat://reset-password#access_token=...&type=recovery)
+    Linking.getInitialURL().then(url => { if (url) handlePasswordResetLink(url) })
+    const sub = Linking.addEventListener('url', ({ url }) => handlePasswordResetLink(url))
+    return () => sub.remove()
+  }, [])
 
   useEffect(() => {
     // Check for an existing persisted session on app start

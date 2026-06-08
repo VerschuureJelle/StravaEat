@@ -19,7 +19,9 @@ export default function SignInScreen() {
     }
     setResetLoading(true)
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email)
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'stravaeat://reset-password',
+      })
       if (error) throw error
       Alert.alert('Email sent', `We've sent a password reset link to ${email}. Check your inbox.`)
     } catch (err: any) {

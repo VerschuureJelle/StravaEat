@@ -41,6 +41,12 @@ function sportColor(type: string) {
   return C.sport
 }
 
+// Session-lifetime cache for barcode lookups — same EAN never hits OpenFoodFacts twice
+const _barcodeCache = new Map<string, {
+  name: string; kcalPer100g: number
+  proteinPer100g: number | null; fatPer100g: number | null; carbPer100g: number | null
+}>()
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function TodayScreen() {
@@ -1533,6 +1539,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   } | null>(null)
   const [scanAmount, setScanAmount] = useState('100')
   const [scanServings, setScanServings] = useState('1')
+  const [scanName, setScanName] = useState('')
   const [scanLoading, setScanLoading] = useState(false)
   const lastScannedRef = useRef<string | null>(null)
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
@@ -1548,7 +1555,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   useEffect(() => {
     if (!visible) {
       setTab('search'); setSearch(''); setPendingFood(null)
-      setScannedProduct(null); lastScannedRef.current = null
+      setScannedProduct(null); setScanName(''); lastScannedRef.current = null
       setManualName(''); setManualKcal(''); setManualProtein(''); setManualFat(''); setManualCarb('')
       setSaveToMyFoods(false); setSaveAsPreset(false)
     }
@@ -1591,6 +1598,15 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   async function handleBarcodeScan({ data }: { data: string }) {
     if (lastScannedRef.current === data || scanLoading) return
     lastScannedRef.current = data
+
+    const cached = _barcodeCache.get(data)
+    if (cached) {
+      setScannedProduct(cached)
+      setScanName(cached.name)
+      setScanAmount('100'); setScanServings('1')
+      return
+    }
+
     setScanLoading(true)
     try {
       const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${data}.json`)
@@ -1599,13 +1615,16 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
         const p = json.product
         const name = p.product_name || p.abbreviated_product_name || 'Unknown product'
         const n = p.nutriments ?? {}
-        setScannedProduct({
+        const product = {
           name,
           kcalPer100g: Math.round(n['energy-kcal_100g'] ?? n['energy-kcal'] ?? 0),
           proteinPer100g: n['proteins_100g'] ?? null,
           fatPer100g: n['fat_100g'] ?? null,
           carbPer100g: n['carbohydrates_100g'] ?? null,
-        })
+        }
+        _barcodeCache.set(data, product)
+        setScannedProduct(product)
+        setScanName(name)
         setScanAmount('100'); setScanServings('1')
       } else {
         Alert.alert('Not found', 'Product not found in the database.')
@@ -1624,7 +1643,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
     const servings = parseFloat(scanServings) || 1
     if (g <= 0) return
     const r = (g * servings) / 100
-    const name = scannedProduct.name
+    const name = scanName.trim() || scannedProduct.name
     const kcal = Math.round(scannedProduct.kcalPer100g * r)
     const protein = scannedProduct.proteinPer100g != null ? Math.round(scannedProduct.proteinPer100g * r * 10) / 10 : null
     const fat = scannedProduct.fatPer100g != null ? Math.round(scannedProduct.fatPer100g * r * 10) / 10 : null
@@ -1634,7 +1653,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
     if (saveToMyFoods) await onSaveToMyFoods(name, kcal, protein, fat, carb)
     setAdding(false)
     setSaveToMyFoods(false)
-    setScannedProduct(null); lastScannedRef.current = null
+    setScannedProduct(null); setScanName(''); lastScannedRef.current = null
     onClose()
   }
 
@@ -1922,7 +1941,14 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
               {tab === 'scan' && scannedProduct && (
                 <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
                   <View style={{ gap: 10 }}>
-                    <Text style={loggerSt.sectionLabel}>{scannedProduct.name}</Text>
+                    <TextInput
+                      style={st.addFormInput}
+                      value={scanName}
+                      onChangeText={setScanName}
+                      placeholder="Product name"
+                      placeholderTextColor={C.text3}
+                      returnKeyType="next"
+                    />
                     {!hideCalories && (
                       <Text style={{ fontSize: 12, color: C.text3 }}>
                         {'per 100g: '}{scannedProduct.kcalPer100g} kcal
@@ -1982,7 +2008,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                       </Pressable>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-                      <Pressable style={[st.addFormBtn, { flex: 1, backgroundColor: C.surface2 }]} onPress={() => { setScannedProduct(null); lastScannedRef.current = null; setSaveToMyFoods(false) }}>
+                      <Pressable style={[st.addFormBtn, { flex: 1, backgroundColor: C.surface2 }]} onPress={() => { setScannedProduct(null); setScanName(''); lastScannedRef.current = null; setSaveToMyFoods(false) }}>
                         <Text style={[st.addFormBtnText, { color: C.text2 }]}>Scan again</Text>
                       </Pressable>
                       <Pressable style={[st.addFormBtn, { flex: 1 }, adding && { opacity: 0.5 }]} onPress={confirmScan} disabled={adding}>
