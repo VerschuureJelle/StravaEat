@@ -367,7 +367,7 @@ export default function TodayScreen() {
 
   // ── Food log actions ───────────────────────────────────────────────────────
 
-  async function addFood(name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, mealIndex: number | null = null) {
+  async function addFood(name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, mealIndex: number | null = null, qty: number = 1) {
     if (!userId) return
 
     // Stack duplicate entries: query DB directly to avoid stale-closure issues with logs state.
@@ -386,8 +386,9 @@ export default function TodayScreen() {
     if (existing) {
       const prevCount = existing.name.match(/^(\d+)× /)
       const count = prevCount ? parseInt(prevCount[1]) : 1
-      const newName = `${count + 1}× ${name}`
-      const newKcal = existing.kcal + kcal
+      const addCount = Math.round(qty) || 1
+      const newName = `${count + addCount}× ${name}`
+      const newKcal = Number(existing.kcal) + kcal
       const newProtein = (protein != null || existing.protein_g != null)
         ? Math.round(((existing.protein_g ?? 0) + (protein ?? 0)) * 10) / 10 : null
       const newFat = (fat != null || existing.fat_g != null)
@@ -1108,8 +1109,8 @@ export default function TodayScreen() {
         allPresets={allPresets}
         customFoods={customFoods}
         hideCalories={hideCalories}
-        onAdd={async (name, kcal, protein, fat, carb, mealIdx) => {
-          await addFood(name, kcal, protein, fat, carb, mealIdx)
+        onAdd={async (name, kcal, protein, fat, carb, mealIdx, qty) => {
+          await addFood(name, kcal, protein, fat, carb, mealIdx, qty)
         }}
         onLogPreset={(preset) => logMealBundle(preset, foodLoggerMealIndex)}
         onSaveToMyFoods={saveCustomFood}
@@ -1515,7 +1516,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   allPresets: MealPreset[]
   customFoods: CustomFood[]
   hideCalories: boolean
-  onAdd: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, mealIdx: number | null) => Promise<void>
+  onAdd: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, mealIdx: number | null, qty?: number) => Promise<void>
   onLogPreset: (preset: MealPreset) => Promise<void>
   onSaveToMyFoods: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) => Promise<void>
   onSaveAsPreset: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) => Promise<void>
@@ -1581,7 +1582,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
     const fat = pendingFood.fat_g != null ? Math.round(pendingFood.fat_g * qty * scale * 10) / 10 : null
     const carb = pendingFood.carb_g != null ? Math.round(pendingFood.carb_g * qty * scale * 10) / 10 : null
     setAdding(true)
-    await onAdd(pendingFood.name, kcal, protein, fat, carb, mealIndex)
+    await onAdd(pendingFood.name, kcal, protein, fat, carb, mealIndex, qty)
     setAdding(false)
     setPendingFood(null)
     onClose()
@@ -1629,7 +1630,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
     const fat = scannedProduct.fatPer100g != null ? Math.round(scannedProduct.fatPer100g * r * 10) / 10 : null
     const carb = scannedProduct.carbPer100g != null ? Math.round(scannedProduct.carbPer100g * r * 10) / 10 : null
     setAdding(true)
-    await onAdd(name, kcal, protein, fat, carb, mealIndex)
+    await onAdd(name, kcal, protein, fat, carb, mealIndex, servings)
     if (saveToMyFoods) await onSaveToMyFoods(name, kcal, protein, fat, carb)
     setAdding(false)
     setSaveToMyFoods(false)
