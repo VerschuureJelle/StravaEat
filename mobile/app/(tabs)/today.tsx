@@ -177,7 +177,7 @@ export default function TodayScreen() {
       supabase.from('meal_templates').select('id, meal_index, name, scheduled_time, kcal, protein_g, fat_g, carb_g').eq('user_id', user.id).order('meal_index'),
       supabase.from('meal_checks').select('meal_index').eq('user_id', user.id).eq('date', todayStr),
       supabase.from('meal_slot_presets').select('meal_index, sort_order, preset:meal_presets(*, items:meal_preset_items(*))').eq('user_id', user.id).order('sort_order'),
-      supabase.from('custom_foods').select('id, name, kcal, protein_g, fat_g, carb_g, amount_label, category').eq('user_id', user.id),
+      supabase.from('custom_foods').select('id, name, kcal, protein_g, fat_g, carb_g, amount_label, category').eq('user_id', user.id).order('name'),
       supabase.from('meal_presets').select('id, name, sort_order, items:meal_preset_items(id, preset_id, name, kcal, protein_g, fat_g, carb_g, amount_label, sort_order)').eq('user_id', user.id).order('name'),
     ])
 
@@ -534,7 +534,7 @@ export default function TodayScreen() {
     const { data } = await supabase.from('custom_foods').insert({
       user_id: userId, name, kcal, protein_g: protein, fat_g: fat, carb_g: carb,
     }).select('id, name, kcal, protein_g, fat_g, carb_g, amount_label, category').single()
-    if (data) setCustomFoods(prev => [...prev, data as CustomFood])
+    if (data) setCustomFoods(prev => [...prev, data as CustomFood].sort((a, b) => a.name.localeCompare(b.name)))
   }
 
   async function savePresetFromFood(name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) {
