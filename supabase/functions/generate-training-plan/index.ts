@@ -27,9 +27,6 @@ const SESSION_PREFIXES: Record<string, string> = {
 
 const ALLOWED_PROGRAM_TYPES = new Set(Object.keys(PROGRAM_LABELS))
 
-const RATE_LIMIT = 5
-const RATE_WINDOW_MS = 60 * 60 * 1000
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
@@ -46,22 +43,6 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token)
     if (authError || !user) throw new Error('Unauthorized')
 
-    // Rate limit: max 5 plan generations per hour per user
-    const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
-    const { count } = await supabase
-      .from('ai_usage_log')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .eq('function_name', 'generate-training-plan')
-      .gte('created_at', windowStart)
-
-    if ((count ?? 0) >= RATE_LIMIT) {
-      return new Response(
-        JSON.stringify({ error: 'Rate limit exceeded. Maximum 5 training plan generations per hour.' }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
-    }
-
     const {
       program_type, weeks, starting_km, starting_pace_sec_km,
       calibration_notes, subtype_config = {}, period_severity,
@@ -74,6 +55,18 @@ Deno.serve(async (req) => {
     // Validate and clamp inputs
     if (!ALLOWED_PROGRAM_TYPES.has(program_type)) throw new Error('Invalid program_type')
     const safeWeeks = Math.min(Math.max(Math.round(Number(weeks)), 1), 52)
+
+    // Credit check: deduct 1 credit per week atomically before calling Anthropic
+    const { data: hasCredits } = await supabase.rpc('deduct_credits', {
+      p_user_id: user.id,
+      p_amount: safeWeeks,
+    })
+    if (!hasCredits) {
+      return new Response(
+        JSON.stringify({ error: 'no_credits' }),
+        { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
     const safeStartingKm = Math.min(Math.max(Number(starting_km) || 0, 0), 500)
     const safeStartingPace = Math.min(Math.max(Number(starting_pace_sec_km) || 0, 0), 3600)
 

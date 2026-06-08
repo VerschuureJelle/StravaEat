@@ -769,10 +769,25 @@ export default function PlannerScreen() {
         }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Generation failed')
+      if (!res.ok) {
+        if (json.error === 'no_credits') throw new Error('no_credits')
+        throw new Error(json.error ?? 'Generation failed')
+      }
       setGeneratedSessions(json.sessions as GeneratedSession[])
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not generate plan.')
+      const msg: string = e?.message ?? ''
+      if (msg === 'no_credits') {
+        Alert.alert(
+          'Not enough credits',
+          `Generating a ${programWeeks}-week plan costs ${programWeeks} credits. Get more credits to continue.`,
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Get credits', onPress: () => router.push('/(tabs)/paywall') },
+          ],
+        )
+      } else {
+        Alert.alert('Error', msg || 'Could not generate plan.')
+      }
     } finally {
       setProgramGenerating(false)
     }
@@ -1850,7 +1865,7 @@ export default function PlannerScreen() {
                       </>
                     : <>
                         <Ionicons name="sparkles-outline" size={18} color={C.white} />
-                        <Text style={st.calcBtnText}>Generate {cfg.label} plan</Text>
+                        <Text style={st.calcBtnText}>Generate {cfg.label} plan · {programWeeks} credits</Text>
                       </>
                   }
                 </Pressable>
