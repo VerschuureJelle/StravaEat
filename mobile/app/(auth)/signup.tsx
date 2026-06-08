@@ -124,7 +124,7 @@ export default function SignUpScreen() {
           style={styles.input}
           value={form.username}
           onChangeText={set('username')}
-          placeholder="e.g. jellerun"
+          placeholder="e.g. StravaFan123"
           placeholderTextColor={C.text3}
           autoCapitalize="none"
           autoComplete="username"
