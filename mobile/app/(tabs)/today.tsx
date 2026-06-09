@@ -732,15 +732,30 @@ export default function TodayScreen() {
                   <View style={st.cycleHeaderRow}>
                     <View style={[st.cyclePhaseDot, { backgroundColor: phase.color }]} />
                     <Text style={st.cyclePhaseLabel}>{phase.label}</Text>
-                    {cycleType === 'regular'
-                      ? <Text style={st.cycleDayText}>Day {cycleDay} of {cycleLength}</Text>
-                      : <Text style={st.cycleDayText}>Day {cycleDay}</Text>
-                    }
+                    <Text style={st.cycleDayText}>{phase.description}</Text>
                     <Ionicons name="chevron-forward" size={14} color={C.text3} style={{ marginLeft: 'auto' }} />
                   </View>
-                  {cycleType === 'regular' && (
+                  {cycleType === 'regular' ? (() => {
+                    const ovStart    = Math.round(cycleLength * 0.46)
+                    const ovEnd      = ovStart + 2
+                    const markerPct  = Math.min(Math.max(((cycleDay - 0.5) / cycleLength) * 100, 1), 99)
+                    return (
+                      <View style={st.cycleBarWrapper}>
+                        <View style={st.cycleSegBar}>
+                          <View style={{ flex: periodLength,                           backgroundColor: '#E91E8C', opacity: 0.35, height: '100%' }} />
+                          <View style={{ flex: Math.max(ovStart - periodLength, 1),   backgroundColor: '#66BB6A', opacity: 0.35, height: '100%' }} />
+                          <View style={{ flex: ovEnd - ovStart + 1,                   backgroundColor: '#FFCA28', opacity: 0.35, height: '100%' }} />
+                          <View style={{ flex: Math.max(cycleLength - ovEnd, 1),      backgroundColor: '#9C27B0', opacity: 0.35, height: '100%' }} />
+                        </View>
+                        <View style={[st.cycleMarkerWrap, { left: `${markerPct}%` as any }]}>
+                          <View style={[st.cycleMarkerDot, { borderColor: phase.color }]} />
+                          <Text style={st.cycleMarkerLabel}>Day {cycleDay}</Text>
+                        </View>
+                      </View>
+                    )
+                  })() : (
                     <View style={st.cycleTrack}>
-                      <View style={[st.cycleFill, { width: `${Math.round((cycleDay / cycleLength) * 100)}%` as any, backgroundColor: phase.color }]} />
+                      <View style={[st.cycleFill, { width: `${Math.min(Math.round((cycleDay / 35) * 100), 100)}%` as any, backgroundColor: phase.color }]} />
                     </View>
                   )}
 
@@ -2895,6 +2910,11 @@ const st = StyleSheet.create({
   cycleDayText:      { fontSize: 12, color: C.text3, marginLeft: 4 },
   cycleTrack:        { height: 6, backgroundColor: C.surface3, borderRadius: 3, marginBottom: 6, overflow: 'hidden' },
   cycleFill:         { height: 6, borderRadius: 3 },
+  cycleBarWrapper:   { marginBottom: 10, paddingBottom: 22 },
+  cycleSegBar:       { height: 10, borderRadius: 5, overflow: 'hidden', flexDirection: 'row' },
+  cycleMarkerWrap:   { position: 'absolute', top: -4, alignItems: 'center', transform: [{ translateX: -9 }] },
+  cycleMarkerDot:    { width: 18, height: 18, borderRadius: 9, backgroundColor: C.surface, borderWidth: 2.5, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 3, elevation: 4 },
+  cycleMarkerLabel:  { fontSize: 10, color: C.text3, marginTop: 3, fontWeight: '600' },
   cyclePhaseDesc:    { fontSize: 12, color: C.text3, marginBottom: 8 },
   cycleMessage:      { fontSize: 13, fontStyle: 'italic', lineHeight: 19, marginBottom: 10, marginTop: 4 },
   cycleCoachRow:     { gap: 6, marginBottom: 10 },
