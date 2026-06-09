@@ -21,6 +21,18 @@ interface CalEvent {
   isOurs: boolean
 }
 
+interface PlannedWorkout {
+  id: string
+  planned_for: string
+  sport_type: string | null
+  target_kcal: number | null
+  target_duration_min: number | null
+  workout_description: string | null
+  distance_m: number | null
+}
+
+type ViewMode = 'full' | 'week' | 'day'
+
 // ─── date helpers ─────────────────────────────────────────────────────────────
 
 function toStr(d: Date): string {
@@ -89,6 +101,16 @@ function rangeLabel(start: string, end: string | null): string {
 const provColor = (p: 'google' | 'microsoft' | 'apple') =>
   p === 'google' ? '#EA4335' : p === 'microsoft' ? '#0078D4' : '#1C8EF9'
 
+function sportDotColor(sport: string | null): string {
+  if (!sport) return '#90A4AE'
+  if (/swim/i.test(sport)) return '#29B6F6'
+  if (/run|jog/i.test(sport)) return '#EF5350'
+  if (/walk|hike/i.test(sport)) return '#FF8A65'
+  if (/ride|bike|cycling|virtual/i.test(sport)) return '#66BB6A'
+  if (/strength/i.test(sport)) return '#AB47BC'
+  return '#90A4AE'
+}
+
 // ─── screen ──────────────────────────────────────────────────────────────────
 
 export default function CalendarScreen() {
@@ -107,6 +129,9 @@ export default function CalendarScreen() {
 
   // Connected providers (set during init)
   const [connectedProviders, setConnectedProviders] = useState<Set<'google' | 'microsoft' | 'apple'>>(new Set())
+
+  const [plannedWorkouts, setPlannedWorkouts] = useState<PlannedWorkout[]>([])
+  const [viewMode, setViewMode] = useState<ViewMode>('full')
 
   // Create / edit event modal — editingEvent non-null means edit mode
   const [createModal, setCreateModal]     = useState(false)
@@ -140,11 +165,12 @@ export default function CalendarScreen() {
     if (appleOk) providers.add('apple')
 
     setConnectedProviders(providers)
+    if (providers.size === 0) setNoCalendars(true)
 
-    if (providers.size === 0) {
-      setNoCalendars(true); setLoading(false); return
-    }
-    await fetchForMonth(new Date())
+    await Promise.all([
+      providers.size > 0 ? fetchForMonth(new Date()) : Promise.resolve(),
+      fetchPlannedWorkouts(new Date()),
+    ])
     setLoading(false)
   }
 
@@ -261,6 +287,20 @@ export default function CalendarScreen() {
     }
   }
 
+  async function fetchPlannedWorkouts(d: Date) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const start = toStr(new Date(d.getFullYear(), d.getMonth() - 1, 1))
+    const end   = toStr(new Date(d.getFullYear(), d.getMonth() + 2, 0))
+    const { data } = await supabase
+      .from('planned_workouts')
+      .select('id, planned_for, sport_type, target_kcal, target_duration_min, workout_description, distance_m')
+      .eq('user_id', user.id)
+      .gte('planned_for', start)
+      .lte('planned_for', end)
+    if (data) setPlannedWorkouts(data)
+  }
+
   function confirmDeleteEvent(event: CalEvent) {
     Alert.alert(
       'Delete event?',
@@ -296,19 +336,21 @@ export default function CalendarScreen() {
     const next = new Date(current)
     next.setMonth(next.getMonth() + dir)
     setCurrent(next)
+    setViewMode('full')
     fetchForMonth(next)
+    fetchPlannedWorkouts(next)
   }
 
   function handleDayPress(dateStr: string) {
     if (!dateStr) return
     if (pickingRange) {
-      // second tap — set end of range
       setSelEnd(dateStr)
       setPickingRange(false)
     } else {
       setSelStart(dateStr)
       setSelEnd(null)
       setCurrent(parse(dateStr))
+      setViewMode('full')
     }
   }
 
@@ -318,28 +360,28 @@ export default function CalendarScreen() {
     const now = new Date()
     if (option === 'today') {
       setSelStart(today); setSelEnd(null)
-      setCurrent(now)
+      setCurrent(now); setViewMode('day')
     } else if (option === 'week') {
       const mon = startOfWeek(now)
       setSelStart(toStr(mon)); setSelEnd(toStr(addDays(mon, 6)))
-      setCurrent(now)
+      setCurrent(now); setViewMode('week')
     } else if (option === 'month') {
       setSelStart(toStr(new Date(now.getFullYear(), now.getMonth(), 1)))
       setSelEnd(toStr(new Date(now.getFullYear(), now.getMonth() + 1, 0)))
-      setCurrent(now)
+      setCurrent(now); setViewMode('full')
     } else if (option === 'next7') {
       setSelStart(today); setSelEnd(toStr(addDays(now, 6)))
-      setCurrent(now)
+      setCurrent(now); setViewMode('full')
     } else if (option === 'custom') {
       setSelStart(today); setSelEnd(null)
-      setPickingRange(true) // next two taps = start then end
+      setPickingRange(true); setViewMode('full')
     }
   }
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
     setFetchedRange(null)
-    await fetchForMonth(current)
+    await Promise.all([fetchForMonth(current), fetchPlannedWorkouts(current)])
     setRefreshing(false)
   }, [current])
 
@@ -355,10 +397,20 @@ export default function CalendarScreen() {
       .sort((a, b) => a.date.localeCompare(b.date) || (a.isAllDay ? -1 : 1) || (a.startTime ?? '').localeCompare(b.startTime ?? ''))
   }
 
+  function plannedWorkoutsFor(lo: string, hi: string): PlannedWorkout[] {
+    return plannedWorkouts
+      .filter(w => w.planned_for >= lo && w.planned_for <= hi)
+      .sort((a, b) => a.planned_for.localeCompare(b.planned_for))
+  }
+
   const grid  = buildMonthGrid(current.getFullYear(), current.getMonth())
-  const shown = selectedEvents()
   const lo    = selEnd && selStart > selEnd ? selEnd : selStart
   const hi    = selEnd && selStart > selEnd ? selStart : (selEnd ?? selStart)
+  const visibleGrid = viewMode === 'full'
+    ? grid
+    : grid.filter(row => row.some(cell => cell !== '' && cell >= lo && cell <= hi))
+  const shown = selectedEvents()
+  const shownWorkouts = plannedWorkoutsFor(lo, hi)
 
   return (
     <AppDrawer>
@@ -370,7 +422,7 @@ export default function CalendarScreen() {
             <HamburgerBtn onPress={openDrawer} />
             <Text style={s.title}>Calendar</Text>
             <View style={s.topBarRight}>
-              <Pressable onPress={() => { setSelStart(today); setSelEnd(null); setCurrent(new Date()); setPickingRange(false) }}>
+              <Pressable onPress={() => { setSelStart(today); setSelEnd(null); setCurrent(new Date()); setPickingRange(false); setViewMode('day') }}>
                 <Text style={s.todayBtn}>Today</Text>
               </Pressable>
               {!noCalendars && (
@@ -387,14 +439,15 @@ export default function CalendarScreen() {
           >
             {loading ? (
               <View style={s.center}><ActivityIndicator color={C.accent} size="large" /></View>
-            ) : noCalendars ? (
-              <View style={s.center}>
-                <Ionicons name="calendar-outline" size={52} color={C.text3} style={{ marginBottom: 12 }} />
-                <Text style={s.emptyTitle}>No calendars connected</Text>
-                <Text style={s.emptySub}>Connect Google, Outlook, or Apple Calendar in Settings → Calendars</Text>
-              </View>
             ) : (
               <>
+                {noCalendars && (
+                  <View style={s.calBanner}>
+                    <Ionicons name="calendar-outline" size={15} color={C.text3} />
+                    <Text style={s.calBannerText}>No calendar connected — go to Settings → Calendars</Text>
+                  </View>
+                )}
+
                 {/* Month navigation */}
                 <View style={s.navRow}>
                   <Pressable style={s.navBtn} onPress={() => navigate(-1)}>
@@ -412,14 +465,15 @@ export default function CalendarScreen() {
                     {DOW.map(d => <Text key={d} style={s.dowLabel}>{d}</Text>)}
                   </View>
 
-                  {grid.map((row, ri) => (
+                  {visibleGrid.map((row, ri) => (
                     <View key={ri} style={s.weekRow}>
                       {row.map((dateStr, ci) => {
                         if (!dateStr) return <View key={ci} style={s.cell} />
-                        const evs       = eventsFor(dateStr)
-                        const isToday   = dateStr === today
-                        const isSel     = dateStr === selStart || dateStr === selEnd
-                        const inRange   = selEnd != null && dateStr > lo && dateStr < hi
+                        const evs          = eventsFor(dateStr)
+                        const pws          = plannedWorkouts.filter(w => w.planned_for === dateStr)
+                        const isToday      = dateStr === today
+                        const isSel        = dateStr === selStart || dateStr === selEnd
+                        const inRange      = selEnd != null && dateStr > lo && dateStr < hi
                         const isRangeStart = dateStr === lo && selEnd != null
                         const isRangeEnd   = dateStr === hi && selEnd != null
                         return (
@@ -447,8 +501,11 @@ export default function CalendarScreen() {
                               </Text>
                             </View>
                             <View style={s.dots}>
-                              {evs.slice(0, 3).map((e, i) => (
+                              {evs.slice(0, 2).map((e, i) => (
                                 <View key={i} style={[s.dot, { backgroundColor: provColor(e.provider) }]} />
+                              ))}
+                              {pws.slice(0, 1).map((w, i) => (
+                                <View key={`p${i}`} style={[s.dot, { backgroundColor: sportDotColor(w.sport_type) }]} />
                               ))}
                             </View>
                           </Pressable>
@@ -472,46 +529,77 @@ export default function CalendarScreen() {
                   </Pressable>
                 </View>
 
-                {/* Events */}
+                {/* Events + planned workouts */}
                 <View style={s.eventsSection}>
-                  {shown.length === 0 ? (
+                  {shown.length === 0 && shownWorkouts.length === 0 ? (
                     <Text style={s.noEvents}>No events</Text>
                   ) : (
-                    shown.map(event => (
-                      <Pressable key={event.id} style={s.eventCard} onPress={() => openEditModal(event)}>
-                        <View style={[s.eventBar, { backgroundColor: provColor(event.provider) }]} />
-                        <View style={s.eventBody}>
-                          <Text style={s.eventTitle} numberOfLines={2}>{event.title}</Text>
-                          <View style={s.eventMeta}>
-                            <Text style={s.eventTime}>
-                              {event.isAllDay ? 'All day' : `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ''}`}
-                            </Text>
-                            {selEnd && selStart !== selEnd && (
-                              <Text style={s.eventDateChip}>
-                                {parse(event.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    <>
+                      {shown.map(event => (
+                        <Pressable key={event.id} style={s.eventCard} onPress={() => openEditModal(event)}>
+                          <View style={[s.eventBar, { backgroundColor: provColor(event.provider) }]} />
+                          <View style={s.eventBody}>
+                            <Text style={s.eventTitle} numberOfLines={2}>{event.title}</Text>
+                            <View style={s.eventMeta}>
+                              <Text style={s.eventTime}>
+                                {event.isAllDay ? 'All day' : `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ''}`}
                               </Text>
-                            )}
-                            {event.isOurs && <View style={s.ours}><Text style={s.oursText}>StravaEat</Text></View>}
+                              {selEnd && selStart !== selEnd && (
+                                <Text style={s.eventDateChip}>
+                                  {parse(event.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                                </Text>
+                              )}
+                              {event.isOurs && <View style={s.ours}><Text style={s.oursText}>StravaEat</Text></View>}
+                            </View>
+                          </View>
+                          <View style={[s.provBadge, { backgroundColor: provColor(event.provider) + '22' }]}>
+                            <Text style={[s.provLetter, { color: provColor(event.provider) }]}>
+                              {event.provider === 'google' ? 'G' : event.provider === 'microsoft' ? 'M' : 'A'}
+                            </Text>
+                          </View>
+                          <Pressable
+                            style={s.deleteBtn}
+                            onPress={(e) => { e.stopPropagation?.(); confirmDeleteEvent(event) }}
+                            disabled={deletingEventId === event.id}
+                            hitSlop={8}
+                          >
+                            {deletingEventId === event.id
+                              ? <ActivityIndicator size="small" color={C.text3} />
+                              : <Ionicons name="trash-outline" size={16} color={C.text3} />
+                            }
+                          </Pressable>
+                        </Pressable>
+                      ))}
+                      {shownWorkouts.map(w => (
+                        <View key={w.id} style={s.workoutCard}>
+                          <View style={[s.eventBar, { backgroundColor: sportDotColor(w.sport_type) }]} />
+                          <View style={s.eventBody}>
+                            <Text style={s.eventTitle} numberOfLines={1}>
+                              {w.sport_type ? w.sport_type.charAt(0).toUpperCase() + w.sport_type.slice(1) : 'Workout'}
+                            </Text>
+                            <View style={s.eventMeta}>
+                              {w.target_duration_min != null && (
+                                <Text style={s.eventTime}>{Math.round(w.target_duration_min)} min</Text>
+                              )}
+                              {w.distance_m != null && (
+                                <Text style={s.eventTime}>{(w.distance_m / 1000).toFixed(1)} km</Text>
+                              )}
+                              {w.target_kcal != null && (
+                                <Text style={s.eventTime}>{w.target_kcal} kcal</Text>
+                              )}
+                              {selEnd && selStart !== selEnd && (
+                                <Text style={s.eventDateChip}>
+                                  {parse(w.planned_for).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                          <View style={[s.provBadge, { backgroundColor: sportDotColor(w.sport_type) + '22' }]}>
+                            <Ionicons name="barbell-outline" size={12} color={sportDotColor(w.sport_type)} />
                           </View>
                         </View>
-                        <View style={[s.provBadge, { backgroundColor: provColor(event.provider) + '22' }]}>
-                          <Text style={[s.provLetter, { color: provColor(event.provider) }]}>
-                            {event.provider === 'google' ? 'G' : event.provider === 'microsoft' ? 'M' : 'A'}
-                          </Text>
-                        </View>
-                        <Pressable
-                          style={s.deleteBtn}
-                          onPress={(e) => { e.stopPropagation?.(); confirmDeleteEvent(event) }}
-                          disabled={deletingEventId === event.id}
-                          hitSlop={8}
-                        >
-                          {deletingEventId === event.id
-                            ? <ActivityIndicator size="small" color={C.text3} />
-                            : <Ionicons name="trash-outline" size={16} color={C.text3} />
-                          }
-                        </Pressable>
-                      </Pressable>
-                    ))
+                      ))}
+                    </>
                   )}
                 </View>
               </>
@@ -784,6 +872,10 @@ const s = StyleSheet.create({
 
   topBarRight:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
   addBtn:         { padding: 4 },
+
+  calBanner:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 14, marginBottom: 8, backgroundColor: C.surface, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
+  calBannerText:  { fontSize: 12, color: C.text3, flex: 1 },
+  workoutCard:    { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface, borderRadius: 12, padding: 12, marginBottom: 6, gap: 10 },
 
   backdrop:       { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
 

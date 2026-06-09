@@ -123,6 +123,15 @@ export default function ZonesScreen() {
         <Text style={styles.header}>Heart Rate Zones</Text>
         <Text style={styles.note}>Changes only apply to future syncs.</Text>
 
+        {groups.length === 0 && (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No zones configured</Text>
+            <Text style={styles.emptyBody}>
+              Set up your heart rate zones in Settings → Heart Rate Zones. Zones are used to calculate calories burned per activity.
+            </Text>
+          </View>
+        )}
+
         {groups.map(group => (
           <View key={group.sport} style={styles.sportGroup}>
             <View style={styles.sportHeaderRow}>
@@ -256,4 +265,7 @@ const styles = StyleSheet.create({
   saveBtnText: { color: C.white, fontWeight: '700', fontSize: 14 },
   cancelBtn: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 4 },
   cancelBtnText: { color: C.text2, fontSize: 14 },
+  emptyState: { marginTop: 32, alignItems: 'center', paddingHorizontal: 8 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: C.text1, marginBottom: 8 },
+  emptyBody:  { fontSize: 13, color: C.text3, textAlign: 'center', lineHeight: 20 },
 })
