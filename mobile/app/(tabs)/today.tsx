@@ -70,11 +70,15 @@ export default function TodayScreen() {
   // Cycle tracking
   const [cycleLength, setCycleLength] = useState(28)
   const [periodLength, setPeriodLength] = useState(5)
+  const [follicularLength, setFollicularLength] = useState(8)
+  const [lutealLength, setLutealLength] = useState(12)
   const [cycleType, setCycleType] = useState<'regular' | 'irregular'>('regular')
   const [lastPeriodStart, setLastPeriodStart] = useState<string | null>(null)
   const [showCycleModal, setShowCycleModal] = useState(false)
   const [cycleLengthDraft, setCycleLengthDraft] = useState('28')
   const [periodLengthDraft, setPeriodLengthDraft] = useState('5')
+  const [follicularLengthDraft, setFollicularLengthDraft] = useState('8')
+  const [lutealLengthDraft, setLutealLengthDraft] = useState('12')
   const [cycleTypeDraft, setCycleTypeDraft] = useState<'regular' | 'irregular'>('regular')
   // Date fields — DD / MM / YYYY as separate inputs
   const [dateDd, setDateDd] = useState('')
@@ -149,7 +153,7 @@ export default function TodayScreen() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       supabase.from('users')
-        .select('hide_calories, daily_kcal_target, max_kcal_target, meal_notif_delay_min, cycle_length, period_length, cycle_type, last_period_start, on_period, period_severity')
+        .select('hide_calories, daily_kcal_target, max_kcal_target, meal_notif_delay_min, cycle_length, period_length, follicular_length, luteal_length, cycle_type, last_period_start, on_period, period_severity')
         .eq('id', user.id).single()
         .then(({ data }) => {
           if (!data) return
@@ -159,6 +163,8 @@ export default function TodayScreen() {
           setMealNotifDelayMin(data.meal_notif_delay_min ?? 60)
           setCycleLength(data.cycle_length ?? 28)
           setPeriodLength(data.period_length ?? 5)
+          setFollicularLength(data.follicular_length ?? 8)
+          setLutealLength(data.luteal_length ?? 12)
           setCycleType(data.cycle_type ?? 'regular')
           setLastPeriodStart(data.last_period_start ?? null)
           setOnPeriod(data.on_period ?? false)
@@ -176,7 +182,7 @@ export default function TodayScreen() {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
 
     const [profileRes, activitiesRes, plannedRes, logsRes, templatesRes, checksRes, presetsRes, customRes, allPresetsRes] = await Promise.all([
-      supabase.from('users').select('name, avatar_url, sex, daily_kcal_target, max_kcal_target, hide_calories, on_period, period_severity, meal_notif_delay_min, cycle_length, period_length, cycle_type, last_period_start').eq('id', user.id).single(),
+      supabase.from('users').select('name, avatar_url, sex, daily_kcal_target, max_kcal_target, hide_calories, on_period, period_severity, meal_notif_delay_min, cycle_length, period_length, follicular_length, luteal_length, cycle_type, last_period_start').eq('id', user.id).single(),
       supabase.from('activities').select('id, name, type, total_kcal').eq('user_id', user.id).gte('date', todayStr).lt('date', tomorrow).not('total_kcal', 'is', null),
       supabase.from('planned_workouts').select('id, sport_type, target_kcal, workout_description, status, is_key').eq('user_id', user.id).eq('planned_for', todayStr),
       supabase.from('food_logs').select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').eq('user_id', user.id).eq('date', todayStr).order('logged_at'),
@@ -199,10 +205,14 @@ export default function TodayScreen() {
       setMealNotifDelayMin(profileRes.data.meal_notif_delay_min ?? 60)
       const cl = profileRes.data.cycle_length ?? 28
       const pl = profileRes.data.period_length ?? 5
+      const fl = profileRes.data.follicular_length ?? 8
+      const ll = profileRes.data.luteal_length ?? 12
       const ct: 'regular' | 'irregular' = profileRes.data.cycle_type ?? 'regular'
       const lps: string | null = profileRes.data.last_period_start ?? null
       setCycleLength(cl)
       setPeriodLength(pl)
+      setFollicularLength(fl)
+      setLutealLength(ll)
       setCycleType(ct)
       setLastPeriodStart(lps)
       // Auto-clear on_period if we're past menstrual phase
@@ -596,8 +606,11 @@ export default function TodayScreen() {
   function getCyclePhase(day: number): { label: string; color: string; description: string } {
     if (day <= periodLength) return { label: 'Menstrual',  color: '#E91E8C', description: 'Period phase' }
     if (cycleType === 'irregular') {
-      // Without a known cycle length we only know we're in a post-menstrual phase
-      return { label: 'Post-menstrual', color: '#66BB6A', description: 'Recovery phase' }
+      const ovStart = periodLength + follicularLength
+      const ovEnd   = ovStart + 2
+      if (day <= ovStart) return { label: 'Follicular', color: '#66BB6A', description: 'Energy rising' }
+      if (day <= ovEnd)   return { label: 'Ovulation',  color: '#FFCA28', description: 'Peak energy' }
+      return                     { label: 'Luteal',      color: '#9C27B0', description: 'Wind-down phase' }
     }
     const ovStart = Math.round(cycleLength * 0.46)  // ~day 13 for 28-day
     const ovEnd   = ovStart + 2
@@ -637,7 +650,10 @@ export default function TodayScreen() {
       }
     }
     // Luteal
-    const isLateLuteal = cycleType === 'regular' && day >= cycleLength - 6
+    const estimatedEnd = cycleType === 'regular'
+      ? cycleLength
+      : periodLength + follicularLength + 2 + lutealLength
+    const isLateLuteal = day >= estimatedEnd - 6
     return {
       message: isLateLuteal
         ? "Lower energy is normal here — not failure. Your body needs more fuel and more sleep. Let it."
@@ -714,6 +730,8 @@ export default function TodayScreen() {
             <Pressable style={[st.cycleCard, { marginHorizontal: 16 }]} onPress={() => {
               setCycleLengthDraft(String(cycleLength))
               setPeriodLengthDraft(String(periodLength))
+              setFollicularLengthDraft(String(follicularLength))
+              setLutealLengthDraft(String(lutealLength))
               setCycleTypeDraft(cycleType)
               if (lastPeriodStart) {
                 const [y, mo, d] = lastPeriodStart.split('-')
@@ -735,17 +753,21 @@ export default function TodayScreen() {
                     <Text style={st.cycleDayText}>{phase.description}</Text>
                     <Ionicons name="chevron-forward" size={14} color={C.text3} style={{ marginLeft: 'auto' }} />
                   </View>
-                  {cycleType === 'regular' ? (() => {
-                    const ovStart    = Math.round(cycleLength * 0.46)
-                    const ovEnd      = ovStart + 2
-                    const markerPct  = Math.min(Math.max(((cycleDay - 0.5) / cycleLength) * 100, 1), 99)
+                  {(() => {
+                    const isReg   = cycleType === 'regular'
+                    const ovStart = isReg
+                      ? Math.round(cycleLength * 0.46)
+                      : periodLength + follicularLength
+                    const ovEnd   = ovStart + 2
+                    const total   = isReg ? cycleLength : periodLength + follicularLength + 2 + lutealLength
+                    const markerPct = Math.min(Math.max(((cycleDay - 0.5) / total) * 100, 1), 99)
                     return (
                       <View style={st.cycleBarWrapper}>
                         <View style={st.cycleSegBar}>
-                          <View style={{ flex: periodLength,                           backgroundColor: '#E91E8C', opacity: 0.35, height: '100%' }} />
-                          <View style={{ flex: Math.max(ovStart - periodLength, 1),   backgroundColor: '#66BB6A', opacity: 0.35, height: '100%' }} />
-                          <View style={{ flex: ovEnd - ovStart + 1,                   backgroundColor: '#FFCA28', opacity: 0.35, height: '100%' }} />
-                          <View style={{ flex: Math.max(cycleLength - ovEnd, 1),      backgroundColor: '#9C27B0', opacity: 0.35, height: '100%' }} />
+                          <View style={{ flex: periodLength,                         backgroundColor: '#E91E8C', opacity: 0.35, height: '100%' }} />
+                          <View style={{ flex: Math.max(ovStart - periodLength, 1), backgroundColor: '#66BB6A', opacity: 0.35, height: '100%' }} />
+                          <View style={{ flex: ovEnd - ovStart + 1,                 backgroundColor: '#FFCA28', opacity: 0.35, height: '100%' }} />
+                          <View style={{ flex: Math.max(total - ovEnd, 1),          backgroundColor: '#9C27B0', opacity: 0.35, height: '100%' }} />
                         </View>
                         <View style={[st.cycleMarkerWrap, { left: `${markerPct}%` as any }]}>
                           <View style={[st.cycleMarkerDot, { borderColor: phase.color }]} />
@@ -753,11 +775,7 @@ export default function TodayScreen() {
                         </View>
                       </View>
                     )
-                  })() : (
-                    <View style={st.cycleTrack}>
-                      <View style={[st.cycleFill, { width: `${Math.min(Math.round((cycleDay / 35) * 100), 100)}%` as any, backgroundColor: phase.color }]} />
-                    </View>
-                  )}
+                  })()}
 
                   {/* Supportive message */}
                   <Text style={[st.cycleMessage, { color: phase.color }]}>{coaching.message}</Text>
@@ -1249,6 +1267,41 @@ export default function TodayScreen() {
               </View>
             </View>
 
+            {/* Phase lengths — only for irregular cycles */}
+            {cycleTypeDraft === 'irregular' && (
+              <View>
+                <Text style={st.cycleModalLabel}>Typical follicular phase (days)</Text>
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                  {[5, 6, 7, 8, 9, 10, 12, 14].map(n => (
+                    <Pressable
+                      key={n}
+                      style={[st.cycleLenBtn, follicularLengthDraft === String(n) && st.cycleLenBtnActive]}
+                      onPress={() => setFollicularLengthDraft(String(n))}
+                    >
+                      <Text style={[st.cycleLenBtnText, follicularLengthDraft === String(n) && st.cycleLenBtnTextActive]}>{n}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Text style={[st.cycleModalLabel, { marginTop: 16 }]}>Typical luteal phase (days)</Text>
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                  {[8, 9, 10, 11, 12, 13, 14, 16].map(n => (
+                    <Pressable
+                      key={n}
+                      style={[st.cycleLenBtn, lutealLengthDraft === String(n) && st.cycleLenBtnActive]}
+                      onPress={() => setLutealLengthDraft(String(n))}
+                    >
+                      <Text style={[st.cycleLenBtnText, lutealLengthDraft === String(n) && st.cycleLenBtnTextActive]}>{n}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={st.cycleModalHint}>
+                  Ovulation is always estimated at 2 days.{'\n'}
+                  Estimated cycle: {(parseInt(periodLengthDraft) || 5) + (parseInt(follicularLengthDraft) || 8) + 2 + (parseInt(lutealLengthDraft) || 12)} days total.
+                </Text>
+              </View>
+            )}
+
             {/* Cycle length — only for regular cycles */}
             {cycleTypeDraft === 'regular' && (
               <View>
@@ -1291,16 +1344,22 @@ export default function TodayScreen() {
                     isoDate = candidate
                   }
                 }
-                const len = parseInt(cycleLengthDraft) || 28
-                const pLen = parseInt(periodLengthDraft) || 5
+                const len   = parseInt(cycleLengthDraft) || 28
+                const pLen  = parseInt(periodLengthDraft) || 5
+                const fLen  = parseInt(follicularLengthDraft) || 8
+                const lLen  = parseInt(lutealLengthDraft) || 12
                 setCycleLength(len)
                 setPeriodLength(pLen)
+                setFollicularLength(fLen)
+                setLutealLength(lLen)
                 setCycleType(cycleTypeDraft)
                 setLastPeriodStart(isoDate)
                 if (userId) {
                   await supabase.from('users').update({
                     cycle_length: len,
                     period_length: pLen,
+                    follicular_length: fLen,
+                    luteal_length: lLen,
                     cycle_type: cycleTypeDraft,
                     last_period_start: isoDate,
                   }).eq('id', userId)
@@ -2930,6 +2989,7 @@ const st = StyleSheet.create({
   cycleModalTitle:    { fontSize: 18, fontWeight: '700', color: C.text1 },
   cycleModalLabel:    { fontSize: 14, fontWeight: '600', color: C.text2, marginBottom: 8 },
   cycleModalInput:    { backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 14, fontSize: 16, color: C.text1 },
+  cycleModalHint:     { fontSize: 12, color: C.text3, marginTop: 12, lineHeight: 18 },
   cycleModalSave:     { backgroundColor: C.accent, borderRadius: 14, padding: 16, alignItems: 'center' },
   cycleModalSaveText: { fontSize: 16, fontWeight: '700', color: C.white },
   cycleLenBtn:        { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface },
