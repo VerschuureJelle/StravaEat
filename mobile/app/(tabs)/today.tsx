@@ -832,18 +832,9 @@ export default function TodayScreen() {
               {displayKcal != null ? (
                 <>
                   {hideCalories ? (
-                    <>
-                      <View style={st.progressTrack}>
-                        <View style={[st.progressFill, { width: `${Math.round(barPct * 100)}%` as any }]} />
-                      </View>
-                      <Text style={st.calorieLabelDark}>
-                        {consumedKcal > (displayMaxKcal ?? Infinity)
-                          ? 'You\'ve exceeded your daily maximum'
-                          : consumedKcal >= displayKcal
-                            ? 'Daily target reached'
-                            : `You're at ${Math.round(barPct * 100)}% of your daily goal`}
-                      </Text>
-                    </>
+                    <View style={st.progressTrack}>
+                      <View style={[st.progressFill, { width: `${Math.round(barPct * 100)}%` as any }]} />
+                    </View>
                   ) : (
                     <>
                       <Text style={st.calorieNum}>
@@ -852,6 +843,9 @@ export default function TodayScreen() {
                           : (displayKcal - consumedKcal).toLocaleString()}
                       </Text>
                       <Text style={st.calorieLabelDark}>{status?.text ?? ''}</Text>
+                      <View style={[st.progressTrack, { marginTop: 14, marginBottom: 0 }]}>
+                        <View style={[st.progressFill, { width: `${Math.round(barPct * 100)}%` as any }]} />
+                      </View>
                       <View style={st.calorieChips}>
                         {dailyTarget != null && (
                           <View style={st.chip}><Text style={st.chipText}>{dailyTarget.toLocaleString()} baseline</Text></View>
