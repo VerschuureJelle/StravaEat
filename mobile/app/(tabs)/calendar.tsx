@@ -119,7 +119,7 @@ export default function CalendarScreen() {
   const [current, setCurrent]         = useState(new Date())
   const [selStart, setSelStart]       = useState<string>(today)
   const [selEnd, setSelEnd]           = useState<string | null>(null)
-  const [pickingRange, setPickingRange] = useState(false)
+  const [pickingRange, setPickingRange] = useState<false | 'start' | 'end'>(false)
   const [dropdown, setDropdown]       = useState(false)
   const [events, setEvents]           = useState<CalEvent[]>([])
   const [fetchedRange, setFetchedRange] = useState<{ start: string; end: string } | null>(null)
@@ -248,7 +248,7 @@ export default function CalendarScreen() {
         }
         await Promise.all(ops)
         setFetchedRange(null)
-        await fetchForMonth(current)
+        await fetchForMonth(current, true)
       }
 
       setCreateModal(false)
@@ -259,10 +259,10 @@ export default function CalendarScreen() {
     }
   }
 
-  async function fetchForMonth(d: Date) {
+  async function fetchForMonth(d: Date, force = false) {
     const start = toStr(new Date(d.getFullYear(), d.getMonth() - 1, 1))
     const end   = toStr(new Date(d.getFullYear(), d.getMonth() + 2, 0))
-    if (fetchedRange && start >= fetchedRange.start && end <= fetchedRange.end) return
+    if (!force && fetchedRange && start >= fetchedRange.start && end <= fetchedRange.end) return
 
     const [cloudResult, appleEvents] = await Promise.all([
       supabase.functions.invoke('cal-get-events', { body: { startDate: start, endDate: end } })
@@ -343,9 +343,15 @@ export default function CalendarScreen() {
 
   function handleDayPress(dateStr: string) {
     if (!dateStr) return
-    if (pickingRange) {
+    if (pickingRange === 'start') {
+      setSelStart(dateStr)
+      setSelEnd(null)
+      setCurrent(parse(dateStr))
+      setPickingRange('end')
+    } else if (pickingRange === 'end') {
       setSelEnd(dateStr)
       setPickingRange(false)
+      setViewMode('full')
     } else {
       setSelStart(dateStr)
       setSelEnd(null)
@@ -374,7 +380,7 @@ export default function CalendarScreen() {
       setCurrent(now); setViewMode('full')
     } else if (option === 'custom') {
       setSelStart(today); setSelEnd(null)
-      setPickingRange(true); setViewMode('full')
+      setPickingRange('start'); setViewMode('full')
     }
   }
 
@@ -518,9 +524,11 @@ export default function CalendarScreen() {
                 {/* Range bar */}
                 <View style={s.rangeBar}>
                   <View style={s.rangeBarLeft}>
-                    {pickingRange
-                      ? <Text style={s.rangeHint}>Tap a day to start your range, then tap another to end it</Text>
-                      : <Text style={s.rangeLabel}>{rangeLabel(selStart, selEnd)}</Text>
+                    {pickingRange === 'start'
+                      ? <Text style={s.rangeHint}>Tap to set start date</Text>
+                      : pickingRange === 'end'
+                        ? <Text style={s.rangeHint}>Tap to set end date</Text>
+                        : <Text style={s.rangeLabel}>{rangeLabel(selStart, selEnd)}</Text>
                     }
                   </View>
                   <Pressable style={s.rangeDropBtn} onPress={() => setDropdown(true)}>
@@ -612,8 +620,14 @@ export default function CalendarScreen() {
               <Pressable style={s.backdrop} onPress={() => setCreateModal(false)}>
                 <Pressable style={s.createSheet} onPress={e => e.stopPropagation()}>
                   <View style={s.createHandle} />
-                  <Text style={s.createTitle}>{editingEvent ? 'Edit Event' : 'New Event'}</Text>
+                  <View style={s.createHeader}>
+                    <Text style={s.createTitle}>{editingEvent ? 'Edit Event' : 'New Event'}</Text>
+                    <Pressable onPress={() => setCreateModal(false)} hitSlop={10}>
+                      <Ionicons name="close" size={22} color={C.text3} />
+                    </Pressable>
+                  </View>
 
+                  <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                   <Text style={s.createLabel}>Title</Text>
                   <TextInput
                     style={s.createInput}
@@ -779,6 +793,8 @@ export default function CalendarScreen() {
                       : <Text style={s.createSaveBtnText}>{editingEvent ? 'Save Changes' : 'Save Event'}</Text>
                     }
                   </Pressable>
+                  <View style={{ height: 8 }} />
+                  </ScrollView>
                 </Pressable>
               </Pressable>
             </KeyboardAvoidingView>
@@ -879,9 +895,10 @@ const s = StyleSheet.create({
 
   backdrop:       { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
 
-  createSheet:    { backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 36, paddingTop: 12, paddingHorizontal: 20 },
+  createSheet:    { backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12, paddingHorizontal: 20, maxHeight: '90%' },
   createHandle:   { width: 36, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 16 },
-  createTitle:    { fontSize: 18, fontWeight: '700', color: C.text1, marginBottom: 16 },
+  createHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  createTitle:    { fontSize: 18, fontWeight: '700', color: C.text1 },
   createLabel:    { fontSize: 12, fontWeight: '600', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 5, marginTop: 12 },
   createInput:    { backgroundColor: C.surface2, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: C.text1 },
   createRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
