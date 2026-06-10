@@ -21,7 +21,7 @@ import type { ProgressionAnalysis, ProgressionLevel } from '../../lib/progressio
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
-interface TodayActivity { id: string; name: string; type: string; total_kcal: number }
+interface TodayActivity { id: string; name: string; type: string; total_kcal: number; source?: string; duration_sec?: number }
 interface PlannedWorkout { id: string; sport_type: string; target_kcal: number; workout_description: string | null; status: 'completed' | 'skipped' | null; is_key: boolean }
 interface PastUnresolved { id: string; sport_type: string; target_kcal: number; workout_description: string | null; planned_for: string; is_key: boolean; distance_m: number | null; target_duration_min: number | null }
 interface MealItem {
@@ -47,6 +47,25 @@ const _barcodeCache = new Map<string, {
   name: string; kcalPer100g: number
   proteinPer100g: number | null; fatPer100g: number | null; carbPer100g: number | null
 }>()
+
+// ─── Manual workout constants ─────────────────────────────────────────────────
+
+const MANUAL_SPORT_OPTIONS = [
+  { type: 'WeightTraining', label: 'Gym',      mets: [3.5, 5.0, 6.0, 8.0] },
+  { type: 'Cycling',        label: 'Cycling',   mets: [4.0, 6.8, 10.0, 12.0] },
+  { type: 'Run',            label: 'Running',   mets: [6.0, 8.3, 11.0, 14.0] },
+  { type: 'Walk',           label: 'Walking',   mets: [2.5, 3.5, 4.5, 6.0] },
+  { type: 'Swim',           label: 'Swimming',  mets: [5.0, 7.0, 9.0, 11.0] },
+  { type: 'Yoga',           label: 'Yoga',      mets: [2.0, 3.0, 4.0, 5.0] },
+  { type: 'Workout',        label: 'HIIT',      mets: [6.0, 8.0, 10.0, 12.0] },
+  { type: 'Other',          label: 'Other',     mets: [3.5, 5.0, 7.0, 9.0] },
+]
+const INTENSITY_OPTIONS = [
+  { label: 'Light',    description: 'Machines, lots of rest' },
+  { label: 'Moderate', description: 'Compound lifts, mixed' },
+  { label: 'Intense',  description: 'Supersets, little rest' },
+  { label: 'Circuit',  description: 'Circuit training / CrossFit' },
+]
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
@@ -100,6 +119,8 @@ export default function TodayScreen() {
   const [skipAnalysis, setSkipAnalysis] = useState<Record<string, ProgressionAnalysis | 'loading'>>({})
   const [aiAdvice, setAiAdvice] = useState<Record<string, string | 'loading'>>({})
   const [syncing, setSyncing] = useState(false)
+  const [weightKg, setWeightKg] = useState(70)
+  const [showLogWorkout, setShowLogWorkout] = useState(false)
 
   // Meals
   const [meals, setMeals] = useState<MealItem[]>([])
@@ -183,8 +204,8 @@ export default function TodayScreen() {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
 
     const [profileRes, activitiesRes, plannedRes, logsRes, templatesRes, checksRes, presetsRes, customRes, allPresetsRes] = await Promise.all([
-      supabase.from('users').select('name, avatar_url, sex, daily_kcal_target, max_kcal_target, hide_calories, on_period, period_severity, meal_notif_delay_min, cycle_length, period_length, follicular_length, luteal_length, cycle_type, last_period_start').eq('id', user.id).single(),
-      supabase.from('activities').select('id, name, type, total_kcal').eq('user_id', user.id).gte('date', todayStr).lt('date', tomorrow).not('total_kcal', 'is', null),
+      supabase.from('users').select('name, avatar_url, sex, daily_kcal_target, max_kcal_target, hide_calories, weight_kg, on_period, period_severity, meal_notif_delay_min, cycle_length, period_length, follicular_length, luteal_length, cycle_type, last_period_start').eq('id', user.id).single(),
+      supabase.from('activities').select('id, name, type, total_kcal, source, duration_sec').eq('user_id', user.id).gte('date', todayStr).lt('date', tomorrow).not('total_kcal', 'is', null),
       supabase.from('planned_workouts').select('id, sport_type, target_kcal, workout_description, status, is_key').eq('user_id', user.id).eq('planned_for', todayStr),
       supabase.from('food_logs').select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').eq('user_id', user.id).eq('date', todayStr).order('logged_at'),
       supabase.from('meal_templates').select('id, meal_index, name, scheduled_time, kcal, protein_g, fat_g, carb_g').eq('user_id', user.id).order('meal_index'),
@@ -201,6 +222,7 @@ export default function TodayScreen() {
       setDailyTarget(profileRes.data.daily_kcal_target)
       setMaxKcalTarget(profileRes.data.max_kcal_target)
       setHideCalories(profileRes.data.hide_calories ?? false)
+      setWeightKg(profileRes.data.weight_kg ?? 70)
       setOnPeriod(profileRes.data.on_period ?? false)
       setPeriodSeverity(profileRes.data.period_severity ?? null)
       setMealNotifDelayMin(profileRes.data.meal_notif_delay_min ?? 60)
@@ -380,6 +402,39 @@ export default function TodayScreen() {
     } finally {
       setSyncing(false)
     }
+  }
+
+  // ── Manual workout logging ─────────────────────────────────────────────────
+
+  async function logManualActivity(type: string, name: string, durationMin: number, kcal: number) {
+    if (!userId) return
+    const { data, error } = await supabase.from('activities').insert({
+      user_id: userId,
+      name,
+      type,
+      date: new Date().toISOString(),
+      duration_sec: durationMin * 60,
+      total_kcal: kcal,
+      source: 'manual',
+    }).select('id, name, type, total_kcal, source, duration_sec').single()
+    if (error) { Alert.alert('Error', error.message); return }
+    if (data) {
+      setTodayActivities(prev => [...prev, data as TodayActivity])
+      setBurnedKcal(prev => prev + Math.round(kcal))
+    }
+    setShowLogWorkout(false)
+  }
+
+  async function deleteManualActivity(id: string) {
+    const kcal = todayActivities.find(a => a.id === id)?.total_kcal ?? 0
+    Alert.alert('Delete workout', 'Remove this manually logged workout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await supabase.from('activities').delete().eq('id', id)
+        setTodayActivities(prev => prev.filter(a => a.id !== id))
+        setBurnedKcal(prev => Math.max(0, prev - Math.round(kcal)))
+      }},
+    ])
   }
 
   // ── Food log actions ───────────────────────────────────────────────────────
@@ -946,9 +1001,19 @@ export default function TodayScreen() {
               <View key={a.id} style={[st.activityRow, { borderLeftColor: sportColor(a.type) }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={st.activityName}>{a.name}</Text>
-                  <Text style={st.activityType}>{a.type}</Text>
+                  <Text style={st.activityType}>
+                    {a.source === 'manual' && a.duration_sec
+                      ? `${Math.round(a.duration_sec / 60)} min · `
+                      : ''
+                    }{a.type}{a.source === 'manual' ? ' · Manual' : ''}
+                  </Text>
                 </View>
                 {!hideCalories && <Text style={st.activityKcal}>+{Math.round(a.total_kcal).toLocaleString()} kcal</Text>}
+                {a.source === 'manual' && (
+                  <Pressable onPress={() => deleteManualActivity(a.id)} hitSlop={10} style={{ marginLeft: 10 }}>
+                    <Ionicons name="trash-outline" size={15} color={C.danger} />
+                  </Pressable>
+                )}
               </View>
             ))}
 
@@ -962,6 +1027,10 @@ export default function TodayScreen() {
               </View>
             ))}
 
+            <Pressable style={st.planBtn} onPress={() => setShowLogWorkout(true)}>
+              <Ionicons name="pencil-outline" size={15} color={C.accent} />
+              <Text style={[st.planBtnText, { color: C.accent }]}>Log workout manually</Text>
+            </Pressable>
             <Pressable style={st.planBtn} onPress={() => router.push('/(tabs)/planner')}>
               <Ionicons name="add-circle-outline" size={15} color={C.accent2} />
               <Text style={st.planBtnText}>Plan a workout</Text>
@@ -1112,6 +1181,14 @@ export default function TodayScreen() {
       </AppDrawer>
 
       {/* ── Modals ── */}
+
+      <LogWorkoutModal
+        visible={showLogWorkout}
+        weightKg={weightKg}
+        hideCalories={hideCalories}
+        onClose={() => setShowLogWorkout(false)}
+        onSave={logManualActivity}
+      />
 
       <CalorieBreakdownModal
         visible={calorieModalOpen}
@@ -2363,6 +2440,104 @@ function MealPresetPickerModal({ meal, presets, onSelect, onManage, onClose }: {
   )
 }
 
+// ─── Log workout modal ────────────────────────────────────────────────────────
+
+function LogWorkoutModal({ visible, weightKg, hideCalories, onClose, onSave }: {
+  visible: boolean
+  weightKg: number
+  hideCalories: boolean
+  onClose: () => void
+  onSave: (type: string, name: string, durationMin: number, kcal: number) => Promise<void>
+}) {
+  const [sportIdx, setSportIdx] = useState(0)
+  const [durationStr, setDurationStr] = useState('60')
+  const [intensityIdx, setIntensityIdx] = useState(1)
+  const [saving, setSaving] = useState(false)
+
+  const sport = MANUAL_SPORT_OPTIONS[sportIdx]
+  const durationMin = Math.max(1, parseInt(durationStr) || 0)
+  const met = sport.mets[intensityIdx]
+  const estimatedKcal = Math.round(met * weightKg * (durationMin / 60))
+
+  async function handleSave() {
+    if (durationMin <= 0) return
+    setSaving(true)
+    await onSave(sport.type, `${sport.label} workout`, durationMin, estimatedKcal)
+    setSaving(false)
+    setSportIdx(0)
+    setDurationStr('60')
+    setIntensityIdx(1)
+    if (!hideCalories) {
+      Alert.alert('Workout logged', `~${estimatedKcal.toLocaleString()} kcal burned added to your day.`)
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView style={lw.sheet} contentContainerStyle={lw.content} keyboardShouldPersistTaps="handled">
+          <View style={lw.header}>
+            <Text style={lw.title}>Log workout</Text>
+            <Pressable onPress={onClose} hitSlop={10}><Ionicons name="close" size={22} color={C.text2} /></Pressable>
+          </View>
+
+          {/* Activity type */}
+          <Text style={lw.sectionLabel}>Activity</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={lw.chipScroll} contentContainerStyle={{ gap: 8, paddingRight: 16 }}>
+            {MANUAL_SPORT_OPTIONS.map((s, i) => (
+              <Pressable
+                key={s.type}
+                style={[lw.chip, i === sportIdx && lw.chipActive]}
+                onPress={() => setSportIdx(i)}
+              >
+                <Text style={[lw.chipText, i === sportIdx && lw.chipTextActive]}>{s.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          {/* Duration */}
+          <Text style={lw.sectionLabel}>Duration (minutes)</Text>
+          <View style={lw.durationRow}>
+            <Pressable style={lw.durationBtn} onPress={() => setDurationStr(v => String(Math.max(5, (parseInt(v) || 0) - 5)))} hitSlop={6}>
+              <Ionicons name="remove" size={20} color={C.text1} />
+            </Pressable>
+            <TextInput
+              style={lw.durationInput}
+              value={durationStr}
+              onChangeText={setDurationStr}
+              keyboardType="numeric"
+              selectTextOnFocus
+            />
+            <Pressable style={lw.durationBtn} onPress={() => setDurationStr(v => String((parseInt(v) || 0) + 5))} hitSlop={6}>
+              <Ionicons name="add" size={20} color={C.text1} />
+            </Pressable>
+          </View>
+
+          {/* Intensity */}
+          <Text style={lw.sectionLabel}>Intensity</Text>
+          {INTENSITY_OPTIONS.map((opt, i) => (
+            <Pressable
+              key={opt.label}
+              style={[lw.intensityCard, i === intensityIdx && lw.intensityCardActive]}
+              onPress={() => setIntensityIdx(i)}
+            >
+              <View style={[lw.intensityDot, i === intensityIdx && lw.intensityDotActive]} />
+              <View style={{ flex: 1 }}>
+                <Text style={[lw.intensityLabel, i === intensityIdx && lw.intensityLabelActive]}>{opt.label}</Text>
+                <Text style={lw.intensityDesc}>{opt.description}</Text>
+              </View>
+            </Pressable>
+          ))}
+
+          <Pressable style={[lw.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
+            <Text style={lw.saveBtnText}>{saving ? 'Saving…' : 'Log this workout'}</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Modal>
+  )
+}
+
 // ─── Calorie breakdown modal ───────────────────────────────────────────────────
 
 function CalorieBreakdownModal({ visible, dailyTarget, burned, planned, consumed, displayMax, hideCalories, logs, userId, onDeleteLog, onClose }: {
@@ -3189,6 +3364,41 @@ const st = StyleSheet.create({
   cycleDateRow:       { flexDirection: 'row', alignItems: 'center', gap: 6 },
   cycleDateField:     { backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 14, fontSize: 18, color: C.text1, textAlign: 'center', fontWeight: '600' },
   cycleDateSep:       { fontSize: 20, color: C.text3, fontWeight: '300' },
+})
+
+const lw = StyleSheet.create({
+  sheet:   { flex: 1, backgroundColor: C.bg },
+  content: { padding: 20, paddingBottom: 48 },
+  header:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
+  title:   { fontSize: 18, fontWeight: '800', color: C.text1 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 10, marginTop: 20 },
+
+  chipScroll: { marginHorizontal: -20, paddingLeft: 20 },
+  chip:       { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },
+  chipActive: { borderColor: C.accent, backgroundColor: C.accent + '18' },
+  chipText:       { fontSize: 14, fontWeight: '600', color: C.text2 },
+  chipTextActive: { color: C.accent },
+
+  durationRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 },
+  durationBtn:  { width: 44, height: 44, borderRadius: 22, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  durationInput: { fontSize: 48, fontWeight: '800', color: C.text1, minWidth: 80, textAlign: 'center' },
+
+  intensityCard:       { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface, marginBottom: 8 },
+  intensityCardActive: { borderColor: C.accent, backgroundColor: C.accent + '10' },
+  intensityDot:        { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: C.border },
+  intensityDotActive:  { borderColor: C.accent, backgroundColor: C.accent },
+  intensityLabel:      { fontSize: 15, fontWeight: '700', color: C.text1 },
+  intensityLabelActive: { color: C.accent },
+  intensityDesc:  { fontSize: 12, color: C.text3, marginTop: 1 },
+  intensityMet:   { fontSize: 12, fontWeight: '600', color: C.text3 },
+
+  estimateCard:  { backgroundColor: C.surface2, borderRadius: 14, padding: 20, alignItems: 'center', marginTop: 8, borderWidth: 1, borderColor: C.border },
+  estimateLabel: { fontSize: 12, fontWeight: '600', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.6 },
+  estimateKcal:  { fontSize: 48, fontWeight: '900', color: C.accent, marginVertical: 4 },
+  estimateNote:  { fontSize: 12, color: C.text3 },
+
+  saveBtn:     { backgroundColor: C.accent, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 24 },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 })
 
 const loggerSt = StyleSheet.create({
