@@ -28,7 +28,8 @@ interface MealItem {
   meal_index: number; name: string; scheduled_time: string; checked: boolean
   kcal: number | null; protein_g: number | null; fat_g: number | null; carb_g: number | null
 }
-interface CustomFood { id: string; name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null; amount_label: string | null; category: string | null }
+interface ServingOption { label: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null }
+interface CustomFood { id: string; name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null; amount_label: string | null; category: string | null; serving_options: ServingOption[] | null }
 
 // ─── Sport colours ────────────────────────────────────────────────────────────
 
@@ -189,7 +190,7 @@ export default function TodayScreen() {
       supabase.from('meal_templates').select('id, meal_index, name, scheduled_time, kcal, protein_g, fat_g, carb_g').eq('user_id', user.id).order('meal_index'),
       supabase.from('meal_checks').select('meal_index').eq('user_id', user.id).eq('date', todayStr),
       supabase.from('meal_slot_presets').select('meal_index, sort_order, preset:meal_presets(*, items:meal_preset_items(*))').eq('user_id', user.id).order('sort_order'),
-      supabase.from('custom_foods').select('id, name, kcal, protein_g, fat_g, carb_g, amount_label, category').eq('user_id', user.id).order('name'),
+      supabase.from('custom_foods').select('id, name, kcal, protein_g, fat_g, carb_g, amount_label, category, serving_options').eq('user_id', user.id).order('name'),
       supabase.from('meal_presets').select('id, name, sort_order, items:meal_preset_items(id, preset_id, name, kcal, protein_g, fat_g, carb_g, amount_label, sort_order)').eq('user_id', user.id).order('name'),
     ])
 
@@ -545,11 +546,12 @@ export default function TodayScreen() {
     }
   }
 
-  async function saveCustomFood(name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) {
+  async function saveCustomFood(name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, servingOptions: ServingOption[] = []) {
     if (!userId) return
     const { data } = await supabase.from('custom_foods').insert({
       user_id: userId, name, kcal, protein_g: protein, fat_g: fat, carb_g: carb,
-    }).select('id, name, kcal, protein_g, fat_g, carb_g, amount_label, category').single()
+      serving_options: servingOptions,
+    }).select('id, name, kcal, protein_g, fat_g, carb_g, amount_label, category, serving_options').single()
     if (data) setCustomFoods(prev => [...prev, data as CustomFood].sort((a, b) => a.name.localeCompare(b.name)))
   }
 
@@ -1592,7 +1594,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   hideCalories: boolean
   onAdd: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, mealIdx: number | null, qty?: number) => Promise<void>
   onLogPreset: (preset: MealPreset) => Promise<void>
-  onSaveToMyFoods: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) => Promise<void>
+  onSaveToMyFoods: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, servingOptions?: ServingOption[]) => Promise<void>
   onSaveAsPreset: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) => Promise<void>
   onClose: () => void
 }) {
@@ -1619,6 +1621,18 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   const [adding, setAdding] = useState(false)
   const [saveToMyFoods, setSaveToMyFoods] = useState(false)
   const [saveAsPreset, setSaveAsPreset] = useState(false)
+  // OFF search
+  const [offResults, setOffResults] = useState<Array<CommonFood & { amount_label: string }>>([])
+  const [offLoading, setOffLoading] = useState(false)
+  // Serving options for manual tab
+  const [manualServings, setManualServings] = useState<ServingOption[]>([])
+  const [newServingLabel, setNewServingLabel] = useState('')
+  const [newServingKcal, setNewServingKcal] = useState('')
+  const [newServingProtein, setNewServingProtein] = useState('')
+  const [newServingFat, setNewServingFat] = useState('')
+  const [newServingCarb, setNewServingCarb] = useState('')
+  // Selected serving option for custom food pending view
+  const [selectedServingOption, setSelectedServingOption] = useState<ServingOption | null>(null)
   const insets = useSafeAreaInsets()
   useEffect(() => {
     if (!visible) {
@@ -1626,6 +1640,10 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
       setScannedProduct(null); setScanName(''); lastScannedRef.current = null
       setManualName(''); setManualKcal(''); setManualProtein(''); setManualFat(''); setManualCarb('')
       setSaveToMyFoods(false); setSaveAsPreset(false)
+      setOffResults([]); setOffLoading(false)
+      setManualServings([]); setNewServingLabel(''); setNewServingKcal('')
+      setNewServingProtein(''); setNewServingFat(''); setNewServingCarb('')
+      setSelectedServingOption(null)
     }
   }, [visible])
 
@@ -1637,10 +1655,53 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
     return [...customHits, ...commonHits].slice(0, 20) as (CommonFood & { amount_label?: string | null })[]
   }, [search, customFoods])
 
+  // OFF search with 500ms debounce
+  useEffect(() => {
+    const q = search.trim()
+    if (q.length < 2) {
+      setOffResults([])
+      setOffLoading(false)
+      return
+    }
+    // Skip OFF fetch when local results are already ≥ 8
+    if (searchResults.length >= 8) {
+      setOffResults([])
+      setOffLoading(false)
+      return
+    }
+    setOffLoading(true)
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(q)}&fields=product_name,nutriments&page_size=8&json=1`
+        )
+        const json = await res.json()
+        const products: Array<{ product_name: string; nutriments: Record<string, number> }> = json.products ?? []
+        const mapped = products
+          .filter(p => p.product_name && (p.nutriments?.['energy-kcal_100g'] ?? 0) > 0)
+          .map(p => ({
+            name: p.product_name,
+            kcal: Math.round(p.nutriments['energy-kcal_100g']),
+            protein_g: p.nutriments['proteins_100g'] ?? null,
+            fat_g: p.nutriments['fat_100g'] ?? null,
+            carb_g: p.nutriments['carbohydrates_100g'] ?? null,
+            amount_label: '100g',
+          }))
+        setOffResults(mapped)
+      } catch {
+        setOffResults([])
+      } finally {
+        setOffLoading(false)
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [search, searchResults.length])
+
   function selectFood(food: CommonFood & { amount_label?: string | null }) {
     setPendingFood(food)
     setServingLabel(defaultServingLabel(food))
     setServingQty('1')
+    setSelectedServingOption(null)
     setSearch('')
   }
 
@@ -1649,17 +1710,29 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
     const qty = parseFloat(servingQty) || 0
     if (qty <= 0) return
     const isCustomFood = !!(pendingFood as any).id
-    const origGrams = parseGrams(defaultServingLabel(pendingFood))
-    const curGrams = parseGrams(servingLabel)
-    const scale = isCustomFood ? 1 : (origGrams && curGrams ? curGrams / origGrams : 1)
-    const kcal = Math.round(pendingFood.kcal * qty * scale)
-    const protein = pendingFood.protein_g != null ? Math.round(pendingFood.protein_g * qty * scale * 10) / 10 : null
-    const fat = pendingFood.fat_g != null ? Math.round(pendingFood.fat_g * qty * scale * 10) / 10 : null
-    const carb = pendingFood.carb_g != null ? Math.round(pendingFood.carb_g * qty * scale * 10) / 10 : null
+    let kcal: number
+    let protein: number | null
+    let fat: number | null
+    let carb: number | null
+    if (isCustomFood && selectedServingOption) {
+      kcal = Math.round(selectedServingOption.kcal * qty)
+      protein = selectedServingOption.protein_g != null ? Math.round(selectedServingOption.protein_g * qty * 10) / 10 : null
+      fat = selectedServingOption.fat_g != null ? Math.round(selectedServingOption.fat_g * qty * 10) / 10 : null
+      carb = selectedServingOption.carb_g != null ? Math.round(selectedServingOption.carb_g * qty * 10) / 10 : null
+    } else {
+      const origGrams = parseGrams(defaultServingLabel(pendingFood))
+      const curGrams = parseGrams(servingLabel)
+      const scale = isCustomFood ? 1 : (origGrams && curGrams ? curGrams / origGrams : 1)
+      kcal = Math.round(pendingFood.kcal * qty * scale)
+      protein = pendingFood.protein_g != null ? Math.round(pendingFood.protein_g * qty * scale * 10) / 10 : null
+      fat = pendingFood.fat_g != null ? Math.round(pendingFood.fat_g * qty * scale * 10) / 10 : null
+      carb = pendingFood.carb_g != null ? Math.round(pendingFood.carb_g * qty * scale * 10) / 10 : null
+    }
     setAdding(true)
     await onAdd(pendingFood.name, kcal, protein, fat, carb, mealIndex, qty)
     setAdding(false)
     setPendingFood(null)
+    setSelectedServingOption(null)
     onClose()
   }
 
@@ -1735,12 +1808,14 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
     setAdding(true)
     await onAdd(name, k, protein, fat, carb, mealIndex)
     await Promise.all([
-      saveToMyFoods ? onSaveToMyFoods(name, k, protein, fat, carb) : Promise.resolve(),
+      saveToMyFoods ? onSaveToMyFoods(name, k, protein, fat, carb, manualServings) : Promise.resolve(),
       saveAsPreset  ? onSaveAsPreset(name, k, protein, fat, carb)  : Promise.resolve(),
     ])
     setAdding(false)
     setManualName(''); setManualKcal(''); setManualProtein(''); setManualFat(''); setManualCarb('')
     setSaveToMyFoods(false); setSaveAsPreset(false)
+    setManualServings([]); setNewServingLabel(''); setNewServingKcal('')
+    setNewServingProtein(''); setNewServingFat(''); setNewServingCarb('')
     onClose()
   }
 
@@ -1843,14 +1918,26 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                   {pendingFood ? (() => {
                     const isCustomFood = !!(pendingFood as any).id
                     const qty = parseFloat(servingQty) || 0
+                    const pFood = pendingFood as any
+                    const servingOpts: ServingOption[] = isCustomFood ? (pFood.serving_options ?? []) : []
                     const origG = parseGrams(defaultServingLabel(pendingFood))
                     const curG = parseGrams(servingLabel)
                     const scale = isCustomFood ? 1 : (origG && curG ? curG / origG : 1)
-                    const previewKcal = qty > 0 ? Math.round(pendingFood.kcal * qty * scale) : null
-                    const pFood = pendingFood as any
-                    const previewProtein = pFood.protein_g != null && qty > 0 ? Math.round(pFood.protein_g * qty * scale * 10) / 10 : null
-                    const previewFat = pFood.fat_g != null && qty > 0 ? Math.round(pFood.fat_g * qty * scale * 10) / 10 : null
-                    const previewCarb = pFood.carb_g != null && qty > 0 ? Math.round(pFood.carb_g * qty * scale * 10) / 10 : null
+                    let previewKcal: number | null = null
+                    let previewProtein: number | null = null
+                    let previewFat: number | null = null
+                    let previewCarb: number | null = null
+                    if (isCustomFood && selectedServingOption && qty > 0) {
+                      previewKcal = Math.round(selectedServingOption.kcal * qty)
+                      previewProtein = selectedServingOption.protein_g != null ? Math.round(selectedServingOption.protein_g * qty * 10) / 10 : null
+                      previewFat = selectedServingOption.fat_g != null ? Math.round(selectedServingOption.fat_g * qty * 10) / 10 : null
+                      previewCarb = selectedServingOption.carb_g != null ? Math.round(selectedServingOption.carb_g * qty * 10) / 10 : null
+                    } else if (qty > 0) {
+                      previewKcal = Math.round(pendingFood.kcal * qty * scale)
+                      previewProtein = pFood.protein_g != null ? Math.round(pFood.protein_g * qty * scale * 10) / 10 : null
+                      previewFat = pFood.fat_g != null ? Math.round(pFood.fat_g * qty * scale * 10) / 10 : null
+                      previewCarb = pFood.carb_g != null ? Math.round(pFood.carb_g * qty * scale * 10) / 10 : null
+                    }
                     return (
                       <View style={{ gap: 10 }}>
                         <Text style={loggerSt.sectionLabel}>{pendingFood.name}</Text>
@@ -1861,6 +1948,31 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                             {pFood.fat_g != null ? ` · F ${pFood.fat_g}g` : ''}
                             {pFood.carb_g != null ? ` · C ${pFood.carb_g}g` : ''}
                           </Text>
+                        )}
+                        {isCustomFood && servingOpts.length > 0 && (
+                          <View style={{ gap: 6 }}>
+                            <Text style={[loggerSt.sectionLabel, { marginBottom: 0 }]}>Serving size</Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                              {servingOpts.map((opt, i) => (
+                                <Pressable
+                                  key={opt.label + i}
+                                  style={[loggerSt.servingChip, selectedServingOption?.label === opt.label && loggerSt.servingChipActive]}
+                                  onPress={() => setSelectedServingOption(selectedServingOption?.label === opt.label ? null : opt)}
+                                >
+                                  <Text style={[loggerSt.servingChipText, selectedServingOption?.label === opt.label && { color: '#fff' }]}>{opt.label}</Text>
+                                </Pressable>
+                              ))}
+                              <Pressable
+                                style={[loggerSt.servingChip, !selectedServingOption && { backgroundColor: C.surface2, borderColor: C.border }]}
+                                onPress={() => setSelectedServingOption(null)}
+                              >
+                                <Text style={[loggerSt.servingChipText, !selectedServingOption && { color: C.text2 }]}>Custom</Text>
+                              </Pressable>
+                            </View>
+                            {!selectedServingOption && (
+                              <Text style={{ fontSize: 11, color: C.text3, fontStyle: 'italic' }}>using base serving</Text>
+                            )}
+                          </View>
                         )}
                         {!isCustomFood && (
                           <View style={st.qtyRow}>
@@ -1903,7 +2015,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                           </>
                         )}
                         <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-                          <Pressable style={[st.addFormBtn, { flex: 1, backgroundColor: C.surface2 }]} onPress={() => setPendingFood(null)}>
+                          <Pressable style={[st.addFormBtn, { flex: 1, backgroundColor: C.surface2 }]} onPress={() => { setPendingFood(null); setSelectedServingOption(null) }}>
                             <Text style={[st.addFormBtnText, { color: C.text2 }]}>Back</Text>
                           </Pressable>
                           <Pressable
@@ -1932,16 +2044,33 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                         />
                       </View>
                       {search.trim() ? (
-                        searchResults.length > 0 ? (
-                          searchResults.map((food, i) => (
-                            <Pressable key={food.name + i} style={[loggerSt.resultRow, i > 0 && loggerSt.resultRowBorder]} onPress={() => selectFood(food)}>
-                              <Text style={loggerSt.resultName}>{food.name}</Text>
-                              {!hideCalories && <Text style={loggerSt.resultMeta}>{food.kcal} kcal</Text>}
-                            </Pressable>
-                          ))
-                        ) : (
-                          <Text style={st.emptyNote}>No results for "{search}"</Text>
-                        )
+                        <>
+                          {searchResults.length > 0 ? (
+                            searchResults.map((food, i) => (
+                              <Pressable key={food.name + i} style={[loggerSt.resultRow, i > 0 && loggerSt.resultRowBorder]} onPress={() => selectFood(food)}>
+                                <Text style={loggerSt.resultName}>{food.name}</Text>
+                                {!hideCalories && <Text style={loggerSt.resultMeta}>{food.kcal} kcal</Text>}
+                              </Pressable>
+                            ))
+                          ) : (
+                            <Text style={st.emptyNote}>No results for "{search}"</Text>
+                          )}
+                          {/* OFF section */}
+                          {search.trim().length >= 2 && (offLoading || offResults.length > 0) && (
+                            <>
+                              <Text style={[loggerSt.sectionLabel, { marginTop: 12 }]}>Open Food Facts</Text>
+                              {offLoading
+                                ? <ActivityIndicator size="small" color={C.accent} style={{ marginTop: 8 }} />
+                                : offResults.map((food, i) => (
+                                    <Pressable key={food.name + i} style={[loggerSt.resultRow, i > 0 && loggerSt.resultRowBorder]} onPress={() => selectFood(food)}>
+                                      <Text style={loggerSt.resultName}>{food.name}</Text>
+                                      {!hideCalories && <Text style={loggerSt.resultMeta}>{food.kcal} kcal/100g</Text>}
+                                    </Pressable>
+                                  ))
+                              }
+                            </>
+                          )}
+                        </>
                       ) : (
                         <>
                           {(() => {
@@ -2121,6 +2250,67 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                         <Text style={st.saveToggleLabel}>Save as preset</Text>
                       </Pressable>
                     </View>
+                    {saveToMyFoods && (
+                      <View style={{ gap: 8, paddingTop: 4 }}>
+                        <Text style={loggerSt.sectionLabel}>Serving sizes (optional)</Text>
+                        {manualServings.map((s, i) => (
+                          <View key={s.label + i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.surface2, borderRadius: 8, padding: 8 }}>
+                            <Text style={{ flex: 1, fontSize: 13, color: C.text1 }}>{s.label}</Text>
+                            {!hideCalories && <Text style={{ fontSize: 12, color: C.text3 }}>{s.kcal} kcal</Text>}
+                            <Pressable onPress={() => setManualServings(prev => prev.filter((_, j) => j !== i))} hitSlop={8}>
+                              <Ionicons name="close-outline" size={16} color={C.danger} />
+                            </Pressable>
+                          </View>
+                        ))}
+                        <TextInput
+                          style={st.addFormInput}
+                          value={newServingLabel}
+                          onChangeText={setNewServingLabel}
+                          placeholder="Label (e.g. 1 bowl)"
+                          placeholderTextColor={C.text3}
+                          returnKeyType="next"
+                        />
+                        <TextInput
+                          style={st.addFormInput}
+                          value={newServingKcal}
+                          onChangeText={setNewServingKcal}
+                          placeholder="Calories (kcal)"
+                          placeholderTextColor={C.text3}
+                          keyboardType="numeric"
+                          returnKeyType="next"
+                        />
+                        <View style={st.addFormMacroRow}>
+                          <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={newServingProtein}
+                            onChangeText={v => setNewServingProtein(v.replace(',', '.'))}
+                            placeholder="Protein g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
+                          <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={newServingFat}
+                            onChangeText={v => setNewServingFat(v.replace(',', '.'))}
+                            placeholder="Fat g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="next" />
+                          <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={newServingCarb}
+                            onChangeText={v => setNewServingCarb(v.replace(',', '.'))}
+                            placeholder="Carbs g" placeholderTextColor={C.text3} keyboardType="decimal-pad" returnKeyType="done" />
+                        </View>
+                        <Pressable
+                          style={[st.addFormBtn, { backgroundColor: C.surface2 }, (!newServingLabel.trim() || !(parseFloat(newServingKcal) > 0)) && { opacity: 0.5 }]}
+                          onPress={() => {
+                            const k = parseFloat(newServingKcal)
+                            if (!newServingLabel.trim() || !(k > 0)) return
+                            setManualServings(prev => [...prev, {
+                              label: newServingLabel.trim(),
+                              kcal: Math.round(k),
+                              protein_g: newServingProtein ? parseFloat(newServingProtein.replace(',', '.')) : null,
+                              fat_g: newServingFat ? parseFloat(newServingFat.replace(',', '.')) : null,
+                              carb_g: newServingCarb ? parseFloat(newServingCarb.replace(',', '.')) : null,
+                            }])
+                            setNewServingLabel(''); setNewServingKcal('')
+                            setNewServingProtein(''); setNewServingFat(''); setNewServingCarb('')
+                          }}
+                          disabled={!newServingLabel.trim() || !(parseFloat(newServingKcal) > 0)}
+                        >
+                          <Text style={[st.addFormBtnText, { color: C.text2 }]}>Add serving size</Text>
+                        </Pressable>
+                      </View>
+                    )}
                     <Pressable style={[st.addFormBtn, adding && { opacity: 0.6 }]} onPress={submitManual} disabled={adding}>
                       <Text style={st.addFormBtnText}>{adding ? 'Adding…' : 'Add to log'}</Text>
                     </Pressable>
@@ -3015,4 +3205,7 @@ const loggerSt = StyleSheet.create({
   resultRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider },
   resultName: { fontSize: 13, color: C.text1, flex: 1 },
   resultMeta: { fontSize: 12, color: C.text3 },
+  servingChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface2 },
+  servingChipActive: { backgroundColor: C.accent, borderColor: C.accent },
+  servingChipText: { fontSize: 12, fontWeight: '600', color: C.text2 },
 })

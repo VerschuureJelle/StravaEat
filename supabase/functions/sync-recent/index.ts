@@ -148,7 +148,6 @@ Deno.serve(async (req) => {
       .map((r: any) => r.strava_activity_id)
   )
 
-  const weightKg = profile.weight_kg ?? 0
   const results = []
 
   for (const act of stravaActivities) {
@@ -158,23 +157,32 @@ Deno.serve(async (req) => {
       continue
     }
 
+    // Determine energy method early so we can skip the HR stream fetch when not needed
+    const sportSetting = sportSettings?.find(s => s.sport_type === act.type)
+    const effectiveSport = sportSetting?.linked_sport_type ?? act.type
+    const sportBurnPts = (burnSchema ?? []).filter(p => p.sport_type === effectiveSport)
+    const useCustom = sportSetting?.method === 'custom' && sportBurnPts.length >= 2
+
+    // Fetch laps always; HR stream only when a custom burn schema will use it
     const [streamRes, lapsRes] = await Promise.all([
-      fetch(`${STRAVA_API}/activities/${act.id}/streams?keys=heartrate,time&key_by_type=true`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }),
+      useCustom
+        ? fetch(`${STRAVA_API}/activities/${act.id}/streams?keys=heartrate,time&key_by_type=true`,
+            { headers: { Authorization: `Bearer ${accessToken}` } })
+        : Promise.resolve(null),
       fetch(`${STRAVA_API}/activities/${act.id}/laps`,
         { headers: { Authorization: `Bearer ${accessToken}` } }),
     ])
 
     // Rate limited mid-sync — stop early, report what was done
-    if (streamRes.status === 429 || lapsRes.status === 429) {
-      const retryAfter = (streamRes.headers.get('Retry-After') ?? lapsRes.headers.get('Retry-After'))
+    if (streamRes?.status === 429 || lapsRes.status === 429) {
+      const retryAfter = streamRes?.headers.get('Retry-After') ?? lapsRes.headers.get('Retry-After')
       const seconds = retryAfter ? Number(retryAfter) : 900
       await holdClaimUntil(seconds)
       return jsonErr(`rate_limit:${Math.ceil(seconds / 60)}`, 429)
     }
 
     const [streamBody, lapsData] = await Promise.all([
-      streamRes.ok ? streamRes.json() : Promise.resolve(null),
+      streamRes?.ok ? streamRes.json() : Promise.resolve(null),
       lapsRes.ok ? lapsRes.json() : Promise.resolve([]),
     ])
 
@@ -240,18 +248,27 @@ Deno.serve(async (req) => {
       )
     }
 
-    if (!hrStream || hrStream.length === 0) { results.push({ strava_id: act.id, reason: 'no_hr_stream' }); continue }
+    if (!useCustom) {
+      // No custom burn schema — take Strava's device-reported calories (Garmin/Apple Watch) as-is
+      const deviceKcal = act.calories && act.calories > 0 ? act.calories : null
+      if (deviceKcal) {
+        await supabase.from('activities').update({ total_kcal: deviceKcal }).eq('id', activity.id)
+      }
+      results.push({ strava_id: act.id, method: 'strava_device', total_kcal: deviceKcal ? Math.round(deviceKcal) : null })
+      continue
+    }
+
+    // Custom burn schema path — requires HR stream
+    if (!hrStream || hrStream.length === 0) {
+      // No HR data for this activity; fall back to device calories if available
+      const deviceKcal = act.calories && act.calories > 0 ? act.calories : null
+      if (deviceKcal) {
+        await supabase.from('activities').update({ total_kcal: deviceKcal }).eq('id', activity.id)
+      }
+      results.push({ strava_id: act.id, reason: 'no_hr_stream', total_kcal: deviceKcal ? Math.round(deviceKcal) : null })
+      continue
+    }
     if (!zones || zones.length === 0) { results.push({ strava_id: act.id, reason: 'no_zones_configured' }); continue }
-
-    // Determine energy method for this sport
-    const sportSetting = sportSettings?.find(s => s.sport_type === act.type)
-    const method = sportSetting?.method ?? 'standard'
-    // If linked to another sport, use that sport's burn schema
-    const effectiveSport = sportSetting?.linked_sport_type ?? act.type
-
-    // Sport-specific burn points (need ≥ 2 for custom)
-    const sportBurnPts = (burnSchema ?? []).filter(p => p.sport_type === effectiveSport)
-    const useCustom = method === 'custom' && sportBurnPts.length >= 2
 
     // Resolve zones for this sport: sport-specific zones take priority over 'default'
     const sportSpecificZones = zones.filter(z => (z.sport_type ?? 'default') === act.type)
@@ -267,26 +284,19 @@ Deno.serve(async (req) => {
       return bpm < activeZones[0].min_bpm ? activeZones[0] : activeZones[activeZones.length - 1]
     }
 
-    // Calculate per zone
+    // Loop over HR stream and calculate kcal/fat/carb using the custom burn schema
     const zoneStats: Record<string, { sec: number; kcal: number; fat: number; carb: number }> = {}
 
     for (let i = 0; i < hrStream.length; i++) {
       const bpm = hrStream[i]
-      // Use time-stream delta if available; fall back to 1s per sample
       const dur = durations ? durations[i] : 1
-
       const zone = findZone(bpm)
       if (!zoneStats[zone.id]) zoneStats[zone.id] = { sec: 0, kcal: 0, fat: 0, carb: 0 }
       zoneStats[zone.id].sec += dur
-
-      if (useCustom) {
-        const rate = interpolateBurn(bpm, sportBurnPts as BurnPoint[])
-        zoneStats[zone.id].kcal += rate.kcal * dur / 3600
-        zoneStats[zone.id].fat  += rate.fat  * dur / 3600
-        zoneStats[zone.id].carb += rate.carb * dur / 3600
-      } else {
-        zoneStats[zone.id].kcal += (zone.met_value * weightKg) * dur / 3600
-      }
+      const rate = interpolateBurn(bpm, sportBurnPts as BurnPoint[])
+      zoneStats[zone.id].kcal += rate.kcal * dur / 3600
+      zoneStats[zone.id].fat  += rate.fat  * dur / 3600
+      zoneStats[zone.id].carb += rate.carb * dur / 3600
     }
 
     const totalKcal = Object.values(zoneStats).reduce((s, z) => s + z.kcal, 0)
@@ -296,8 +306,8 @@ Deno.serve(async (req) => {
     if (totalKcal > 0) {
       await supabase.from('activities').update({
         total_kcal:  totalKcal,
-        total_fat_g:  useCustom && totalFat  > 0 ? totalFat  : null,
-        total_carb_g: useCustom && totalCarb > 0 ? totalCarb : null,
+        total_fat_g:  totalFat  > 0 ? totalFat  : null,
+        total_carb_g: totalCarb > 0 ? totalCarb : null,
       }).eq('id', activity.id)
     }
 
@@ -308,8 +318,8 @@ Deno.serve(async (req) => {
         zone_id: zoneId,
         time_in_zone_sec: s.sec,
         kcal_in_zone: s.kcal,
-        fat_g_in_zone:  useCustom && s.fat  > 0 ? s.fat  : null,
-        carb_g_in_zone: useCustom && s.carb > 0 ? s.carb : null,
+        fat_g_in_zone: s.fat > 0 ? s.fat : null,
+        carb_g_in_zone: s.carb > 0 ? s.carb : null,
       }))
 
     await supabase.from('activity_zone_splits').delete().eq('activity_id', activity.id)
@@ -317,7 +327,7 @@ Deno.serve(async (req) => {
 
     results.push({
       strava_id: act.id,
-      method,
+      method: 'custom',
       zones_found: splits.length,
       total_kcal: Math.round(totalKcal),
     })

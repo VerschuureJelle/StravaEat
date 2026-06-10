@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import * as Linking from 'expo-linking'
 import { supabase } from '../../lib/supabase'
 import { initiateStravaOAuth } from '../../lib/stravaAuth'
@@ -65,9 +66,15 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.header}>Profile</Text>
-
+      <AppDrawer>
+        {openDrawer => (
+          <View style={{ flex: 1 }}>
+            <View style={styles.topBar}>
+              <HamburgerBtn onPress={openDrawer} />
+              <Text style={styles.topBarTitle}>Profile</Text>
+              <View style={{ width: 34 }} />
+            </View>
+            <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.stravaRow}>
           <View>
             <Text style={styles.stravaLabel}>Strava</Text>
@@ -94,15 +101,19 @@ export default function ProfileScreen() {
         <Pressable style={styles.signOutBtn} onPress={signOut}>
           <Text style={styles.signOutText}>Sign out</Text>
         </Pressable>
-      </ScrollView>
+            </ScrollView>
+          </View>
+        )}
+      </AppDrawer>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
-  content: { padding: 24 },
-  header: { fontSize: 28, fontWeight: '700', color: C.text1, marginBottom: 24 },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
+  topBarTitle: { fontSize: 17, fontWeight: '700', color: C.text1 },
+  content: { padding: 24, paddingTop: 8 },
   stravaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

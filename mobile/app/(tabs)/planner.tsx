@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView, Modal,
   StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
@@ -288,7 +288,7 @@ export default function PlannerScreen() {
   const [onPeriod, setOnPeriod] = useState(false)
   const [periodSeverity, setPeriodSeverity] = useState<PeriodSeverity>('minor')
 
-  useEffect(() => { load() }, [])
+  useFocusEffect(useCallback(() => { load() }, []))
   useEffect(() => {
     AsyncStorage.getItem(COACH_PROMPT_KEY).then(v => { if (v) setCoachPrompt(v) })
   }, [])
