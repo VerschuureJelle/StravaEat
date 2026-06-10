@@ -13,6 +13,7 @@ import { notifyWorkoutSynced } from '../../lib/notifications'
 import { callSyncRecent } from '../../lib/stravaSync'
 import { W as C } from '../../lib/themeWarm'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
+import { HistoryView } from '../../components/FoodHistoryView'
 import type { Activity } from '../../types'
 
 
@@ -290,6 +291,7 @@ function buildMonthSections(acts: Activity[]): ListSection[] {
 
 export default function ActivitiesScreen() {
   const router = useRouter()
+  const [historyTab, setHistoryTab] = useState<'activity' | 'food'>('activity')
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -518,6 +520,25 @@ export default function ActivitiesScreen() {
     </View>
   )
 
+  const subtabSwitcher = (
+    <View style={{ flexDirection: 'row', marginHorizontal: 16, marginBottom: 12, backgroundColor: C.surface2, borderRadius: 10, padding: 3 }}>
+      {(['activity', 'food'] as const).map(t => (
+        <Pressable
+          key={t}
+          style={[
+            { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
+            historyTab === t && { backgroundColor: C.surface, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
+          ]}
+          onPress={() => setHistoryTab(t)}
+        >
+          <Text style={{ fontSize: 14, fontWeight: historyTab === t ? '700' : '500', color: historyTab === t ? C.text1 : C.text3 }}>
+            {t === 'activity' ? 'Activity' : 'Food'}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  )
+
   if (loading) {
     return (
       <SafeAreaView style={st.container}>
@@ -529,8 +550,14 @@ export default function ActivitiesScreen() {
                 <Text style={st.topBarTitle}>History</Text>
                 <View style={{ width: 34 }} />
               </View>
-              {listHeader}
-              <ActivityIndicator style={{ flex: 1 }} size="large" color={C.accent} />
+              {subtabSwitcher}
+              {historyTab === 'activity' && (
+                <>
+                  {listHeader}
+                  <ActivityIndicator style={{ flex: 1 }} size="large" color={C.accent} />
+                </>
+              )}
+              {historyTab === 'food' && <HistoryView />}
             </>
           )}
         </AppDrawer>
@@ -548,100 +575,106 @@ export default function ActivitiesScreen() {
               <Text style={st.topBarTitle}>History</Text>
               <View style={{ width: 34 }} />
             </View>
-      <SectionList
-        sections={sections}
-        keyExtractor={item => item._k}
-        stickySectionHeadersEnabled={false}
-        ListHeaderComponent={listHeader}
-        contentContainerStyle={{ paddingBottom: 24 }}
-        refreshControl={<RefreshControl refreshing={syncing} onRefresh={syncStrava} tintColor={C.accent} />}
-        renderSectionHeader={({ section: s }) => {
-          if (s.isTotal) {
-            return (
-              <View style={st.monthHeader}>
-                <View style={st.monthHeaderRow}>
-                  <Text style={st.monthHeaderText}>{s.title}</Text>
-                </View>
-                {showCalendars && <MonthCalendar monthStart={s.monthStart!} activities={s.monthActivities!} />}
-              </View>
-            )
-          }
-          return <View style={st.dayHeader}><Text style={st.dayHeaderText}>{s.title}</Text></View>
-        }}
-        renderItem={({ item }) => {
-          if (item._t === 'day') {
-            return <View style={st.dayHeader}><Text style={st.dayHeaderText}>{item.label}</Text></View>
-          }
-          const a = item.act
-          const icon = getSportIcon(a.type)
-          const gradient = getSportGradient(a.type)
-          return (
-            <Pressable style={st.card} onPress={() => router.push(`/activity/${a.id}`)}>
-              <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={st.cardBar} />
-              <View style={st.cardLeft}>
-                <Text style={st.actName} numberOfLines={1}>{a.name}</Text>
-                <View style={st.actMetaRow}>
-                  <MaterialCommunityIcons name={icon as any} size={12} color={C.text3} style={{ marginRight: 4 }} />
-                  <Text style={st.actMeta}>
-                    {normalizeType(a.type)}{a.distance_m ? ` · ${formatDist(a.type, a.distance_m)}` : ''} · {formatDuration(a.duration_sec)}
-                  </Text>
-                </View>
-              </View>
-              <View style={st.cardRight}>
-                {!hideCalories && (a.total_kcal != null
-                  ? <><Text style={st.kcal}>{Math.round(a.total_kcal)}</Text><Text style={st.kcalLbl}>kcal</Text></>
-                  : a.avg_hr != null
-                    ? <Text style={st.kcalPending}>sync{'\n'}for kcal</Text>
-                    : <Text style={st.noData}>—</Text>)}
-                <Pressable
-                  style={st.deleteBtn}
-                  onPress={e => { e.stopPropagation?.(); deleteActivity(a.id) }}
-                  hitSlop={8}
-                >
-                  <Ionicons name="trash-outline" size={14} color={C.text4} />
-                </Pressable>
-              </View>
-            </Pressable>
-          )
-        }}
-        ListFooterComponent={isTotal ? (
-          <Pressable style={st.loadMoreBtn} onPress={() => setMonthsBack(n => n + 3)}>
-            <Text style={st.loadMoreText}>Load more months</Text>
-          </Pressable>
-        ) : null}
-        ListEmptyComponent={
-          <View style={st.emptyBox}>
-            <Text style={st.emptyTitle}>No activities</Text>
-            <Text style={st.emptySub}>
-              {period === 'custom' && (!customStart || !customEnd)
-                ? 'Enter a date range above.'
-                : 'Pull down to sync with Strava.'}
-            </Text>
-          </View>
-        }
-      />
+            {subtabSwitcher}
+            {historyTab === 'activity' && (
+              <>
+                <SectionList
+                  sections={sections}
+                  keyExtractor={item => item._k}
+                  stickySectionHeadersEnabled={false}
+                  ListHeaderComponent={listHeader}
+                  contentContainerStyle={{ paddingBottom: 24 }}
+                  refreshControl={<RefreshControl refreshing={syncing} onRefresh={syncStrava} tintColor={C.accent} />}
+                  renderSectionHeader={({ section: s }) => {
+                    if (s.isTotal) {
+                      return (
+                        <View style={st.monthHeader}>
+                          <View style={st.monthHeaderRow}>
+                            <Text style={st.monthHeaderText}>{s.title}</Text>
+                          </View>
+                          {showCalendars && <MonthCalendar monthStart={s.monthStart!} activities={s.monthActivities!} />}
+                        </View>
+                      )
+                    }
+                    return <View style={st.dayHeader}><Text style={st.dayHeaderText}>{s.title}</Text></View>
+                  }}
+                  renderItem={({ item }) => {
+                    if (item._t === 'day') {
+                      return <View style={st.dayHeader}><Text style={st.dayHeaderText}>{item.label}</Text></View>
+                    }
+                    const a = item.act
+                    const icon = getSportIcon(a.type)
+                    const gradient = getSportGradient(a.type)
+                    return (
+                      <Pressable style={st.card} onPress={() => router.push(`/activity/${a.id}`)}>
+                        <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={st.cardBar} />
+                        <View style={st.cardLeft}>
+                          <Text style={st.actName} numberOfLines={1}>{a.name}</Text>
+                          <View style={st.actMetaRow}>
+                            <MaterialCommunityIcons name={icon as any} size={12} color={C.text3} style={{ marginRight: 4 }} />
+                            <Text style={st.actMeta}>
+                              {normalizeType(a.type)}{a.distance_m ? ` · ${formatDist(a.type, a.distance_m)}` : ''} · {formatDuration(a.duration_sec)}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={st.cardRight}>
+                          {!hideCalories && (a.total_kcal != null
+                            ? <><Text style={st.kcal}>{Math.round(a.total_kcal)}</Text><Text style={st.kcalLbl}>kcal</Text></>
+                            : a.avg_hr != null
+                              ? <Text style={st.kcalPending}>sync{'\n'}for kcal</Text>
+                              : <Text style={st.noData}>—</Text>)}
+                          <Pressable
+                            style={st.deleteBtn}
+                            onPress={e => { e.stopPropagation?.(); deleteActivity(a.id) }}
+                            hitSlop={8}
+                          >
+                            <Ionicons name="trash-outline" size={14} color={C.text4} />
+                          </Pressable>
+                        </View>
+                      </Pressable>
+                    )
+                  }}
+                  ListFooterComponent={isTotal ? (
+                    <Pressable style={st.loadMoreBtn} onPress={() => setMonthsBack(n => n + 3)}>
+                      <Text style={st.loadMoreText}>Load more months</Text>
+                    </Pressable>
+                  ) : null}
+                  ListEmptyComponent={
+                    <View style={st.emptyBox}>
+                      <Text style={st.emptyTitle}>No activities</Text>
+                      <Text style={st.emptySub}>
+                        {period === 'custom' && (!customStart || !customEnd)
+                          ? 'Enter a date range above.'
+                          : 'Pull down to sync with Strava.'}
+                      </Text>
+                    </View>
+                  }
+                />
 
-      {/* Period dropdown modal */}
-      <Modal visible={dropdownOpen} transparent animationType="fade">
-        <Pressable style={st.modalOverlay} onPress={() => setDropdownOpen(false)}>
-          <Pressable style={st.dropdownSheet} onPress={e => e.stopPropagation()}>
-            <Text style={st.dropdownTitle}>View period</Text>
-            {PERIOD_OPTIONS.map(opt => (
-              <Pressable key={opt.value} style={st.dropdownRow} onPress={() => selectPeriod(opt.value)}>
-                <Text style={[st.dropdownRowText, period === opt.value && st.dropdownRowActive]}>
-                  {opt.label}
-                </Text>
-                {period === opt.value && <Ionicons name="checkmark" size={16} color={C.accent} />}
-              </Pressable>
-            ))}
-            <View style={st.dropdownDivider} />
-            <Pressable style={st.dropdownRow} onPress={() => setShowCalendars(v => !v)}>
-              <Text style={st.dropdownRowText}>Show calendars</Text>
-              <Ionicons name={showCalendars ? 'toggle' : 'toggle-outline'} size={26} color={showCalendars ? C.accent : C.text3} />
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+                {/* Period dropdown modal */}
+                <Modal visible={dropdownOpen} transparent animationType="fade">
+                  <Pressable style={st.modalOverlay} onPress={() => setDropdownOpen(false)}>
+                    <Pressable style={st.dropdownSheet} onPress={e => e.stopPropagation()}>
+                      <Text style={st.dropdownTitle}>View period</Text>
+                      {PERIOD_OPTIONS.map(opt => (
+                        <Pressable key={opt.value} style={st.dropdownRow} onPress={() => selectPeriod(opt.value)}>
+                          <Text style={[st.dropdownRowText, period === opt.value && st.dropdownRowActive]}>
+                            {opt.label}
+                          </Text>
+                          {period === opt.value && <Ionicons name="checkmark" size={16} color={C.accent} />}
+                        </Pressable>
+                      ))}
+                      <View style={st.dropdownDivider} />
+                      <Pressable style={st.dropdownRow} onPress={() => setShowCalendars(v => !v)}>
+                        <Text style={st.dropdownRowText}>Show calendars</Text>
+                        <Ionicons name={showCalendars ? 'toggle' : 'toggle-outline'} size={26} color={showCalendars ? C.accent : C.text3} />
+                      </Pressable>
+                    </Pressable>
+                  </Pressable>
+                </Modal>
+              </>
+            )}
+            {historyTab === 'food' && <HistoryView />}
           </>
         )}
       </AppDrawer>

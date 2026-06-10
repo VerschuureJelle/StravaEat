@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
 import { W as C } from '../../lib/themeWarm'
+import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
 import type { HeartRateZone } from '../../types'
 
 function sportColor(sport: string): string {
@@ -119,9 +120,34 @@ export default function ZonesScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.header}>Heart Rate Zones</Text>
-        <Text style={styles.note}>Changes only apply to future syncs.</Text>
+      <AppDrawer>
+        {openDrawer => (
+          <View style={{ flex: 1 }}>
+            <View style={styles.topBar}>
+              <HamburgerBtn onPress={openDrawer} />
+              <Text style={styles.topBarTitle}>Heart Rate Zones</Text>
+              <View style={{ width: 34 }} />
+            </View>
+            <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.explainerCard}>
+          <Text style={styles.explainerTitle}>What are heart rate zones?</Text>
+          <Text style={styles.explainerBody}>
+            Your heart rate during exercise tells us how hard your body is working. Zones group effort levels from easy (Z1) to all-out (Z5). Each zone burns calories at a different rate, which is why StravaEat uses them to calculate your actual calorie expenditure.
+          </Text>
+          <Text style={styles.explainerBody}>
+            You can edit the BPM ranges to match your personal zones from Strava, Garmin, or your coach. The default zones are based on your max heart rate.
+          </Text>
+          <Text style={styles.explainerNote}>Changes only apply to future syncs.</Text>
+        </View>
+
+        {groups.length === 0 && (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No zones configured</Text>
+            <Text style={styles.emptyBody}>
+              Set up your heart rate zones in Settings → Heart Rate Zones. Zones are used to calculate calories burned per activity.
+            </Text>
+          </View>
+        )}
 
         {groups.map(group => (
           <View key={group.sport} style={styles.sportGroup}>
@@ -151,7 +177,10 @@ export default function ZonesScreen() {
             ))}
           </View>
         ))}
-      </ScrollView>
+            </ScrollView>
+          </View>
+        )}
+      </AppDrawer>
     </SafeAreaView>
   )
 }
@@ -221,9 +250,16 @@ function ZoneCard({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
+  topBarTitle: { fontSize: 17, fontWeight: '700', color: C.text1 },
   content: { padding: 16, paddingBottom: 48 },
-  header: { fontSize: 22, fontWeight: '700', color: C.text1, marginBottom: 4 },
-  note: { fontSize: 13, color: C.text3, marginBottom: 16 },
+  explainerCard: {
+    backgroundColor: C.surface, borderRadius: 12, padding: 16, marginBottom: 20,
+    borderWidth: 1, borderColor: C.border,
+  },
+  explainerTitle: { fontSize: 15, fontWeight: '700', color: C.text1, marginBottom: 8 },
+  explainerBody: { fontSize: 13, color: C.text2, lineHeight: 19, marginBottom: 8 },
+  explainerNote: { fontSize: 12, color: C.text3, fontStyle: 'italic', marginTop: 4 },
   sportGroup: { marginBottom: 24 },
   sportHeaderRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8,
@@ -256,4 +292,7 @@ const styles = StyleSheet.create({
   saveBtnText: { color: C.white, fontWeight: '700', fontSize: 14 },
   cancelBtn: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 4 },
   cancelBtnText: { color: C.text2, fontSize: 14 },
+  emptyState: { marginTop: 32, alignItems: 'center', paddingHorizontal: 8 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: C.text1, marginBottom: 8 },
+  emptyBody:  { fontSize: 13, color: C.text3, textAlign: 'center', lineHeight: 20 },
 })
