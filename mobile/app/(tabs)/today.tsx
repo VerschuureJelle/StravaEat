@@ -51,19 +51,20 @@ const _barcodeCache = new Map<string, {
 // ─── Manual workout constants ─────────────────────────────────────────────────
 
 const MANUAL_SPORT_OPTIONS = [
-  { type: 'WeightTraining', label: 'Gym',      mets: [3.5, 5.0, 6.0] },
-  { type: 'Cycling',        label: 'Cycling',   mets: [4.0, 6.8, 10.0] },
-  { type: 'Run',            label: 'Running',   mets: [6.0, 8.3, 11.0] },
-  { type: 'Walk',           label: 'Walking',   mets: [2.5, 3.5, 4.5] },
-  { type: 'Swim',           label: 'Swimming',  mets: [5.0, 7.0, 9.0] },
-  { type: 'Yoga',           label: 'Yoga',      mets: [2.0, 3.0, 4.0] },
-  { type: 'Workout',        label: 'HIIT',      mets: [6.0, 8.0, 10.0] },
-  { type: 'Other',          label: 'Other',     mets: [3.5, 5.0, 7.0] },
+  { type: 'WeightTraining', label: 'Gym',      mets: [3.5, 5.0, 6.0, 8.0] },
+  { type: 'Cycling',        label: 'Cycling',   mets: [4.0, 6.8, 10.0, 12.0] },
+  { type: 'Run',            label: 'Running',   mets: [6.0, 8.3, 11.0, 14.0] },
+  { type: 'Walk',           label: 'Walking',   mets: [2.5, 3.5, 4.5, 6.0] },
+  { type: 'Swim',           label: 'Swimming',  mets: [5.0, 7.0, 9.0, 11.0] },
+  { type: 'Yoga',           label: 'Yoga',      mets: [2.0, 3.0, 4.0, 5.0] },
+  { type: 'Workout',        label: 'HIIT',      mets: [6.0, 8.0, 10.0, 12.0] },
+  { type: 'Other',          label: 'Other',     mets: [3.5, 5.0, 7.0, 9.0] },
 ]
 const INTENSITY_OPTIONS = [
-  { label: 'Light',    description: 'Easy pace, can hold a conversation' },
-  { label: 'Moderate', description: 'Breathing harder, somewhat challenging' },
-  { label: 'Vigorous', description: 'High effort, hard to speak' },
+  { label: 'Light',    description: 'Machines, lots of rest' },
+  { label: 'Moderate', description: 'Compound lifts, mixed' },
+  { label: 'Intense',  description: 'Supersets, little rest' },
+  { label: 'Circuit',  description: 'Circuit training / CrossFit' },
 ]
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
@@ -1184,6 +1185,7 @@ export default function TodayScreen() {
       <LogWorkoutModal
         visible={showLogWorkout}
         weightKg={weightKg}
+        hideCalories={hideCalories}
         onClose={() => setShowLogWorkout(false)}
         onSave={logManualActivity}
       />
@@ -2440,9 +2442,10 @@ function MealPresetPickerModal({ meal, presets, onSelect, onManage, onClose }: {
 
 // ─── Log workout modal ────────────────────────────────────────────────────────
 
-function LogWorkoutModal({ visible, weightKg, onClose, onSave }: {
+function LogWorkoutModal({ visible, weightKg, hideCalories, onClose, onSave }: {
   visible: boolean
   weightKg: number
+  hideCalories: boolean
   onClose: () => void
   onSave: (type: string, name: string, durationMin: number, kcal: number) => Promise<void>
 }) {
@@ -2461,10 +2464,12 @@ function LogWorkoutModal({ visible, weightKg, onClose, onSave }: {
     setSaving(true)
     await onSave(sport.type, `${sport.label} workout`, durationMin, estimatedKcal)
     setSaving(false)
-    // reset for next time
     setSportIdx(0)
     setDurationStr('60')
     setIntensityIdx(1)
+    if (!hideCalories) {
+      Alert.alert('Workout logged', `~${estimatedKcal.toLocaleString()} kcal burned added to your day.`)
+    }
   }
 
   return (
@@ -2521,18 +2526,8 @@ function LogWorkoutModal({ visible, weightKg, onClose, onSave }: {
                 <Text style={[lw.intensityLabel, i === intensityIdx && lw.intensityLabelActive]}>{opt.label}</Text>
                 <Text style={lw.intensityDesc}>{opt.description}</Text>
               </View>
-              <Text style={[lw.intensityMet, i === intensityIdx && { color: C.accent }]}>MET {sport.mets[i]}</Text>
             </Pressable>
           ))}
-
-          {/* Estimate preview */}
-          <View style={lw.estimateCard}>
-            <Text style={lw.estimateLabel}>Estimated burn</Text>
-            <Text style={lw.estimateKcal}>{estimatedKcal.toLocaleString()} kcal</Text>
-            <Text style={lw.estimateNote}>
-              Based on {weightKg} kg × MET {met} × {durationMin} min
-            </Text>
-          </View>
 
           <Pressable style={[lw.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
             <Text style={lw.saveBtnText}>{saving ? 'Saving…' : 'Log this workout'}</Text>
