@@ -22,139 +22,15 @@ import { getCreditBalance } from '../../lib/purchases'
 import FoodPickerModal from '../../components/FoodPickerModal'
 import IngredientPickerModal from '../../components/IngredientPickerModal'
 import type { IngredientPickResult } from '../../components/IngredientPickerModal'
-import { ACTIVITY_LEVELS } from '../../lib/activityLevels'
-import type { ActivityLevelKey as ActivityLevel } from '../../lib/activityLevels'
 import { generateZonesFromMaxHR } from '../../constants/zones'
 
-const QUIZ_QUESTIONS = [
-  {
-    id: 'q1',
-    question: 'How many days per week do you exercise?',
-    options: [
-      { label: '0–1 days',  score: 0 },
-      { label: '2–3 days',  score: 1 },
-      { label: '4–5 days',  score: 2 },
-      { label: '6–7 days',  score: 3 },
-    ],
-  },
-  {
-    id: 'q2',
-    question: 'What is your daily life like outside of exercise?',
-    options: [
-      { label: 'Mostly sitting — desk job, studying, driving', score: 0 },
-      { label: 'Mix of sitting and moving around',             score: 1 },
-      { label: 'On my feet most of the day',                  score: 2 },
-      { label: 'Physical labor — construction, nursing, etc.', score: 3 },
-    ],
-  },
-  {
-    id: 'q3',
-    question: 'How intense are your typical workouts?',
-    options: [
-      { label: 'Light — easy walks, gentle yoga',           score: 0 },
-      { label: 'Moderate — I sweat and breathe harder',     score: 1 },
-      { label: 'Hard — intervals, racing, pushing limits',  score: 2 },
-    ],
-  },
-] as const
-
-function scoreToLevel(score: number): ActivityLevel {
-  if (score <= 1) return 'sedentary'
-  if (score <= 3) return 'light'
-  if (score <= 5) return 'moderate'
-  if (score <= 7) return 'active'
-  return 'very_active'
-}
-
-function calcMifflinTDEE(
+function estimateBMR(
   weight_kg: number, height_cm: number, age: number,
-  sex: 'male' | 'female' | 'other', factor: number,
-): { bmr: number; tdee: number } {
+  sex: string | null | undefined,
+): number {
   const base = 10 * weight_kg + 6.25 * height_cm - 5 * age
   const offset = sex === 'female' ? -161 : sex === 'male' ? 5 : -78
-  const bmr = Math.round(base + offset)
-  return { bmr, tdee: Math.round(bmr * factor) }
-}
-
-function calcKatchMcArdleTDEE(
-  weight_kg: number, fat_pct: number, factor: number,
-): { lbm: number; bmr: number; tdee: number } {
-  const lbm = weight_kg * (1 - fat_pct / 100)
-  const bmr = Math.round(370 + 21.6 * lbm)
-  return { lbm: Math.round(lbm * 10) / 10, bmr, tdee: Math.round(bmr * factor) }
-}
-
-function CalorieQuizModal({
-  visible, onApply, onClose,
-}: {
-  visible: boolean
-  onApply: (level: ActivityLevel) => void
-  onClose: () => void
-}) {
-  const [answers, setAnswers] = useState<(number | null)[]>([null, null, null])
-
-  useEffect(() => {
-    if (visible) setAnswers([null, null, null])
-  }, [visible])
-
-  const allAnswered = answers.every(a => a !== null)
-  const totalScore = allAnswered ? (answers as number[]).reduce((s, a) => s + a, 0) : 0
-  const recommended = allAnswered ? ACTIVITY_LEVELS.find(l => l.key === scoreToLevel(totalScore))! : null
-
-  return (
-    <Modal visible={visible} transparent animationType="slide">
-      <Pressable style={qz.overlay} onPress={onClose}>
-        <Pressable style={qz.sheet} onPress={e => e.stopPropagation()}>
-          <View style={qz.handle} />
-          <Text style={qz.title}>Find your activity level</Text>
-          <Text style={qz.subtitle}>Answer 3 questions — takes about 30 seconds</Text>
-
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={qz.scrollContent}>
-            {QUIZ_QUESTIONS.map((q, qi) => (
-              <View key={q.id} style={qz.questionBlock}>
-                <Text style={qz.questionNum}>Question {qi + 1} of {QUIZ_QUESTIONS.length}</Text>
-                <Text style={qz.questionText}>{q.question}</Text>
-                {q.options.map(opt => {
-                  const selected = answers[qi] === opt.score
-                  return (
-                    <Pressable
-                      key={opt.score}
-                      style={[qz.optionBtn, selected && qz.optionBtnActive]}
-                      onPress={() => setAnswers(prev => {
-                        const next = [...prev]
-                        next[qi] = opt.score
-                        return next
-                      })}
-                    >
-                      <View style={[qz.dot, selected && qz.dotActive]} />
-                      <Text style={[qz.optionText, selected && qz.optionTextActive]}>{opt.label}</Text>
-                    </Pressable>
-                  )
-                })}
-              </View>
-            ))}
-
-            {recommended && (
-              <View style={qz.resultBox}>
-                <Text style={qz.resultPre}>Recommended activity level</Text>
-                <Text style={qz.resultLevel}>{recommended.label}</Text>
-                <Text style={qz.resultFactor}>× {recommended.factor} multiplier</Text>
-                <Text style={qz.resultInfo}>{recommended.info}</Text>
-                <Pressable style={qz.applyBtn} onPress={() => onApply(recommended.key)}>
-                  <Ionicons name="checkmark-circle-outline" size={16} color={C.white} />
-                  <Text style={qz.applyBtnText}>Apply — {recommended.label}</Text>
-                </Pressable>
-              </View>
-            )}
-          </ScrollView>
-
-          <Pressable onPress={onClose} style={qz.cancelBtn}>
-            <Text style={qz.cancelBtnText}>Cancel</Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  )
+  return Math.round(base + offset)
 }
 
 const COMMON_SPORTS = [
@@ -281,12 +157,6 @@ export default function SettingsScreen() {
   const [draftFueling, setDraftFueling] = useState<Record<string, FuelingConfig>>({})
   const [savingFueling, setSavingFueling] = useState<string | null>(null)
 
-  // TDEE estimator
-  const [showActivityQuiz, setShowActivityQuiz] = useState(false)
-  const [activityLevel, setActivityLevel] = useState<ActivityLevel>('sedentary')
-  const [estimateMethod, setEstimateMethod] = useState<'mifflin' | 'katch'>('mifflin')
-  const [fatPctInput, setFatPctInput] = useState('')
-
   // Weight range input (allows "65-75" format; midpoint stored as weight_kg)
   const [weightInput, setWeightInput] = useState('')
 
@@ -331,13 +201,18 @@ export default function SettingsScreen() {
     ])
 
     if (profileRes.data) {
-      setSavedProfile(profileRes.data)
-      setEditedProfile(profileRes.data)
-      setWeightInput(profileRes.data.weight_kg != null ? String(profileRes.data.weight_kg) : '')
-      setOnPeriod(profileRes.data.on_period ?? false)
-      setPeriodSeverity(profileRes.data.period_severity ?? 'minor')
-      setHideCalories(profileRes.data.hide_calories ?? false)
-      setMealNotifDelayMin(profileRes.data.meal_notif_delay_min ?? 60)
+      const p = profileRes.data
+      // Auto-fill daily calorie target if not yet set and profile data is complete
+      if (p.daily_kcal_target == null && p.weight_kg && p.height_cm && p.age) {
+        p.daily_kcal_target = estimateBMR(p.weight_kg, p.height_cm, p.age, p.sex)
+      }
+      setSavedProfile(p)
+      setEditedProfile(p)
+      setWeightInput(p.weight_kg != null ? String(p.weight_kg) : '')
+      setOnPeriod(p.on_period ?? false)
+      setPeriodSeverity(p.period_severity ?? 'minor')
+      setHideCalories(p.hide_calories ?? false)
+      setMealNotifDelayMin(p.meal_notif_delay_min ?? 60)
     }
     setAllZones(zonesRes.data ?? [])
 
@@ -1225,7 +1100,7 @@ export default function SettingsScreen() {
               <Text style={styles.fieldLabel}>Daily calorie minimum (kcal)</Text>
               <TextInput
                 style={styles.input}
-                value={editedProfile.daily_kcal_target != null ? String(editedProfile.daily_kcal_target) : ''}
+                value={editedProfile.daily_kcal_target != null ? String(Math.round(editedProfile.daily_kcal_target)) : ''}
                 keyboardType="numeric"
                 placeholderTextColor={C.text3}
                 placeholder="e.g. 2200"
@@ -1234,86 +1109,8 @@ export default function SettingsScreen() {
                 }
               />
               {editedProfile.weight_kg && editedProfile.height_cm && editedProfile.age && (
-                <View style={{ marginTop: 8, gap: 8 }}>
-                  {/* Method toggle */}
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {(['mifflin', 'katch'] as const).map(m => (
-                      <Pressable
-                        key={m}
-                        style={[styles.autoCalcBtn, { flex: 1, justifyContent: 'center' }, estimateMethod === m && { backgroundColor: C.accentBg, borderColor: C.accent }]}
-                        onPress={() => setEstimateMethod(m)}
-                      >
-                        <Text style={[styles.autoCalcBtnText, estimateMethod === m && { color: C.accent }]}>
-                          {m === 'mifflin' ? 'Mifflin-St Jeor' : 'Katch-McArdle'}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-
-                  {estimateMethod === 'katch' && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <TextInput
-                        style={[styles.input, { flex: 1 }]}
-                        value={fatPctInput}
-                        onChangeText={setFatPctInput}
-                        placeholder="Body fat %"
-                        placeholderTextColor={C.text3}
-                        keyboardType="decimal-pad"
-                      />
-                      <Text style={{ fontSize: 12, color: C.text3 }}>% body fat required</Text>
-                    </View>
-                  )}
-
-                  {/* Activity level row */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 13, color: C.text2 }}>
-                      Activity: {ACTIVITY_LEVELS.find(l => l.key === activityLevel)?.label ?? activityLevel}
-                    </Text>
-                    <Pressable style={styles.autoCalcBtn} onPress={() => setShowActivityQuiz(true)}>
-                      <Ionicons name="help-circle-outline" size={14} color={C.accent} />
-                      <Text style={styles.autoCalcBtnText}>Quiz</Text>
-                    </Pressable>
-                  </View>
-
-                  {/* Calculate button */}
-                  <Pressable
-                    style={styles.autoCalcBtn}
-                    onPress={() => {
-                      const factor = ACTIVITY_LEVELS.find(l => l.key === activityLevel)?.factor ?? 1.2
-                      const w = editedProfile.weight_kg as number
-                      const h = editedProfile.height_cm as number
-                      const a = editedProfile.age as number
-                      let tdee: number
-                      if (estimateMethod === 'katch') {
-                        const fp = parseFloat(fatPctInput)
-                        if (isNaN(fp) || fp <= 0 || fp >= 100) {
-                          Alert.alert('Invalid', 'Enter a valid body fat percentage.')
-                          return
-                        }
-                        tdee = calcKatchMcArdleTDEE(w, fp, factor).tdee
-                      } else {
-                        const sex = (editedProfile.sex as 'male' | 'female' | 'other') ?? 'other'
-                        tdee = calcMifflinTDEE(w, h, a, sex, factor).tdee
-                      }
-                      setEditedProfile(p => ({ ...p, daily_kcal_target: tdee }))
-                    }}
-                  >
-                    <Ionicons name="calculator-outline" size={14} color={C.accent} />
-                    <Text style={styles.autoCalcBtnText}>Calculate TDEE</Text>
-                  </Pressable>
-                  <Text style={styles.prefNote}>
-                    {estimateMethod === 'mifflin'
-                      ? 'Mifflin-St Jeor formula × activity level. Adjust manually after seeing real-world results.'
-                      : 'Katch-McArdle uses lean body mass for a more accurate estimate if you know your body fat %.'}
-                  </Text>
-                </View>
+                <Text style={styles.prefNote}>Auto-estimated from your profile. You can adjust this manually.</Text>
               )}
-
-              <CalorieQuizModal
-                visible={showActivityQuiz}
-                onApply={(level) => { setActivityLevel(level); setShowActivityQuiz(false) }}
-                onClose={() => setShowActivityQuiz(false)}
-              />
             </View>
 
             <View style={styles.fieldGroup}>
@@ -2900,45 +2697,4 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   timePickerBtnText: { fontSize: 15, fontWeight: '600', color: C.text1 },
-})
-
-const qz = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: C.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 24, paddingTop: 12, paddingBottom: 8,
-    maxHeight: '90%',
-  },
-  handle: { width: 36, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  title: { fontSize: 20, fontWeight: '800', color: C.text1, marginBottom: 4 },
-  subtitle: { fontSize: 13, color: C.text2, marginBottom: 20 },
-  scrollContent: { paddingBottom: 8 },
-  questionBlock: { marginBottom: 24 },
-  questionNum: { fontSize: 10, fontWeight: '700', color: C.accent, textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 6 },
-  questionText: { fontSize: 15, fontWeight: '700', color: C.text1, lineHeight: 21, marginBottom: 12 },
-  optionBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    padding: 12, borderRadius: 10, borderWidth: 1.5, borderColor: C.border,
-    backgroundColor: C.surface2, marginBottom: 6,
-  },
-  optionBtnActive: { borderColor: C.accent, backgroundColor: C.accentBg },
-  dot: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: C.border, backgroundColor: C.surface },
-  dotActive: { borderColor: C.accent, backgroundColor: C.accent },
-  optionText: { fontSize: 14, color: C.text2, flex: 1, lineHeight: 19 },
-  optionTextActive: { color: C.accent, fontWeight: '600' },
-  resultBox: {
-    backgroundColor: C.accentBg, borderRadius: 14, padding: 16,
-    borderWidth: 1.5, borderColor: C.accent + '44', marginBottom: 12,
-  },
-  resultPre: { fontSize: 10, fontWeight: '700', color: C.accent, textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 4 },
-  resultLevel: { fontSize: 22, fontWeight: '800', color: C.text1, marginBottom: 2 },
-  resultFactor: { fontSize: 13, fontWeight: '600', color: C.accent, marginBottom: 10 },
-  resultInfo: { fontSize: 13, color: C.text2, lineHeight: 19, marginBottom: 14 },
-  applyBtn: {
-    backgroundColor: C.accent, borderRadius: 10, padding: 13,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-  },
-  applyBtnText: { color: C.white, fontWeight: '800', fontSize: 14 },
-  cancelBtn: { padding: 14, alignItems: 'center' },
-  cancelBtnText: { fontSize: 14, color: C.text3 },
 })
