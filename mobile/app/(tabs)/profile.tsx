@@ -37,6 +37,22 @@ export default function ProfileScreen() {
 
   const handleConnectStrava = () => initiateStravaOAuth()
 
+  async function handleDisconnectStrava() {
+    Alert.alert('Disconnect Strava?', 'This will remove your Strava connection. Your synced activities will remain.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Disconnect', style: 'destructive', onPress: async () => {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        await supabase.from('users').update({
+          strava_access_token: null,
+          strava_refresh_token: null,
+          strava_token_expires_at: null,
+        }).eq('id', user.id)
+        setProfile(p => ({ ...p, strava_access_token: null, strava_refresh_token: null }))
+      }},
+    ])
+  }
+
   async function save() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
@@ -79,14 +95,23 @@ export default function ProfileScreen() {
           <View>
             <Text style={styles.stravaLabel}>Strava</Text>
             <Text style={styles.stravaStatus}>
-              {profile.strava_id ? `Connected (ID: ${profile.strava_id})` : 'Not connected'}
+              {(profile as any).strava_access_token
+                ? `Connected (ID: ${profile.strava_id})`
+                : profile.strava_id ? 'Disconnected' : 'Not connected'}
             </Text>
           </View>
-          <Pressable style={styles.stravaBtn} onPress={handleConnectStrava}>
-            <Text style={styles.stravaBtnText}>
-              {profile.strava_id ? 'Reconnect' : 'Connect'}
-            </Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {(profile as any).strava_access_token && (
+              <Pressable style={[styles.stravaBtn, styles.stravaBtnSecondary]} onPress={handleDisconnectStrava}>
+                <Text style={[styles.stravaBtnText, styles.stravaBtnTextSecondary]}>Disconnect</Text>
+              </Pressable>
+            )}
+            {!(profile as any).strava_access_token && (
+              <Pressable style={styles.stravaBtn} onPress={handleConnectStrava}>
+                <Text style={styles.stravaBtnText}>Connect</Text>
+              </Pressable>
+            )}
+          </View>
         </View>
 
         {field('Name', 'name')}
@@ -133,7 +158,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
   },
+  stravaBtnSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: C.border,
+  },
   stravaBtnText: { color: C.white, fontWeight: '700', fontSize: 13 },
+  stravaBtnTextSecondary: { color: C.text2 },
   label: { fontSize: 14, fontWeight: '600', color: C.text2, marginBottom: 6, marginTop: 16 },
   input: {
     borderWidth: 1, borderColor: C.border, borderRadius: 8,

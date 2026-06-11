@@ -1067,7 +1067,7 @@ export default function SettingsScreen() {
                 {!savedProfile.strava_access_token && (
                   <Pressable style={styles.stravaBtn} onPress={handleConnectStrava}>
                     <Text style={styles.stravaBtnText}>
-                      {savedProfile.strava_id ? 'Reconnect' : 'Connect'}
+                      Connect
                     </Text>
                   </Pressable>
                 )}

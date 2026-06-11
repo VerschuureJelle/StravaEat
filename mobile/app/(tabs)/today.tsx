@@ -517,19 +517,20 @@ export default function TodayScreen() {
     ])
   }
 
-  async function logPreset(preset: MealPreset, meal: MealItem) {
+  async function logPreset(preset: MealPreset, meal: MealItem, qty: number = 1) {
     if (!userId) return
     const items = preset.items ?? []
     const total = items.reduce((acc, it) => ({
-      kcal: acc.kcal + it.kcal,
-      protein: acc.protein + (it.protein_g ?? 0),
-      fat: acc.fat + (it.fat_g ?? 0),
-      carb: acc.carb + (it.carb_g ?? 0),
+      kcal: acc.kcal + it.kcal * qty,
+      protein: acc.protein + (it.protein_g ?? 0) * qty,
+      fat: acc.fat + (it.fat_g ?? 0) * qty,
+      carb: acc.carb + (it.carb_g ?? 0) * qty,
     }), { kcal: 0, protein: 0, fat: 0, carb: 0 })
+    const name = qty > 1 ? `${qty}x ${preset.name}` : preset.name
     const [logRes] = await Promise.all([
       supabase.from('food_logs').insert({
         user_id: userId, date: todayStr,
-        name: preset.name,
+        name,
         kcal: total.kcal,
         protein_g: total.protein || null,
         fat_g: total.fat || null,
@@ -1208,7 +1209,7 @@ export default function TodayScreen() {
         <MealPresetPickerModal
           meal={pickerMeal}
           presets={presetsMap[pickerMeal.meal_index] ?? []}
-          onSelect={preset => logPreset(preset, pickerMeal)}
+          onSelect={(preset, qty) => logPreset(preset, pickerMeal, qty)}
           onManage={() => { setPickerMeal(null); router.push('/(tabs)/settings') }}
           onClose={() => setPickerMeal(null)}
         />
@@ -2406,8 +2407,22 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
 
 function MealPresetPickerModal({ meal, presets, onSelect, onManage, onClose }: {
   meal: MealItem; presets: MealPreset[]
-  onSelect: (p: MealPreset) => void; onManage: () => void; onClose: () => void
+  onSelect: (p: MealPreset, qty: number) => void; onManage: () => void; onClose: () => void
 }) {
+  const [selected, setSelected] = useState<MealPreset | null>(null)
+  const [qty, setQty] = useState(1)
+
+  function pick(preset: MealPreset) {
+    setSelected(preset)
+    setQty(1)
+  }
+
+  function confirm() {
+    if (selected) onSelect(selected, qty)
+  }
+
+  const baseKcal = selected ? (selected.items ?? []).reduce((acc, it) => acc + it.kcal, 0) : 0
+
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={st.modalOverlay} onPress={onClose} />
@@ -2424,17 +2439,36 @@ function MealPresetPickerModal({ meal, presets, onSelect, onManage, onClose }: {
         <ScrollView>
           {presets.map(preset => {
             const total = (preset.items ?? []).reduce((acc, it) => acc + it.kcal, 0)
+            const isSelected = selected?.id === preset.id
             return (
-              <Pressable key={preset.id} style={st.pickerRow} onPress={() => onSelect(preset)}>
+              <Pressable key={preset.id} style={[st.pickerRow, isSelected && st.pickerRowSelected]} onPress={() => pick(preset)}>
                 <View style={{ flex: 1 }}>
                   <Text style={st.pickerRowName}>{preset.name}</Text>
                   <Text style={st.pickerRowMeta}>{(preset.items ?? []).length} items · {total} kcal</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={C.text3} />
+                {isSelected
+                  ? <Ionicons name="checkmark-circle" size={18} color={C.accent} />
+                  : <Ionicons name="chevron-forward" size={16} color={C.text3} />
+                }
               </Pressable>
             )
           })}
         </ScrollView>
+
+        {selected && (
+          <View style={st.pickerQtyRow}>
+            <Pressable style={st.pickerQtyBtn} onPress={() => setQty(q => Math.max(1, q - 1))} hitSlop={8}>
+              <Ionicons name="remove" size={18} color={C.text1} />
+            </Pressable>
+            <Text style={st.pickerQtyNum}>{qty}×</Text>
+            <Pressable style={st.pickerQtyBtn} onPress={() => setQty(q => Math.min(20, q + 1))} hitSlop={8}>
+              <Ionicons name="add" size={18} color={C.text1} />
+            </Pressable>
+            <Pressable style={st.pickerAddBtn} onPress={confirm}>
+              <Text style={st.pickerAddBtnText}>Add · {Math.round(baseKcal * qty)} kcal</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
     </Modal>
   )
@@ -3271,9 +3305,15 @@ const st = StyleSheet.create({
   pickerHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 16 },
   pickerTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
   pickerTitle: { fontSize: 17, fontWeight: '800', color: C.text1 },
-  pickerRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider },
+  pickerRow:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider },
+  pickerRowSelected: { backgroundColor: C.accent + '0e' },
   pickerRowName: { fontSize: 14, fontWeight: '700', color: C.text1 },
   pickerRowMeta: { fontSize: 12, color: C.text3, marginTop: 2 },
+  pickerQtyRow:    { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider, marginTop: 4 },
+  pickerQtyBtn:    { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  pickerQtyNum:    { fontSize: 18, fontWeight: '800', color: C.text1, minWidth: 32, textAlign: 'center' },
+  pickerAddBtn:    { flex: 1, backgroundColor: C.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  pickerAddBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
   // Calorie breakdown modal
   breakdownSheet: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36 },
