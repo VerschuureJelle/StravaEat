@@ -57,40 +57,63 @@ Deno.serve(async (req) => {
     const safeMessage = String(message).slice(0, 2000)
     const safePeriodSeverity = ['minor', 'medium', 'severe'].includes(period_severity) ? period_severity : null
 
+    // Map the requested sport to the Strava activity types it covers
+    function sportActivityTypes(s: string): string[] | null {
+      const lower = (s ?? '').toLowerCase()
+      if (/run|jog/.test(lower))          return ['Run', 'TrailRun', 'VirtualRun', 'Jog']
+      if (/ride|bike|cycl|virtual/.test(lower)) return ['Ride', 'VirtualRide', 'EBikeRide', 'MountainBikeRide']
+      if (/swim/.test(lower))             return ['Swim', 'OpenWaterSwim']
+      if (/walk|hike/.test(lower))        return ['Walk', 'Hike']
+      return null
+    }
+    const activityTypes = sport ? sportActivityTypes(sport) : null
+
+    let activitiesQuery = supabase
+      .from('activities')
+      .select('type, distance_m, duration_sec, date')
+      .eq('user_id', user.id)
+      .order('date', { ascending: false })
+      .limit(20)
+    if (activityTypes) activitiesQuery = activitiesQuery.in('type', activityTypes)
+
     const [profileRes, zonesRes, activitiesRes] = await Promise.all([
       supabase.from('users').select('weight_kg, sport_history, onboarding_data').eq('id', user.id).single(),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
-      supabase.from('activities')
-        .select('type, distance_m, duration_sec')
-        .eq('user_id', user.id)
-        .order('date', { ascending: false })
-        .limit(50),
+      activitiesQuery,
     ])
 
     const profile = profileRes.data
     const zones: any[] = zonesRes.data ?? []
     const activities: any[] = activitiesRes.data ?? []
 
-    // Compute average paces per sport
-    const groups: Record<string, { d: number; t: number }> = {}
+    // Average pace across all fetched activities
+    let totalD = 0, totalT = 0
     for (const act of activities) {
-      if (!act.type || !act.distance_m || !act.duration_sec) continue
-      if (!groups[act.type]) groups[act.type] = { d: 0, t: 0 }
-      groups[act.type].d += act.distance_m
-      groups[act.type].t += act.duration_sec
+      if (!act.distance_m || !act.duration_sec) continue
+      totalD += act.distance_m
+      totalT += act.duration_sec
     }
-    const paceLines = Object.entries(groups).map(([sp, { d, t }]) => {
-      const ms = d / t
+    const paceLines: string[] = []
+    if (totalD > 0 && totalT > 0 && sport) {
+      const ms = totalD / totalT
+      const sp = sport
       if (/swim/i.test(sp)) {
         const s = 100 / ms
-        return `${sp}: ${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')} /100m average`
+        paceLines.push(`${sp}: ${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')} /100m average`)
       } else if (/run|jog|walk/i.test(sp)) {
         const s = 1000 / ms
-        return `${sp}: ${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')} /km average`
+        paceLines.push(`${sp}: ${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')} /km average`)
       } else {
-        return `${sp}: ${(ms * 3.6).toFixed(1)} km/h average`
+        paceLines.push(`${sp}: ${(ms * 3.6).toFixed(1)} km/h average`)
       }
-    })
+    }
+
+    // Weekly volume: average km/week over the last 4 weeks
+    const fourWeeksAgo = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const recentKm = activities
+      .filter(a => a.date >= fourWeeksAgo && a.distance_m)
+      .reduce((sum: number, a: any) => sum + a.distance_m / 1000, 0)
+    const weeklyKm = recentKm / 4
 
     const zonesText = zones
       .map(z => `  Zone ${z.zone_number} — ${z.name}: ${z.min_bpm}–${z.max_bpm} bpm (MET ${z.met_value})`)
@@ -152,12 +175,13 @@ ${onboardingContext ? onboardingContext : ''}
 Heart rate zones:
 ${zonesText || '  (no zones configured)'}
 ${paceLines.length > 0 ? `\nHistorical paces:\n${paceLines.map(l => '  ' + l).join('\n')}` : ''}
+${weeklyKm > 0 ? `\nRecent training load (last 4 weeks):\n  Average weekly volume: ~${Math.round(weeklyKm)} km/week` : ''}
 
 Guidelines for your plans:
 ${customGuidelines?.trim() ? customGuidelines.trim() : `- Reference zones by number and name (e.g. "Zone 2 — Aerobic Base, ${zones[1]?.min_bpm ?? 120}–${zones[1]?.max_bpm ?? 140} bpm")
-- Give specific distances or durations for each segment
-- Always include a warm-up and cool-down
-- Estimate total kcal burned (write it as "X kcal" so it can be parsed)
+- Give specific distances or durations for each segment; segment durations must add up to the total
+- Always include a warm-up and cool-down within the stated total duration
+- Use HR zones as primary guidance; only add pace if historical data is available — never combine both in one instruction
 - Be concise — use a numbered or bulleted list
 - Respond in the same language the user writes in`}
 

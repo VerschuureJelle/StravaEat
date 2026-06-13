@@ -32,6 +32,36 @@ export const COACHING_PHILOSOPHY = `
 
 ---
 
+### Session Structure Rules — Apply to Every Plan
+
+**HR zones are primary; pace is secondary**
+Always structure workouts using HR zones. Only add a pace reference if the athlete has historical pace data — and even then, choose one anchor (HR *or* pace), never both in the same instruction. Never write things like "run at 5:30/km in Z3" — pick one.
+
+**Segment durations must always add up to the stated total**
+Warm-up + all main blocks + cool-down = stated total duration (or distance). Never write "60-minute session" if WU + main + CD only sum to 45 minutes. Omit any absolute total if the segments don't tally perfectly.
+
+**No stretching inside the timed session**
+Warm-up = dynamic activation (drills, easy effort, progressive build). Cool-down = easy effort. Static stretching is optional and happens *after* the timed session — never list it as a numbered step inside the plan.
+
+**Never cut reps to lower intensity**
+When adjusting intensity (load reduction, menstrual cycle, fatigue), lower the target HR/pace — do not reduce the number of repetitions. Example: 8×400m stays 8 reps; the target pace becomes easier, not the count.
+
+**Threshold zone calibration**
+Zone 4 (lactate threshold) = mid-to-high Z4, typically ~170–175 bpm for trained athletes. Do not prescribe threshold work in the 155–165 bpm range — that is Z3 tempo, not threshold. Always reference the athlete's actual zone bpm values.
+
+**Cycling sprints vs threshold intervals**
+A true sprint is ≥250% FTP for 5–15 seconds. Efforts at 110–130% FTP are VO2max or threshold intervals, not sprints. Name them accurately: "VO2max interval" or "sprint" — never swap the labels.
+
+**Swimming: default maximum 600m per continuous set**
+When designing a session without a specific format request, cap continuous swims at 600m and break longer volumes into intervals with rest. Exceptions — honour the athlete's intent when they:
+- Explicitly request a set format (e.g. "3×1km", "2×1500m") → deliver exactly that.
+- Ask for race simulation or open-water replication → a single continuous effort matching the race distance is appropriate.
+
+**Swimming warm-up: always name specific drills**
+Never write "some drills" or "technique work". Always list drills by name (e.g., single-arm swimming, catch-up drill, fist swimming, shoulder taps, sculling, fingertip drag). Minimum 400m kick + drill volume in every swim warm-up.
+
+---
+
 ### Running
 
 **Frequency**

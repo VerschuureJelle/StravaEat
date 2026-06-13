@@ -1,0 +1,866 @@
+"id","sport","request","plan","estimated_kcal","rating_1_5","intensity_accurate_Y_N","structure_logical_Y_N","durations_realistic_Y_N","feedback_comments"
+"1","Run","45 minute easy recovery run, I'm feeling a bit tired from yesterday's intervals","EASY RECOVERY RUN — 45 min
+
+Goal: flush legs, NOT add fatigue.
+
+1. Warm-up (5 min)
+   – Walk 2 min, then ease into very easy jog
+   – Dynamic drills: leg swings, ankle circles, high knees (2×10 each)
+
+2. Main set (35 min)
+   – Zone 1-2 — 100–130 bpm — aim for 5:30–6:00/km or slower
+   – If HR creeps above 135 bpm → walk until it drops
+   – 'There is no such thing as too slow for a recovery run'
+
+3. Cool-down (5 min)
+   – Walk 2 min, then static stretch: calves, hamstrings, quads × 30 sec each side
+
+Nutrition: skip pre-run fuel (easy effort), drink 400–500 ml water post-run
+
+Estimated: ~250 kcal","250","","","","",""
+"2","Run","60 minute easy aerobic run to build my base","BASE-BUILDING EASY RUN — 60 min (~12 km)
+
+1. Warm-up (10 min)
+   – 5 min walk/jog, then dynamic drills:
+   – High knees 2×20m, butt kicks 2×20m, leg swings 10 each side
+
+2. Main set (45 min)
+   – Zone 2 — 120–140 bpm — target pace ~5:00–5:30/km
+   – Run by feel and HR, not pace — if HR exceeds 142 bpm, slow down
+   – Aim for nose breathing the entire run as a quality check
+
+3. Cool-down (5 min)
+   – 2 min walk, stretch: calves (30s), hamstrings (30s), hip flexors (30s each)
+
+Nutrition: banana or rice cake 30 min before if running at tempo or later in the day
+
+Estimated: ~500 kcal","500","","","","",""
+"3","Run","I want to do my weekly long run, I'm at 18 km training volume currently","LONG RUN — 18 km
+
+1. Warm-up (1 km)
+   – Walk 3 min, then build to easy Z2 jog over 1 km
+   – Drills: high knees, butt kicks, lateral hops (2×20m each)
+
+2. Main set (16 km)
+   – Zone 2 — 120–140 bpm — target pace 5:00–5:30/km
+   – Keep HR below 142 bpm throughout
+   – Split in 3: km 1–6 (settle in), km 7–12 (steady state), km 13–16 (hold form)
+
+3. Cool-down (1 km)
+   – Easy jog + walk, 5 min full stretch
+
+Nutrition during run:
+   – 60 min mark: 30g carbs (1 gel or 500 ml sports drink)
+   – Drink water at ~20 min intervals
+
+Estimated: ~1000 kcal","1000","","","","",""
+"4","Run","Long run 25 km, I'm 10 weeks out from my marathon","PROGRESSIVE LONG RUN — 25 km (marathon block, 10 wks out)
+
+1. Warm-up (2 km)
+   – Easy jog Z1/Z2, drills: high knees, plyometrics
+
+2. Main set
+   – km 2–18 (16 km): Zone 2 — 120–140 bpm — ~5:00–5:20/km
+   – km 18–23 (5 km): Zone 3 tempo blocks — 140–155 bpm — ~4:30–4:45/km
+     (This simulates late-race fatigue; back off if HR exceeds 155)
+   – km 23–25: return to easy Z2 to finish strong
+
+3. Cool-down (2 min walk + 8 min stretch)
+
+Nutrition during:
+   – 30g carbs at 60 min, 60 min mark, 90 min mark (~gel or bar each time)
+   – Total: ~90g carbs during run
+
+Estimated: ~1400 kcal","1400","","","","",""
+"5","Run","Interval session, I want to work on my speed, 10×400m","VO2MAX INTERVALS — 10×400m
+
+1. Warm-up (2 km)
+   – Easy jog Z1 (5:30/km), then dynamic drills:
+   – High knees 2×20m, plyometrics 2×10, 4×100m build-ups finishing at 3:50/km
+
+2. Main set: 10×(400m Z5 + 400m Z1 jog)
+   – Work: 400m at Zone 5 — 170–185 bpm — target ~3:50–4:00 per 400m
+   – Recovery: 400m easy jog Z1 — allow HR to drop to ~125 bpm before next rep
+   – Total interval distance: 4 km (= 50% of total → within the 30% rule)
+
+3. Cool-down (2 km)
+   – Easy jog 1.5 km + 5 min stretch (calves, quads, hamstrings)
+
+Total distance: ~12 km
+
+Nutrition: banana or energy bar 30 min before. No mid-session fuel needed (<75 min)
+
+Estimated: ~700 kcal","700","","","","",""
+"6","Run","Threshold interval session, 5×5 min with 2.5 min recovery","THRESHOLD INTERVALS — 5×5min Z4
+
+1. Warm-up (15 min)
+   – 10 min easy jog Z2, then drills: high knees, leg swings, plyometrics
+   – 2×2 min build-up to threshold pace
+
+2. Main set: 5×(5 min Zone 4 + 2.5 min Zone 2 recovery)
+   – Work: Zone 4 — 155–170 bpm — target ~4:15–4:25/km
+   – Recovery: easy jog Z2 (120–135 bpm) for exactly 2.5 min
+   – Total quality work: 25 min at threshold
+
+3. Cool-down (10 min)
+   – Easy jog 8 min + static stretch calves/hamstrings/quads
+
+Nutrition: banana 30 min before. No mid-session carbs needed
+
+Estimated: ~620 kcal","620","","","","",""
+"7","Run","Fartlek run 60 minutes, I want something fun and varied","FARTLEK RUN — 60 min
+
+1. Warm-up (10 min)
+   – Easy jog Z1/low Z2, dynamic drills: high knees, ankle circles, leg swings
+
+2. Main set (45 min fartlek)
+   – Base: Zone 2 jog between efforts (~5:00–5:20/km)
+   – Pick-ups by landmarks or feel (lamp posts, trees, corners):
+     × 6–8 surges of 30–90 sec at Z4 (155–170 bpm) during the run
+   – No set structure — respond to how you feel
+   – Every surge: recover fully at Z1 before the next one
+
+3. Cool-down (5 min)
+   – Walk/easy jog, 5 min full stretch
+
+Tip: put on a playlist and sprint every time the chorus hits — makes it fun!
+
+Estimated: ~540 kcal","540","","","","",""
+"8","Run","Hill repeats session to build leg strength, I have a 200m hill nearby","HILL REPEATS — 8×200m
+
+1. Warm-up (2 km flat)
+   – Easy Z2 jog, then 2 hill strides at 50% effort to feel the gradient
+
+2. Main set: 8×200m hill (Z4–Z5 effort)
+   – Effort: Zone 4–5 (155–180 bpm) — strong but controlled
+   – Stride: high knees, drive arms, lean into hill — don't overstride
+   – Recovery: walk/easy jog back down (90–120 sec) — HR to ~130 bpm
+   – Treat as strength work, not pure speed
+
+3. Cool-down (1.5 km flat easy)
+   – Walk last 200m, extra calf and glute stretch today (hills stress these)
+
+Total: ~6 km
+
+Estimated: ~480 kcal","480","","","","",""
+"9","Run","I'm preparing for a 5K race next Sunday, what should I do today (it's Tuesday)?","5K PREP — SHARPENING SESSION (race Sunday)
+
+Context: 5 days out — keep legs sharp but don't add fatigue
+
+1. Warm-up (2 km)
+   – 1 km easy Z2, then drills: high knees, plyometrics, leg swings
+   – 4×100m build-ups finishing at race pace (4:00/km feel)
+
+2. Main set
+   – 3×1000m at race pace (~3:55–4:05/km, Zone 4–5)
+   – Recovery: 2 min easy Z1 walk/jog between reps
+   – Focus on even splits and smooth form, not going all-out
+
+3. Cool-down (1.5 km easy + stretch)
+
+No long run or hard sessions Wednesday–Saturday.
+Saturday: 20 min easy jog + 4×100m strides. Then rest.
+
+Estimated: ~400 kcal","400","","","","",""
+"10","Run","Long run 90 minutes, I want to practice fueling strategy for my marathon","FUELING LONG RUN — ~90 min (~17–18 km)
+
+Goal: practice taking carbs on the run — train the gut
+
+1. Warm-up (10 min)
+   – Easy jog, dynamic drills
+
+2. Main set (75 min, all Zone 2 — 120–140 bpm — ~5:00–5:20/km)
+
+   Fueling schedule:
+   – T+0 min: start run (nothing)
+   – T+30 min: 30g carbs → 1 gel or 500 ml isotonic drink
+   – T+60 min: 30g carbs → repeat
+   – Sip water every 20 min between gels
+
+   Notes:
+   – Take gel without slowing if possible — practice the motion
+   – Try the exact brand/flavour you plan to use on race day
+
+3. Cool-down (5 min)
+   – Eat 30g fast carbs + protein shake within 30 min of finishing
+
+Estimated: ~990 kcal (run) + gels ~120 kcal","990","","","","",""
+"11","Run","3×2000m threshold run, I want to improve my lactate threshold","THRESHOLD INTERVALS — 3×2000m
+
+1. Warm-up (2 km)
+   – Easy jog Z2, dynamic drills, 2×200m build-ups
+
+2. Main set: 3×(2000m Zone 4 + 2 min Z2 recovery jog)
+   – Work: Zone 4 — 155–168 bpm — target ~4:15–4:25/km
+   – Recovery: 2 min easy jog (allow HR to 130–135 bpm)
+   – Rep 3: if HR climbs above 172 bpm, ease to Z3 — don't sacrifice form
+
+3. Cool-down (1.5 km easy)
+   – 5 min stretch: calves, hamstrings, IT band
+
+Total ~9 km | Quality volume: 6 km at threshold
+
+Estimated: ~580 kcal","580","","","","",""
+"12","Run","Marathon long run 32 km, peak week, 4 weeks to race","PEAK LONG RUN — 32 km (4 weeks to marathon)
+
+1. Warm-up (2 km)
+   – Easy walk/jog, drills, leg swings
+
+2. Main set
+   – km 2–20 (18 km): Zone 2 — 120–140 bpm — 5:00–5:20/km
+   – km 20–27 (7 km): Zone 3 tempo — 140–152 bpm — 4:35–4:50/km
+     (simulate race-pace fatigue at 30 km equivalent)
+   – km 27–32 (5 km): back to Z2, focus on form not pace
+
+3. Cool-down
+   – Walk 5 min, full body stretch 10 min, ice bath or cold shower recommended
+
+Fueling (mandatory):
+   – Gel / 30g carbs at 30, 60, 90, 120, 150 min
+   – Minimum 500 ml water/hour
+
+After: eat within 30 min (fast carbs) + protein within 60 min
+
+Estimated: ~1900 kcal","1900","","","","",""
+"13","Run","Pre-race activation run, marathon is tomorrow","PRE-MARATHON ACTIVATION — 20 min (race tomorrow!)
+
+Rule: never rest the day before a race. Light activation only.
+
+1. 5 min walk
+2. 10 min very easy jog — Zone 1 only (100–120 bpm) — 6:00–7:00/km
+3. 4×80m strides at ~marathon pace — smooth, relaxed, no effort
+4. Walk cool-down 3 min, gentle stretch
+
+Total: ~3 km | No intensity, no fatigue
+
+Evening: high-carb meal (pasta/rice, low fibre), hydrate well
+Morning: white bread + peanut butter + banana, coffee if habitual
+
+Estimated: ~150 kcal","150","","","","",""
+"14","Run","6×800m interval session, I want to target Z5","VO2MAX INTERVALS — 6×800m
+
+1. Warm-up (2.5 km)
+   – 2 km easy Z2, drills, then 2×200m build-ups at race effort
+
+2. Main set: 6×(800m Zone 5 + 400m Zone 1 jog)
+   – Work: Zone 5 — 170–185 bpm — target ~3:50–4:05 per 800m
+   – Recovery: 400m very easy jog/walk — wait for HR to drop to ~128 bpm
+   – If HR doesn't drop below 130 bpm before rep 5–6: cut to 5 reps
+
+3. Cool-down (1.5 km)
+   – Easy jog 10 min + full stretch
+
+Total: ~12 km | VO2max volume: 4.8 km (40% → slightly high; OK for strong day)
+
+Estimated: ~680 kcal","680","","","","",""
+"15","Run","I want to do a tempo run of 8 km at a comfortably hard effort","TEMPO RUN — 8 km at Z3
+
+1. Warm-up (2 km)
+   – Easy Z2 jog, dynamic drills, 1×1 km build to low Z3
+
+2. Main set — 8 km continuous at Zone 3 (140–152 bpm)
+   – Target pace: ~4:35–4:50/km
+   – 'Comfortably hard' — you can speak in short sentences
+   – If HR climbs above 155 after km 5: drop to 4:50/km
+   – Split: 4 km out, 4 km back (or a loop)
+
+3. Cool-down (1.5 km easy + stretch)
+
+Nutrition: banana 30–45 min before. No fuel needed during (< 75 min)
+
+Estimated: ~530 kcal","530","","","","",""
+"16","Run","Describe a week 1 easy running session for someone starting a marathon training block","WEEK 1 MARATHON BLOCK — INTRODUCTORY EASY RUN — 40 min
+
+Week 1 goal: establish the habit, not build fitness. Keep everything very easy.
+
+1. Warm-up (5 min)
+   – Walk 3 min, then very gentle jog
+
+2. Main set (30 min)
+   – Zone 1–2 — 100–135 bpm — pace 5:30–6:30/km or walk/run intervals if needed
+   – Run 4 min, walk 1 min × 6 rounds if currently not running continuously
+   – Feel: you should finish feeling like you could run 30 more minutes
+
+3. Cool-down (5 min walk + stretch)
+
+Week 1 mantra: 'Slow down. Then slow down some more.'
+
+Estimated: ~280 kcal","280","","","","",""
+"17","Run","Speed session with strides and short VO2max efforts, 10×200m","SPEED SESSION — Strides + 10×200m VO2max
+
+1. Warm-up (2 km)
+   – 1.5 km easy Z2 + drills: high knees, plyometrics, butt kicks
+   – 4×100m strides at 90% (smooth accelerations)
+
+2. Main set: 10×(200m Z5 + 200m Z1 walk/jog)
+   – Work: Zone 5 — 170–185 bpm — target ~48–52 sec per 200m (~3:50/km pace)
+   – Recovery: 200m walk/slow jog — full recovery, HR to ~125 bpm
+   – Focus: mechanics and turnover, not pure time
+
+3. Cool-down (1.5 km easy + 6 min stretch)
+
+Total: ~7 km | VO2max volume: 2 km (29% of total — within limit)
+
+Estimated: ~450 kcal","450","","","","",""
+"18","Run","Easy trail run 75 minutes, I have a forest trail nearby","EASY TRAIL RUN — 75 min (~12–13 km)
+
+1. Warm-up (5 min)
+   – Walk on flat terrain, then easy jog; dynamic drills on flat section
+
+2. Main set (65 min trail)
+   – Zone 2 by HR — 120–140 bpm — adjust pace for terrain (climbs: 5:30–7:00/km)
+   – On descents: shorten stride, keep HR in Z2, don't blast quads
+   – Trail tip: run by effort/HR, not GPS pace — terrain changes pace naturally
+
+3. Cool-down (5 min)
+   – Walk back to car/home, stretch calves and hip flexors (trail stresses these)
+
+Nutrition: carry 500 ml water + 1 gel (precaution for any trail run > 60 min)
+
+Estimated: ~700 kcal","700","","","","",""
+"19","Run","Half marathon prep — race pace intervals 4×3 km, race is in 3 weeks","HALF MARATHON RACE PACE INTERVALS — 4×3 km (3 weeks out)
+
+1. Warm-up (2 km)
+   – Easy Z2 jog + drills + 2×500m build to race pace
+
+2. Main set: 4×(3 km at HM race pace + 90 sec walk recovery)
+   – Target pace: ~4:15–4:25/km (Zone 4 — 155–168 bpm)
+   – Recovery: 90 sec easy walk → not full recovery, stress the transition
+   – Rep 4: if feeling strong, add a 500m surge at 4:05/km finish
+
+3. Cool-down (1.5 km easy + 8 min stretch)
+
+Total: ~18 km | Strong session — follow with easy run tomorrow, no intervals this week
+
+Estimated: ~1100 kcal","1100","","","","",""
+"20","Run","Easy 30 minute run, I'm in a deload week","DELOAD EASY RUN — 30 min
+
+Deload week: lower volume, keep a little movement
+
+1. Warm-up (3 min walk)
+
+2. Main set (24 min)
+   – Zone 1 only — 100–120 bpm — 6:00–7:00/km or slower
+   – This is literally a 'legs loosener' — no HR targets, just move
+   – If you feel stiff, even shorter is fine
+
+3. Cool-down (3 min walk + 5 min gentle stretch)
+
+Deload rule: 40–50% of normal volume. Your body gets stronger this week.
+
+Estimated: ~190 kcal","190","","","","",""
+"21","Ride","90 minute easy aerobic bike ride to build my base","BASE ENDURANCE RIDE — 90 min (~45 km)
+
+1. Warm-up (10 min)
+   – Easy Z1 spin, high cadence ~95 rpm, no resistance
+
+2. Main set (70 min)
+   – Zone 2 — 120–140 bpm / 56–75% FTP — ~30 km/h
+   – Cadence: 88–92 rpm throughout
+   – Keep it flat or rolling terrain — avoid big climbs today
+   – HR check: if above 143 bpm → drop to easier gear, not faster
+
+3. Cool-down (10 min)
+   – Easy spin Z1, then off bike: stretch quads, hip flexors, calves × 30s each
+
+Nutrition: 50g carbs/hour → gel + water at 45 min mark
+
+Estimated: ~750 kcal","750","","","","",""
+"22","Ride","Sweet spot interval session, 5×8 minutes","SWEET SPOT INTERVALS — 5×8 min @ 88–92% FTP
+
+1. Warm-up (15 min)
+   – 10 min easy Z2 spin, then 3×1 min builds to sweet spot wattage
+   – Target FTP ~270W → sweet spot = 238–248W (88–92% FTP)
+
+2. Main set: 5×(8 min @ 88–92% FTP + 4 min Z1 recovery)
+   – Work: 238–248W / HR likely 148–162 bpm
+   – Recovery: 4 min easy spin, HR drops to ~130 bpm before next rep
+   – Cadence: 90–95 rpm during work intervals
+
+3. Cool-down (10 min easy Z1 spin)
+
+Total: ~55 min | 40 min quality work
+Nutrition: 50g carbs before, 50g/hr during (gel at mid-session)
+
+Estimated: ~650 kcal","650","","","","",""
+"23","Ride","VO2max sprints, 8×30 seconds all-out","VO2MAX SPRINTS — 8×30 sec @ 110%+ FTP
+
+1. Warm-up (20 min)
+   – 15 min progressive Z2 build, then 3×20 sec @ 100% FTP with full recovery
+
+2. Main set: 8×(30 sec max sprint + 4 min easy Z1 recovery)
+   – Work: 110–130% FTP (~297–351W) — go as hard as possible each rep
+   – Cadence: 100–110 rpm during sprints (out of saddle OK for last 10 sec)
+   – Recovery: 4 min easy spin — full HR recovery to ~125 bpm
+   – Adjust down to 6 reps if form breaks or HR doesn't recover
+
+3. Cool-down (10 min easy Z1)
+
+Estimated: ~600 kcal","600","","","","",""
+"24","Ride","Long aerobic ride 3 hours, steady endurance","LONG AEROBIC RIDE — 3 hr (~90 km)
+
+1. Warm-up (10 min)
+   – Easy Z1 spin, progressive build
+
+2. Main set (2:40)
+   – Zone 2 — 120–138 bpm / 56–72% FTP — ~28–32 km/h (depending on terrain)
+   – First 45 min: stay at LOW Z2 (120–130 bpm) — resist the urge to push
+   – Last 30 min: can drift to mid Z2 (132–138) if feeling strong
+   – Cadence goal: 88–92 rpm
+
+3. Cool-down (10 min easy + off-bike stretch)
+
+Nutrition (critical for 3 hr ride):
+   – Pre-ride: oatmeal or bread + peanut butter
+   – On bike: 50–60g carbs/hr → every 30 min: 1 gel or bar or banana
+   – Total: ~150–180g carbs on bike
+   – Hydration: 600–750 ml/hr (two bottles)
+
+Estimated: ~1500 kcal","1500","","","","",""
+"25","Ride","FTP threshold intervals 4×4 minutes at 100% FTP","FTP THRESHOLD — 4×4 min @ 100% FTP
+
+1. Warm-up (15 min)
+   – 12 min progressive Z1→Z2 build, 3×30 sec at FTP to open legs
+
+2. Main set: 4×(4 min @ 100% FTP + 4 min Z1 recovery)
+   – Work: ~270W / HR ~162–170 bpm (Zone 4)
+   – Cadence: 90–95 rpm — hold wattage, don't grind a big gear
+   – Recovery: 4 min easy spin, HR fully to ~130 bpm
+   – Rep 4: if HR exceeds 174 bpm → drop to 95% FTP (~256W)
+
+3. Cool-down (10 min easy spin)
+
+Total: 45 min | 16 min at FTP
+
+Estimated: ~550 kcal","550","","","","",""
+"26","Ride","Recovery spin, just want to move my legs after a hard day","ACTIVE RECOVERY SPIN — 40 min
+
+Pure recovery: high cadence, zero pressure on the legs.
+
+1. 5 min walk or off-bike mobility
+
+2. Main set (30 min spin)
+   – Zone 1 only — HR below 120 bpm — easy gear, high cadence ~95–100 rpm
+   – No climbs. No efforts. If you feel the urge to push → don't
+   – Flat route or indoor trainer on easiest setting
+
+3. Cool-down (5 min off-bike)
+   – Stretch: quads, hip flexors, calves
+
+Purpose: blood flow for recovery, not training stimulus
+
+Estimated: ~250 kcal","250","","","","",""
+"27","Ride","Sweet spot pyramid session: 5+8+10+8+5 minutes","SWEET SPOT PYRAMID — 5+8+10+8+5 min
+
+1. Warm-up (15 min)
+   – Easy Z2 build, 2×2 min at sweet spot to open the legs
+
+2. Pyramid: each block @ 88–92% FTP (~238–248W)
+   – 5 min → 3 min Z1 → 8 min → 4 min Z1 → 10 min → 4 min Z1 → 8 min → 3 min Z1 → 5 min
+   – The 10-min block is the peak — go controlled, not all-out
+   – HR will likely land 148–165 bpm during work
+   – Cadence: 90–95 rpm throughout
+
+3. Cool-down (10 min Z1 spin)
+
+Total quality time: 36 min | Great threshold builder
+
+Estimated: ~680 kcal","680","","","","",""
+"28","Ride","I want to do an FTP test to calibrate my power zones. Walk me through it","FTP TEST PROTOCOL — 20 min all-out effort
+
+1. Warm-up (25 min)
+   – 10 min easy Z2 spin
+   – 3×1 min at FTP effort with 1 min rest
+   – 5 min easy, then 5 min rest
+
+2. FTP Test: 20 min MAX effort (start the timer)
+   – Go as hard as you can sustain for the full 20 min
+   – First 5 min: resist going too hard — common mistake
+   – Mid-test (min 10): check and adjust. If fading: slightly reduce effort
+   – Last 2 min: give everything remaining
+   – Record average power for the 20 min
+
+3. Cool-down (15 min easy Z1 spin)
+
+Calculate FTP: average power × 0.95 = your FTP
+   Example: 285W avg × 0.95 = 271W FTP
+
+Do not train again today. Rest or easy walk tomorrow.
+
+Estimated: ~600 kcal","600","","","","",""
+"29","Ride","Half triathlon race pace intervals, race is 90 km bike, 8 weeks out","HALF TRIATHLON RACE PACE — 4×15 min @ 90–95% FTP
+
+1. Warm-up (15 min)
+   – Z2 spin, 2×3 min at race pace (90% FTP ~243W)
+
+2. Main set: 4×(15 min @ 90–95% FTP + 5 min Z2 active recovery)
+   – Work: ~243–257W / HR ~158–167 bpm (Zone 4)
+   – Aero position during work intervals (simulate race)
+   – Cadence: 88–92 rpm
+   – Between reps: 5 min easy spin — don't fully recover
+
+3. Cool-down (10 min Z1)
+
+Total ride: ~75 min | 60 min quality
+Nutrition: 60g carbs/hr (race-simulation fueling)
+
+Estimated: ~900 kcal","900","","","","",""
+"30","Ride","2 hour endurance ride with some tempo blocks to break it up","ENDURANCE + TEMPO MIX — 2 hr (~58 km)
+
+1. Warm-up (10 min Z1)
+
+2. Main set (100 min)
+   – Min 0–20: Zone 2 steady (120–138 bpm)
+   – Min 20–35: 3×4 min Z3 tempo (140–152 bpm / 76–88% FTP) + 2 min Z2 between
+   – Min 35–60: Zone 2 steady base
+   – Min 60–75: 3×4 min Z3 tempo + 2 min Z2 between
+   – Min 75–100: Zone 2 finish
+
+3. Cool-down (10 min Z1)
+
+Nutrition: 50g carbs/hr (gel at 45 min, 75 min + water)
+
+Estimated: ~1050 kcal","1050","","","","",""
+"31","Ride","Climbing intervals, 3×10 min sustained climbing effort","CLIMBING THRESHOLD — 3×10 min
+
+Best done on a real climb or indoor on incline setting.
+
+1. Warm-up (15 min flat)
+   – Easy Z2 build, 1×3 min at climbing effort to open legs
+
+2. Main set: 3×(10 min climb + 5 min descent/easy spin)
+   – Work: Zone 3–4 — 145–165 bpm / 76–95% FTP
+   – Seated climbing: 70–80 rpm cadence
+   – Out of saddle: short bursts only (sharp pitches), then sit and settle
+   – Recovery: easy descent or flat spin — don't fully stop
+
+3. Cool-down (10 min easy flat)
+
+Estimated: ~700 kcal","700","","","","",""
+"32","Ride","2 hour ride with cadence drills focus","CADENCE-FOCUS ENDURANCE RIDE — 2 hr
+
+Goal: improve pedaling efficiency. Stay Z2 throughout.
+
+1. Warm-up (10 min easy Z1)
+
+2. Main set (100 min)
+   – Base pace: Z2 (120–140 bpm) at comfortable cadence (~88 rpm)
+   – Cadence drills every 20 min:
+     × 4×(1 min at 100+ rpm, easy gear) + 2 min normal cadence
+     × Focus: keep hips from bouncing — disengage knees, drive with glutes
+   – After each drill block: return to comfortable Z2 base
+
+3. Cool-down (10 min easy Z1)
+
+Nutrition: 50g carbs/hr, 600 ml water/hr
+
+Estimated: ~1000 kcal","1000","","","","",""
+"33","Ride","Pre-triathlon activation ride, race is tomorrow","PRE-RACE BIKE ACTIVATION — 25 min (race tomorrow!)
+
+1. 5 min easy Z1 spin, high cadence ~95 rpm
+
+2. 3×(1 min @ race effort, 90% FTP + 2 min easy Z1)
+   – Goal: sharpen legs, not create fatigue
+   – HR may hit 155–162 bpm — that's fine, keep it brief
+
+3. 5 min easy Z1 spin to finish
+
+Bike check: tyres inflated, gears indexed, garmin charged
+
+Evening: high-carb dinner (pasta/rice), hydrate well, sleep early
+
+Estimated: ~200 kcal","200","","","","",""
+"34","Ride","4 hour long ride for full triathlon prep, 12 weeks out","LONG RIDE — 4 hr / ~120 km (full triathlon block)
+
+1. Warm-up (10 min easy Z1 build)
+
+2. Main set (3:40)
+   – HR 1–60 min: Zone 2 low — 120–132 bpm (no heroics early)
+   – HR 60–180 min: Zone 2 steady — 130–140 bpm / ~60–70% FTP
+   – Min 170–200: 2×10 min at 75% FTP (triathlon race-pace warmup block)
+   – Final 40 min: back to steady Z2
+
+3. Cool-down (10 min easy)
+
+Nutrition (critical, no compromise):
+   – Pre-ride: oatmeal + banana
+   – On bike: 70–80g carbs/hr (2 gels + water every 30 min)
+   – Total: ~280–320g carbs on bike
+   – Hydration: 750 ml/hr (train your gut for race day)
+
+Estimated: ~2000 kcal","2000","","","","",""
+"35","Ride","5×5 min at 95% FTP with 3 min recovery","THRESHOLD INTERVALS — 5×5 min @ 95% FTP
+
+1. Warm-up (15 min)
+   – 12 min Z1→Z2 progressive, 3×30 sec at threshold
+
+2. Main set: 5×(5 min @ 95% FTP + 3 min Z1 recovery)
+   – Work: ~257W / HR ~160–168 bpm (Zone 4)
+   – Cadence: 90–95 rpm — avoid grinding
+   – Recovery: 3 min easy spin (50% of work = minimum)
+   – Rep 5: push the last minute hard if legs allow
+
+3. Cool-down (10 min Z1 spin)
+
+Total: ~55 min | 25 min at threshold — solid session
+
+Estimated: ~650 kcal","650","","","","",""
+"36","Swim","3 km mixed aerobic swim session","AEROBIC MIXED SWIM — 3000m
+
+1. Warm-up (1000m)
+   – 400m easy freestyle (mix with pull buoy for last 200m)
+   – 4×50m kick (kickboard) with 15s rest
+   – Drills 4×50m: single-arm (50m), catch-up (50m), fist swimming (50m), fingertip drag (50m)
+   – Breathing: every 3 strokes throughout warm-up
+
+2. Main set (1700m)
+   – 4×400m at mixed tempo: 100m easy + 100m tempo + 100m easy + 100m tempo (1:55–1:45/100m)
+   – 30s rest between each 400m
+
+3. Cool-down (300m)
+   – 300m easy catch-up drill / backstroke
+
+Estimated: ~580 kcal","580","","","","",""
+"37","Swim","Speed and consistency session, 20×100m with target pace","SPEED/CONSISTENCY SET — 20×100m
+
+1. Warm-up (1000m)
+   – 400m easy freestyle + pull buoy 200m
+   – 4×50m kick, 15s rest
+   – Drills 4×50m: sculling, shoulder taps, catch-up, single-arm
+
+2. Main set (2000m): 20×100m on a consistent send-off
+   – Target: 1:45–1:50/100m with 20s rest between reps
+   – Aim for EVEN splits — rep 20 should feel like rep 1
+   – Breathing: 1 breath/3 strokes, switch to 1/2 on hard reps if needed
+   – If drifting more than 5 sec from target → take 30s and reset
+
+3. Cool-down (300m)
+   – Easy backstroke or catch-up drill
+
+Total: 3300m
+
+Estimated: ~620 kcal","620","","","","",""
+"38","Swim","Technique-focused session, I want to work on my stroke","TECHNIQUE SESSION — 2500m
+
+Today is about feel, not fitness.
+
+1. Warm-up (600m)
+   – 200m easy, 4×50m kick, 200m easy with bilateral breathing focus
+
+2. Drill block (800m)
+   – 4×100m single-arm (50m left, 50m right) — 20s rest
+   – 4×100m catch-up drill — 20s rest
+   – 4×50m fist swimming (feel the forearm catch) — 15s rest
+   – 4×50m fingertip drag (high elbow recovery) — 15s rest
+
+3. Integration set (800m)
+   – 4×200m: first 50m each = drill, remaining 150m apply feel to full stroke
+   – Slow down 10% from normal pace — think, don't swim fast
+
+4. Cool-down (300m easy)
+
+Estimated: ~420 kcal","420","","","","",""
+"39","Swim","4 km aerobic endurance swim","AEROBIC ENDURANCE SWIM — 4000m
+
+1. Warm-up (1000m)
+   – 400m easy, 4×50m kick (15s rest), drills: 2×50m single-arm, 2×50m catch-up, 2×50m sculling, 2×50m fist
+
+2. Main set (2700m)
+   – 3×500m easy Z2 (1:55–2:00/100m), 30s rest between
+   – 4×200m tempo Z3 (1:45–1:50/100m), 30s rest between
+   – 3×100m easy recovery between main blocks (included in count)
+
+3. Cool-down (300m)
+   – Easy backstroke or pull buoy
+
+Estimated: ~720 kcal","720","","","","",""
+"40","Swim","Short intense 2 km quality session, mostly VO2max work","HIGH-INTENSITY QUALITY SWIM — 2000m
+
+1. Warm-up (800m)
+   – 300m easy, 4×50m kick, 4×50m drill (single-arm, catch-up, sculling, fist)
+
+2. Main set (900m)
+   – 3×(3×100m) — work sets:
+     × Set 1: 3×100m @ 1:40/100m (hard Z4), 20s rest between, 2 min between sets
+     × Set 2: 3×100m @ 1:35/100m (very hard Z5), 25s rest, 2 min between sets
+     × Set 3: 3×100m @ best effort, 30s rest
+   – Breathing: every 2 strokes on hard reps OK
+
+3. Cool-down (300m)
+   – Easy pull buoy, bilateral breathing focus
+
+Estimated: ~380 kcal","380","","","","",""
+"41","Swim","Pyramid set plus drills, 2500 m total","PYRAMID + DRILLS — 2500m
+
+1. Warm-up (700m)
+   – 200m easy, 4×50m kick, 4×50m drill (catch-up, single-arm, fist, fingertip drag)
+
+2. Pyramid main set (1500m)
+   – 100m @ 1:50/100m (30s rest)
+   – 200m @ 1:55/100m (30s rest)
+   – 300m @ 1:57/100m (40s rest)
+   – 400m @ 2:00/100m (40s rest)
+   – 300m @ 1:55/100m (30s rest)
+   – 200m @ 1:50/100m
+   (Pace gets slightly SLOWER as distance grows — build aerobic base)
+
+3. Cool-down (300m easy)
+
+Estimated: ~440 kcal","440","","","","",""
+"42","Swim","Pull buoy and paddles session for upper body endurance","PULL BUOY + PADDLES — 2800m
+
+1. Warm-up (600m)
+   – 200m easy free, 4×50m kick, 200m pull buoy only (no paddles yet)
+
+2. Main set (1900m)
+   – 5×200m pull buoy + paddles (1:48–1:52/100m), 30s rest
+   – Feel: load through forearm, high elbow, full extension
+   – 3×100m pull buoy ONLY (no paddles) — contrast the feel, 20s rest
+   – 2×200m pull buoy + paddles all-out effort (1:40–1:45/100m), 40s rest
+
+3. Cool-down (300m)
+   – Full stroke, no equipment
+
+Note: paddles increase shoulder load — stop if any shoulder discomfort
+
+Estimated: ~480 kcal","480","","","","",""
+"43","Swim","Race prep simulation for open water triathlon 1500m swim","OPEN WATER RACE SIMULATION — 2500m total
+
+1. Warm-up (700m)
+   – 300m easy, 2×50m kick, 4×50m drill: sculling, catch-up, single-arm, shoulder taps
+
+2. Race simulation (1500m)
+   – Start hard: 100m at Z5 effort (simulate race start chaos)
+   – Settle: 200m drop to race pace Z3/Z4 (1:44–1:50/100m)
+   – Main body: 1000m steady Z3 (1:50–1:55/100m)
+   – Finish hard: 200m pick-up to Z4/5 (1:38–1:44/100m)
+   – 30s transition rest (simulate T1 effort)
+
+3. Brick cool-down block
+   – 2 min walk/jog to simulate T1 transition legs
+
+4. Cool-down swim (300m easy backstroke)
+
+Estimated: ~450 kcal","450","","","","",""
+"44","Swim","Broken 1500m time trial to test my race pace","BROKEN 1500m TIME TRIAL
+
+1. Warm-up (1000m)
+   – 400m easy, 4×50m kick, 4×50m drills, 4×50m build to race pace
+
+2. Broken 1500m: 6×250m at race pace + 20s rest between
+   – Target: 1:44–1:50/100m per 250m block
+   – Record each 250m split separately
+   – Compare splits to find your fade point (when pace drops)
+   – Effective total time (minus rest) = your 1500m capability
+
+3. Cool-down (300m easy)
+
+Analysis after:
+   – Even splits = good pacing
+   – Negative split (faster 2nd half) = excellent
+   – Drop in last 2 blocks = need more aerobic base or better fueling
+
+Estimated: ~420 kcal","420","","","","",""
+"45","Swim","3×(10×100m) consistency set with 2 min between rounds","3-SET CONSISTENCY CHALLENGE — 3×(10×100m)
+
+Total distance: 3000m
+
+1. Warm-up (1000m)
+   – 400m easy + pull buoy 200m, 4×50m kick, 4×50m drill
+
+2. Main set (3000m)
+   – Set 1 (10×100m @ 1:50/100m, 15s rest), then 2 min recovery
+   – Set 2 (10×100m @ 1:47/100m, 15s rest), then 2 min recovery
+   – Set 3 (10×100m @ 1:50/100m, 15s rest — match Set 1 after fatigue)
+   – Goal: ALL reps within 3 seconds of target — consistency over speed
+
+3. Cool-down (300m easy)
+
+Estimated: ~660 kcal","660","","","","",""
+"46","Swim","Kick-focused endurance session with fins","KICK FOCUS + ENDURANCE — 2500m
+
+1. Warm-up (600m)
+   – 200m easy free, 4×50m kick without fins (15s rest)
+
+2. Kick block (600m)
+   – 6×100m kick WITH fins, alternating back/front kick:
+     × 100m flutter kick on back, 15s rest
+     × 100m flutter kick on front (face in water), 15s rest
+   – Engage glutes, not just calves
+
+3. Integration endurance set (1000m)
+   – 2×500m full freestyle with fins — focus on extended kick with good pull timing
+   – 40s rest between
+   – Remove fins: 1 min rest, feel the difference
+
+4. Cool-down (300m)
+   – Full stroke no fins, 100m easy + 100m catch-up + 100m backstroke
+
+Estimated: ~430 kcal","430","","","","",""
+"47","Swim","3500 m mixed endurance including some tempo and easy blocks","MIXED ENDURANCE SWIM — 3500m
+
+1. Warm-up (1000m)
+   – 400m easy, 4×50m kick, drills: 2×50m catch-up, 2×50m single-arm, 2×50m sculling, 2×50m fist
+
+2. Main set (2200m)
+   – 800m easy Z2 continuous (1:58–2:02/100m)
+   – 4×200m tempo Z3 (1:45–1:50/100m) + 30s rest
+   – 6×100m easy recovery (1:58–2:05/100m) + 15s rest
+
+3. Cool-down (300m)
+   – Easy pull buoy
+
+Estimated: ~610 kcal","610","","","","",""
+"48","Swim","Recovery swim after a race, just want easy movement in the water","ACTIVE RECOVERY SWIM — 2000m (post-race)
+
+No sets, no targets, no timers.
+
+1. 300m easy backstroke or breaststroke (whatever feels natural)
+
+2. 1200m alternating:
+   – 100m easy freestyle (no push at all)
+   – 100m backstroke (arms straight, gentle flutter kick)
+   – Repeat 6×
+   – No flip turns, push off walls softly
+
+3. 200m pull buoy (arms only, legs resting completely)
+
+4. 300m easy finisher — any stroke, don't think
+
+Purpose: blood flow, not training. Get out feeling looser than when you got in.
+
+Estimated: ~280 kcal","280","","","","",""
+"49","Swim","20×100m each with 25m escalating pace: easy-tempo-hard-max","ESCALATING PACE 20×100m
+
+1. Warm-up (1000m)
+   – 400m easy, 4×50m kick, drills 4×50m: sculling, shoulder taps, fist, catch-up
+
+2. Main set (2000m): 20×100m — each rep structured as 4×25m at increasing pace
+   – 25m Z1 easy (2:05/100m feel)
+   – 25m Z2 (1:55/100m feel)
+   – 25m Z4 hard (1:38/100m feel)
+   – 25m Z5 MAX sprint finish
+   – 20s rest between reps
+   – Goal: consistently execute each 25m at the right effort — don't blow up early
+
+3. Cool-down (300m easy)
+
+Total: 3300m
+
+Estimated: ~620 kcal","620","","","","",""
+"50","Swim","Build-up endurance set: 400-800-400 m blocks","BUILD-UP ENDURANCE — 400-800-400 blocks
+
+1. Warm-up (1000m)
+   – 400m easy, 4×50m kick, 4×50m drill (catch-up, single-arm, fist, fingertip drag)
+
+2. Main set (1600m)
+   – Block 1: 400m continuous @ 1:55/100m (Z2) — 45s rest
+   – Block 2: 800m continuous @ 1:58/100m (low Z2 — longer, easier) — 60s rest
+   – Block 3: 400m continuous @ 1:50/100m (Z3 — stronger finish) — done
+   – Focus on continuous smooth stroke throughout each block
+
+3. Cool-down (300m easy)
+
+Total: 2900m
+
+Estimated: ~500 kcal","500","","","","",""

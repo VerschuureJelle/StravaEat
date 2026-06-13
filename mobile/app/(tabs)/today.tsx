@@ -2476,6 +2476,45 @@ function MealPresetPickerModal({ meal, presets, onSelect, onManage, onClose }: {
 
 // ─── Log workout modal ────────────────────────────────────────────────────────
 
+// Endurance sports use distance + pace/speed or avg HR — not the generic intensity cards
+const ENDURANCE_SPORT_TYPES = ['Run', 'Walk', 'Cycling', 'Swim']
+
+function metFromRunWalkSpeed(speedKmh: number, sportType: string): number {
+  if (sportType === 'Walk') {
+    if (speedKmh < 4.0) return 2.5
+    if (speedKmh < 5.0) return 3.5
+    if (speedKmh < 6.5) return 4.5
+    return 6.0
+  }
+  if (speedKmh < 8.0) return 6.0
+  if (speedKmh < 10.0) return 8.3
+  if (speedKmh < 12.0) return 9.8
+  if (speedKmh < 14.0) return 11.0
+  return 13.5
+}
+
+function metFromCyclingSpeed(speedKmh: number): number {
+  if (speedKmh < 16) return 4.0
+  if (speedKmh < 20) return 6.0
+  if (speedKmh < 25) return 8.0
+  if (speedKmh < 30) return 10.0
+  return 12.0
+}
+
+function metFromSwimPace(paceSecPer100m: number): number {
+  if (paceSecPer100m > 150) return 5.0
+  if (paceSecPer100m > 120) return 7.0
+  if (paceSecPer100m > 100) return 9.0
+  return 11.0
+}
+
+function metFromHrBucket(avgHr: number, sport: typeof MANUAL_SPORT_OPTIONS[0]): number {
+  if (avgHr < 125) return sport.mets[0]
+  if (avgHr < 145) return sport.mets[1]
+  if (avgHr < 162) return sport.mets[2]
+  return sport.mets[3]
+}
+
 function LogWorkoutModal({ visible, weightKg, hideCalories, onClose, onSave }: {
   visible: boolean
   weightKg: number
@@ -2484,27 +2523,79 @@ function LogWorkoutModal({ visible, weightKg, hideCalories, onClose, onSave }: {
   onSave: (type: string, name: string, durationMin: number, kcal: number) => Promise<void>
 }) {
   const [sportIdx, setSportIdx] = useState(0)
+  // Gym-style state
   const [durationStr, setDurationStr] = useState('60')
   const [intensityIdx, setIntensityIdx] = useState(1)
+  // Endurance state
+  const [distanceStr, setDistanceStr] = useState('')
+  const [paceMinStr, setPaceMinStr] = useState('')
+  const [paceSecStr, setPaceSecStr] = useState('')
+  const [speedStr, setSpeedStr] = useState('')
+  const [avgHrStr, setAvgHrStr] = useState('')
+  const [enduranceMode, setEnduranceMode] = useState<'pace' | 'hr'>('pace')
   const [saving, setSaving] = useState(false)
 
   const sport = MANUAL_SPORT_OPTIONS[sportIdx]
-  const durationMin = Math.max(1, parseInt(durationStr) || 0)
-  const met = sport.mets[intensityIdx]
-  const estimatedKcal = Math.round(met * weightKg * (durationMin / 60))
+  const isEndurance = ENDURANCE_SPORT_TYPES.includes(sport.type)
+  const isCycling = sport.type === 'Cycling'
+  const isSwim = sport.type === 'Swim'
+
+  function handleSportChange(i: number) {
+    setSportIdx(i)
+    setDistanceStr('')
+    setPaceMinStr('')
+    setPaceSecStr('')
+    setSpeedStr('')
+    setAvgHrStr('')
+    setEnduranceMode('pace')
+  }
+
+  // Derive duration + MET from endurance inputs
+  const enduranceDerived = (() => {
+    const dist = parseFloat(distanceStr) || 0
+    if (enduranceMode === 'pace') {
+      if (isCycling) {
+        const speedKmh = parseFloat(speedStr) || 0
+        if (dist <= 0 || speedKmh <= 0) return null
+        return { durationMin: (dist / speedKmh) * 60, met: metFromCyclingSpeed(speedKmh) }
+      }
+      const totalPaceSec = (parseInt(paceMinStr) || 0) * 60 + (parseInt(paceSecStr) || 0)
+      if (dist <= 0 || totalPaceSec <= 0) return null
+      if (isSwim) {
+        return { durationMin: (totalPaceSec * dist) / (100 * 60), met: metFromSwimPace(totalPaceSec) }
+      }
+      const speedKmh = 3600 / totalPaceSec
+      return { durationMin: (totalPaceSec * dist) / 60, met: metFromRunWalkSpeed(speedKmh, sport.type) }
+    }
+    // HR mode: needs both distance and duration; HR determines MET bucket
+    const durMin = Math.max(1, parseInt(durationStr) || 0)
+    const hr = parseInt(avgHrStr) || 0
+    if (dist <= 0 || hr <= 0) return null
+    return { durationMin: durMin, met: metFromHrBucket(hr, sport) }
+  })()
+
+  const gymDurationMin = Math.max(1, parseInt(durationStr) || 0)
+  const gymKcal = Math.round(sport.mets[intensityIdx] * weightKg * (gymDurationMin / 60))
+  const enduranceKcal = enduranceDerived
+    ? Math.round(enduranceDerived.met * weightKg * (enduranceDerived.durationMin / 60))
+    : 0
 
   async function handleSave() {
-    if (durationMin <= 0) return
+    const durationMin = isEndurance ? enduranceDerived?.durationMin ?? 0 : gymDurationMin
+    const kcal = isEndurance ? enduranceKcal : gymKcal
+    if (durationMin <= 0 || kcal <= 0) return
     setSaving(true)
-    await onSave(sport.type, `${sport.label} workout`, durationMin, estimatedKcal)
+    await onSave(sport.type, `${sport.label} workout`, Math.round(durationMin), kcal)
     setSaving(false)
-    setSportIdx(0)
-    setDurationStr('60')
-    setIntensityIdx(1)
+    setSportIdx(0); setDurationStr('60'); setIntensityIdx(1)
+    setDistanceStr(''); setPaceMinStr(''); setPaceSecStr(''); setSpeedStr(''); setAvgHrStr('')
+    setEnduranceMode('pace')
     if (!hideCalories) {
-      Alert.alert('Workout logged', `~${estimatedKcal.toLocaleString()} kcal burned added to your day.`)
+      Alert.alert('Workout logged', `~${kcal.toLocaleString()} kcal burned added to your day.`)
     }
   }
+
+  const canSave = isEndurance ? enduranceDerived !== null : gymDurationMin > 0
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -2515,55 +2606,132 @@ function LogWorkoutModal({ visible, weightKg, hideCalories, onClose, onSave }: {
             <Pressable onPress={onClose} hitSlop={10}><Ionicons name="close" size={22} color={C.text2} /></Pressable>
           </View>
 
-          {/* Activity type */}
           <Text style={lw.sectionLabel}>Activity</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={lw.chipScroll} contentContainerStyle={{ gap: 8, paddingRight: 16 }}>
             {MANUAL_SPORT_OPTIONS.map((s, i) => (
-              <Pressable
-                key={s.type}
-                style={[lw.chip, i === sportIdx && lw.chipActive]}
-                onPress={() => setSportIdx(i)}
-              >
+              <Pressable key={s.type} style={[lw.chip, i === sportIdx && lw.chipActive]} onPress={() => handleSportChange(i)}>
                 <Text style={[lw.chipText, i === sportIdx && lw.chipTextActive]}>{s.label}</Text>
               </Pressable>
             ))}
           </ScrollView>
 
-          {/* Duration */}
-          <Text style={lw.sectionLabel}>Duration (minutes)</Text>
-          <View style={lw.durationRow}>
-            <Pressable style={lw.durationBtn} onPress={() => setDurationStr(v => String(Math.max(5, (parseInt(v) || 0) - 5)))} hitSlop={6}>
-              <Ionicons name="remove" size={20} color={C.text1} />
-            </Pressable>
-            <TextInput
-              style={lw.durationInput}
-              value={durationStr}
-              onChangeText={setDurationStr}
-              keyboardType="numeric"
-              selectTextOnFocus
-            />
-            <Pressable style={lw.durationBtn} onPress={() => setDurationStr(v => String((parseInt(v) || 0) + 5))} hitSlop={6}>
-              <Ionicons name="add" size={20} color={C.text1} />
-            </Pressable>
-          </View>
+          {isEndurance ? (
+            <>
+              {/* Distance */}
+              <Text style={lw.sectionLabel}>Distance ({isSwim ? 'm' : 'km'})</Text>
+              <TextInput
+                style={lw.distanceInput}
+                value={distanceStr}
+                onChangeText={setDistanceStr}
+                keyboardType="decimal-pad"
+                placeholder={isSwim ? 'e.g. 2000' : 'e.g. 10.5'}
+                placeholderTextColor={C.text3}
+              />
 
-          {/* Intensity */}
-          <Text style={lw.sectionLabel}>Intensity</Text>
-          {INTENSITY_OPTIONS.map((opt, i) => (
-            <Pressable
-              key={opt.label}
-              style={[lw.intensityCard, i === intensityIdx && lw.intensityCardActive]}
-              onPress={() => setIntensityIdx(i)}
-            >
-              <View style={[lw.intensityDot, i === intensityIdx && lw.intensityDotActive]} />
-              <View style={{ flex: 1 }}>
-                <Text style={[lw.intensityLabel, i === intensityIdx && lw.intensityLabelActive]}>{opt.label}</Text>
-                <Text style={lw.intensityDesc}>{opt.description}</Text>
+              {/* Pace / HR toggle */}
+              <View style={lw.modeToggleRow}>
+                <Pressable style={[lw.modeBtn, enduranceMode === 'pace' && lw.modeBtnActive]} onPress={() => setEnduranceMode('pace')}>
+                  <Text style={[lw.modeBtnText, enduranceMode === 'pace' && lw.modeBtnTextActive]}>{isCycling ? 'Speed' : 'Pace'}</Text>
+                </Pressable>
+                <Pressable style={[lw.modeBtn, enduranceMode === 'hr' && lw.modeBtnActive]} onPress={() => setEnduranceMode('hr')}>
+                  <Text style={[lw.modeBtnText, enduranceMode === 'hr' && lw.modeBtnTextActive]}>Avg HR</Text>
+                </Pressable>
               </View>
-            </Pressable>
-          ))}
 
-          <Pressable style={[lw.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
+              {enduranceMode === 'pace' ? (
+                <>
+                  <Text style={lw.sectionLabel}>{isCycling ? 'Average speed' : isSwim ? 'Pace (per 100m)' : 'Pace (per km)'}</Text>
+                  {isCycling ? (
+                    <View style={lw.paceRow}>
+                      <TextInput
+                        style={[lw.paceInput, { flex: 1 }]}
+                        value={speedStr}
+                        onChangeText={setSpeedStr}
+                        keyboardType="decimal-pad"
+                        placeholder="e.g. 28"
+                        placeholderTextColor={C.text3}
+                      />
+                      <Text style={lw.paceUnit}>km/h</Text>
+                    </View>
+                  ) : (
+                    <View style={lw.paceRow}>
+                      <TextInput
+                        style={lw.paceInput}
+                        value={paceMinStr}
+                        onChangeText={v => setPaceMinStr(v.replace(/\D/g, '').slice(0, 2))}
+                        keyboardType="numeric"
+                        placeholder="5"
+                        placeholderTextColor={C.text3}
+                        maxLength={2}
+                      />
+                      <Text style={lw.paceSep}>:</Text>
+                      <TextInput
+                        style={lw.paceInput}
+                        value={paceSecStr}
+                        onChangeText={v => setPaceSecStr(v.replace(/\D/g, '').slice(0, 2))}
+                        keyboardType="numeric"
+                        placeholder="30"
+                        placeholderTextColor={C.text3}
+                        maxLength={2}
+                      />
+                      <Text style={lw.paceUnit}>{isSwim ? '/ 100m' : '/ km'}</Text>
+                    </View>
+                  )}
+                  {enduranceDerived && (
+                    <Text style={lw.derivedDuration}>≈ {Math.round(enduranceDerived.durationMin)} min</Text>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Text style={lw.sectionLabel}>Average heart rate (bpm)</Text>
+                  <TextInput
+                    style={lw.distanceInput}
+                    value={avgHrStr}
+                    onChangeText={setAvgHrStr}
+                    keyboardType="numeric"
+                    placeholder="e.g. 145"
+                    placeholderTextColor={C.text3}
+                  />
+                  <Text style={lw.sectionLabel}>Duration (minutes)</Text>
+                  <View style={lw.durationRow}>
+                    <Pressable style={lw.durationBtn} onPress={() => setDurationStr(v => String(Math.max(5, (parseInt(v) || 0) - 5)))} hitSlop={6}>
+                      <Ionicons name="remove" size={20} color={C.text1} />
+                    </Pressable>
+                    <TextInput style={lw.durationInput} value={durationStr} onChangeText={setDurationStr} keyboardType="numeric" selectTextOnFocus />
+                    <Pressable style={lw.durationBtn} onPress={() => setDurationStr(v => String((parseInt(v) || 0) + 5))} hitSlop={6}>
+                      <Ionicons name="add" size={20} color={C.text1} />
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <Text style={lw.sectionLabel}>Duration (minutes)</Text>
+              <View style={lw.durationRow}>
+                <Pressable style={lw.durationBtn} onPress={() => setDurationStr(v => String(Math.max(5, (parseInt(v) || 0) - 5)))} hitSlop={6}>
+                  <Ionicons name="remove" size={20} color={C.text1} />
+                </Pressable>
+                <TextInput style={lw.durationInput} value={durationStr} onChangeText={setDurationStr} keyboardType="numeric" selectTextOnFocus />
+                <Pressable style={lw.durationBtn} onPress={() => setDurationStr(v => String((parseInt(v) || 0) + 5))} hitSlop={6}>
+                  <Ionicons name="add" size={20} color={C.text1} />
+                </Pressable>
+              </View>
+
+              <Text style={lw.sectionLabel}>Intensity</Text>
+              {INTENSITY_OPTIONS.map((opt, i) => (
+                <Pressable key={opt.label} style={[lw.intensityCard, i === intensityIdx && lw.intensityCardActive]} onPress={() => setIntensityIdx(i)}>
+                  <View style={[lw.intensityDot, i === intensityIdx && lw.intensityDotActive]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[lw.intensityLabel, i === intensityIdx && lw.intensityLabelActive]}>{opt.label}</Text>
+                    <Text style={lw.intensityDesc}>{opt.description}</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </>
+          )}
+
+          <Pressable style={[lw.saveBtn, (!canSave || saving) && { opacity: 0.4 }]} onPress={handleSave} disabled={!canSave || saving}>
             <Text style={lw.saveBtnText}>{saving ? 'Saving…' : 'Log this workout'}</Text>
           </Pressable>
         </ScrollView>
@@ -3439,6 +3607,26 @@ const lw = StyleSheet.create({
 
   saveBtn:     { backgroundColor: C.accent, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 24 },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  distanceInput: {
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 10, padding: 14,
+    fontSize: 22, fontWeight: '700', color: C.text1, backgroundColor: C.surface,
+  },
+  modeToggleRow: { flexDirection: 'row', gap: 8, marginTop: 20, marginBottom: 4 },
+  modeBtn:       { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },
+  modeBtnActive: { borderColor: C.accent, backgroundColor: C.accent + '18' },
+  modeBtnText:       { fontSize: 14, fontWeight: '700', color: C.text2 },
+  modeBtnTextActive: { color: C.accent },
+
+  paceRow:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  paceInput: {
+    width: 64, borderWidth: 1.5, borderColor: C.border, borderRadius: 10,
+    padding: 12, fontSize: 22, fontWeight: '700', color: C.text1,
+    backgroundColor: C.surface, textAlign: 'center',
+  },
+  paceSep:  { fontSize: 26, fontWeight: '800', color: C.text1 },
+  paceUnit: { fontSize: 14, fontWeight: '600', color: C.text3, marginLeft: 4 },
+  derivedDuration: { fontSize: 13, fontWeight: '600', color: C.accent, marginTop: 8 },
 })
 
 const loggerSt = StyleSheet.create({

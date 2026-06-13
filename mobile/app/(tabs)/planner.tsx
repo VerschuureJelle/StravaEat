@@ -3,7 +3,6 @@ import {
   View, Text, TextInput, Pressable, ScrollView, Modal,
   StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native'
-import AsyncStorage from '@react-native-async-storage/async-storage'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
@@ -135,15 +134,6 @@ interface GeneratedSession {
 
 // ─── coach defaults ─────────────────────────────────────────────────────────
 
-const DEFAULT_COACH_GUIDELINES = `- Reference zones by number and name (e.g. "Zone 2 — Aerobic Base")
-- Give specific distances or durations for each segment
-- Always include a warm-up and cool-down
-- Estimate total kcal burned (write it as "X kcal" so it can be parsed)
-- Be concise — use a numbered or bulleted list
-- Respond in the same language the user writes in`
-
-const COACH_PROMPT_KEY = 'coach_custom_guidelines'
-
 // ─── program config ─────────────────────────────────────────────────────────
 
 const PROGRAM_CONFIG: Record<ProgramType, { label: string; minWeeks: number; maxWeeks: number; emoji: string; color: string }> = {
@@ -247,11 +237,12 @@ export default function PlannerScreen() {
   // ai mode
   const [aiGoal, setAiGoal] = useState('endurance')
   const [aiDuration, setAiDuration] = useState('60')
+  const [aiGoalType, setAiGoalType] = useState<'time' | 'distance' | 'free'>('time')
+  const [aiDistanceKm, setAiDistanceKm] = useState('')
   const [aiNotes, setAiNotes] = useState('')
   const [aiResult, setAiResult] = useState<AiResult | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
-  const [coachPrompt, setCoachPrompt] = useState(DEFAULT_COACH_GUIDELINES)
-  const [showPromptEditor, setShowPromptEditor] = useState(false)
+  const [showCoachTip, setShowCoachTip] = useState(false)
 
   // programs mode — wizard
   const [programType, setProgramType] = useState<ProgramType>('5k')
@@ -289,9 +280,6 @@ export default function PlannerScreen() {
   const [periodSeverity, setPeriodSeverity] = useState<PeriodSeverity>('minor')
 
   useFocusEffect(useCallback(() => { load() }, []))
-  useEffect(() => {
-    AsyncStorage.getItem(COACH_PROMPT_KEY).then(v => { if (v) setCoachPrompt(v) })
-  }, [])
 
   async function load() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -613,8 +601,12 @@ export default function PlannerScreen() {
     setAiResult(null)
     try {
       const goalLabel = AI_GOALS.find(g => g.key === aiGoal)?.label ?? aiGoal
+      const constraint =
+        aiGoalType === 'time' ? `, duration: ${aiDuration} minutes total (including warm-up and cool-down)` :
+        aiGoalType === 'distance' && aiDistanceKm.trim() ? `, total distance: ${aiDistanceKm.trim()} km (including warm-up and cool-down)` :
+        ''
       const message = [
-        `Create a ${goalLabel} ${selectedSport} workout, duration: ${aiDuration} minutes.`,
+        `Create a ${goalLabel} ${selectedSport} workout${constraint}.`,
         aiNotes.trim() ? `Additional instructions: ${aiNotes.trim()}` : null,
       ].filter(Boolean).join('\n\n')
       const res = await supabase.functions.invoke('ai-coach', {
@@ -622,7 +614,6 @@ export default function PlannerScreen() {
           message,
           sport: selectedSport || undefined,
           period_severity: onPeriod ? periodSeverity : null,
-          customGuidelines: coachPrompt !== DEFAULT_COACH_GUIDELINES ? coachPrompt : undefined,
         },
       })
       if (res.error) {
@@ -651,13 +642,11 @@ export default function PlannerScreen() {
 
   async function planFromAIMode() {
     if (!aiResult || !userId) return
-    const kcal = aiResult.estimated_kcal
-    if (!kcal) { Alert.alert('No estimate', 'The Coach response did not include a kcal estimate.'); return }
     setSaving(true)
     const { data: newWorkout, error } = await supabase.from('planned_workouts').insert({
       user_id: userId,
       sport_type: selectedSport || 'General',
-      target_kcal: kcal,
+      target_kcal: aiResult.estimated_kcal ?? null,
       planned_for: localDate(),
       workout_description: aiResult.plan,
     }).select('id').single()
@@ -1276,19 +1265,58 @@ export default function PlannerScreen() {
               </Text>
             </View>
 
-            {/* Duration */}
-            <Text style={st.label}>Duration</Text>
-            <View style={st.aiDurationRow}>
-              {AI_DURATION_PRESETS.map(d => (
+            {/* Constraint type */}
+            <Text style={st.label}>Goal type</Text>
+            <View style={st.aiGoalTypeRow}>
+              {([
+                { key: 'time',     label: 'By Time' },
+                { key: 'distance', label: 'By Distance' },
+                { key: 'free',     label: 'Free' },
+              ] as const).map(opt => (
                 <Pressable
-                  key={d}
-                  style={[st.aiDurationBtn, aiDuration === d && { backgroundColor: C.accent, borderColor: C.accent }]}
-                  onPress={() => setAiDuration(d)}
+                  key={opt.key}
+                  style={[st.aiGoalTypeBtn, aiGoalType === opt.key && st.aiGoalTypeBtnActive]}
+                  onPress={() => setAiGoalType(opt.key)}
                 >
-                  <Text style={[st.aiDurationBtnText, aiDuration === d && { color: C.white }]}>{d}'</Text>
+                  <Text style={[st.aiGoalTypeBtnText, aiGoalType === opt.key && st.aiGoalTypeBtnTextActive]}>{opt.label}</Text>
                 </Pressable>
               ))}
             </View>
+
+            {aiGoalType === 'time' && (
+              <>
+                <Text style={st.label}>Duration</Text>
+                <View style={st.aiDurationRow}>
+                  {AI_DURATION_PRESETS.map(d => (
+                    <Pressable
+                      key={d}
+                      style={[st.aiDurationBtn, aiDuration === d && { backgroundColor: C.accent, borderColor: C.accent }]}
+                      onPress={() => setAiDuration(d)}
+                    >
+                      <Text style={[st.aiDurationBtnText, aiDuration === d && { color: C.white }]}>{d}'</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {aiGoalType === 'distance' && (
+              <>
+                <Text style={st.label}>Distance (km)</Text>
+                <TextInput
+                  style={st.aiDistanceInput}
+                  value={aiDistanceKm}
+                  onChangeText={setAiDistanceKm}
+                  placeholder="e.g. 10"
+                  placeholderTextColor={C.text3}
+                  keyboardType="decimal-pad"
+                />
+              </>
+            )}
+
+            {aiGoalType === 'free' && (
+              <Text style={st.aiFreeModeNote}>The coach decides the total duration and structure.</Text>
+            )}
 
             {/* Goal */}
             <Text style={st.label}>Workout goal</Text>
@@ -1318,37 +1346,26 @@ export default function PlannerScreen() {
               textAlignVertical="top"
             />
 
-            {/* Prompt editor */}
+            {/* Coach tip */}
             <Pressable
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}
-              onPress={() => setShowPromptEditor(v => !v)}
+              style={st.coachTipToggle}
+              onPress={() => setShowCoachTip(v => !v)}
             >
-              <Ionicons name={showPromptEditor ? 'chevron-up' : 'chevron-down'} size={14} color={C.text3} />
-              <Text style={{ fontSize: 12, color: C.text3 }}>Coach prompt</Text>
-              {coachPrompt !== DEFAULT_COACH_GUIDELINES && (
-                <View style={{ backgroundColor: C.accent + '33', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}>
-                  <Text style={{ fontSize: 10, color: C.accent, fontWeight: '700' }}>custom</Text>
-                </View>
-              )}
+              <Ionicons name="bulb-outline" size={13} color={C.accent2} />
+              <Text style={st.coachTipToggleText}>Better results — add context</Text>
+              <Ionicons name={showCoachTip ? 'chevron-up' : 'chevron-down'} size={13} color={C.text3} />
             </Pressable>
-            {showPromptEditor && (
-              <View style={{ gap: 8, marginBottom: 12 }}>
-                <TextInput
-                  style={[st.aiInput, { minHeight: 160, fontSize: 12, color: C.text2 }]}
-                  value={coachPrompt}
-                  onChangeText={v => { setCoachPrompt(v); AsyncStorage.setItem(COACH_PROMPT_KEY, v) }}
-                  multiline
-                  textAlignVertical="top"
-                  autoCorrect={false}
-                />
-                {coachPrompt !== DEFAULT_COACH_GUIDELINES && (
-                  <Pressable
-                    style={{ alignSelf: 'flex-end' }}
-                    onPress={() => { setCoachPrompt(DEFAULT_COACH_GUIDELINES); AsyncStorage.setItem(COACH_PROMPT_KEY, DEFAULT_COACH_GUIDELINES) }}
-                  >
-                    <Text style={{ fontSize: 12, color: C.text3 }}>Reset to default</Text>
-                  </Pressable>
-                )}
+            {showCoachTip && (
+              <View style={st.coachTipCard}>
+                <Text style={st.coachTipTitle}>The coach knows your average pace and weekly volume — but not your training stage. Adding it gives much better plans:</Text>
+                {[
+                  '"Week 18 of a marathon plan. Longest run so far is 30km. Build week."',
+                  '"6 weeks out from a half-triathlon. Currently running 40km/week."',
+                  '"Just finished a hard week, this should be a recovery session."',
+                  '"Base building phase, keeping everything in Z2 for the next 4 weeks."',
+                ].map((tip, i) => (
+                  <Text key={i} style={st.coachTipExample}>{tip}</Text>
+                ))}
               </View>
             )}
 
@@ -2276,6 +2293,28 @@ const st = StyleSheet.create({
   segZoneTagText: { fontSize: 11, fontWeight: '800' },
 
   // AI mode — structured inputs
+  aiGoalTypeRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  aiGoalTypeBtn: {
+    flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface2,
+  },
+  aiGoalTypeBtnActive: { borderColor: C.accent, backgroundColor: C.accent + '18' },
+  aiGoalTypeBtnText: { fontSize: 14, fontWeight: '700', color: C.text2 },
+  aiGoalTypeBtnTextActive: { color: C.accent },
+  aiDistanceInput: {
+    borderWidth: 1.5, borderColor: C.border, borderRadius: 10,
+    padding: 14, fontSize: 22, fontWeight: '700', color: C.text1,
+    backgroundColor: C.surface2, marginBottom: 20,
+  },
+  aiFreeModeNote: { fontSize: 13, color: C.text3, fontStyle: 'italic', marginBottom: 20 },
+  coachTipToggle: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8, marginBottom: 6 },
+  coachTipToggleText: { fontSize: 12, color: C.text3, flex: 1 },
+  coachTipCard: {
+    backgroundColor: C.accent2 + '12', borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: C.accent2 + '30', marginBottom: 12, gap: 6,
+  },
+  coachTipTitle: { fontSize: 12, color: C.text2, lineHeight: 17, marginBottom: 2 },
+  coachTipExample: { fontSize: 12, color: C.text3, fontStyle: 'italic', lineHeight: 17 },
   aiDurationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
   aiDurationBtn: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
