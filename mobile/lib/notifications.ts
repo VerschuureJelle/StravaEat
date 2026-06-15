@@ -134,10 +134,10 @@ export async function scheduleDailyMealNotificationsForUser(userId: string): Pro
     const todayStr = localDate()
     const [profileRes, templatesRes, checksRes] = await Promise.all([
       supabase.from('users').select('meal_notif_delay_min').eq('id', userId).single(),
-      supabase.from('meal_templates').select('meal_index, name, scheduled_time').eq('user_id', userId).order('meal_index'),
+      supabase.from('meal_templates').select('meal_index, name, scheduled_time, notify_enabled').eq('user_id', userId).order('meal_index'),
       supabase.from('meal_checks').select('meal_index').eq('user_id', userId).eq('date', todayStr),
     ])
-    const templates = templatesRes.data ?? []
+    const templates = (templatesRes.data ?? []).filter((t: any) => t.notify_enabled !== false)
     const checkedSet = new Set<number>((checksRes.data ?? []).map((c: any) => c.meal_index as number))
     if (templates.length === 0) return
 

@@ -26,6 +26,7 @@ interface MealItem {
   name: string
   scheduled_time: string
   checked: boolean
+  notify_enabled: boolean
 }
 
 export default function MealsScreen() {
@@ -48,7 +49,7 @@ export default function MealsScreen() {
     setUserId(user.id)
 
     const [templatesRes, checksRes] = await Promise.all([
-      supabase.from('meal_templates').select('meal_index, name, scheduled_time').eq('user_id', user.id).order('meal_index'),
+      supabase.from('meal_templates').select('meal_index, name, scheduled_time, notify_enabled').eq('user_id', user.id).order('meal_index'),
       supabase.from('meal_checks').select('meal_index').eq('user_id', user.id).eq('date', todayStr),
     ])
 
@@ -60,13 +61,14 @@ export default function MealsScreen() {
       name: t.name,
       scheduled_time: t.scheduled_time,
       checked: checkedSet.has(t.meal_index),
+      notify_enabled: t.notify_enabled ?? true,
     }))
 
     setMeals(items)
     lastLoadRef.current = Date.now()
     setLoading(false)
 
-    await scheduleMealNotifications(items.map(m => ({
+    await scheduleMealNotifications(items.filter(m => m.notify_enabled !== false).map(m => ({
       meal_index: m.meal_index,
       name: m.name,
       scheduled_time: m.scheduled_time,
@@ -89,11 +91,13 @@ export default function MealsScreen() {
           .eq('user_id', userId)
           .eq('meal_index', meal.meal_index)
           .eq('date', todayStr)
-        const [hh, mm] = meal.scheduled_time.split(':').map(Number)
-        const [y, mo, d] = todayStr.split('-').map(Number)
-        const overdueTime = new Date(y, mo - 1, d, hh + 1, mm, 0, 0)
-        if (overdueTime.getTime() > Date.now()) {
-          await scheduleMealNotifications([{ ...meal, date: todayStr, checked: false }])
+        if (meal.notify_enabled !== false) {
+          const [hh, mm] = meal.scheduled_time.split(':').map(Number)
+          const [y, mo, d] = todayStr.split('-').map(Number)
+          const overdueTime = new Date(y, mo - 1, d, hh + 1, mm, 0, 0)
+          if (overdueTime.getTime() > Date.now()) {
+            await scheduleMealNotifications([{ ...meal, date: todayStr, checked: false }])
+          }
         }
       } else {
         await supabase.from('meal_checks').upsert(

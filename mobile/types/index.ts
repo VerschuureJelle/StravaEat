@@ -54,6 +54,7 @@ export interface MealTemplate {
   protein_g: number | null
   fat_g: number | null
   carb_g: number | null
+  notify_enabled: boolean
 }
 
 export interface MealPresetItem {
