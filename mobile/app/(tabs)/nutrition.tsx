@@ -1135,7 +1135,7 @@ function HistoryView({ userId }: { userId: string | null }) {
   const metCount = daysWithData.filter(d => {
     if (!d.target) return false
     const r = d.consumed / d.target
-    return r >= 0.9 && r <= 1.15
+    return r >= 0.9
   }).length
   const n = daysWithData.length
   const avgConsumed = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.consumed, 0) / n) : null
