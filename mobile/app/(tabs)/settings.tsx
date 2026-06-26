@@ -55,6 +55,7 @@ interface SportConfig { mode: SportMode; linkedTo: string | null }
 interface DraftMeal {
   meal_index: number; name: string; scheduled_time: string
   kcal: number | null; protein_g: number | null; fat_g: number | null; carb_g: number | null
+  notify_enabled: boolean
 }
 interface FuelingConfig { threshold_min: number; carbs_per_interval_g: number; interval_min: number }
 interface DraftItem {
@@ -120,7 +121,7 @@ export default function SettingsScreen() {
 
   // Meal plan
   const [draftMeals, setDraftMeals] = useState<DraftMeal[]>([
-    { meal_index: 0, name: 'Breakfast', scheduled_time: '07:00', kcal: null, protein_g: null, fat_g: null, carb_g: null },
+    { meal_index: 0, name: 'Breakfast', scheduled_time: '07:00', kcal: null, protein_g: null, fat_g: null, carb_g: null, notify_enabled: true },
   ])
   const [savingMeals, setSavingMeals] = useState(false)
   const [timePickerMealIdx, setTimePickerMealIdx] = useState<number | null>(null)
@@ -135,6 +136,7 @@ export default function SettingsScreen() {
   const [ingredientPickerTargetIdx, setIngredientPickerTargetIdx] = useState<number | null>(null)
   const [expandedPresets, setExpandedPresets] = useState<Set<string>>(new Set())
   const [expandedMealCards, setExpandedMealCards] = useState<Set<number>>(new Set())
+  const [showAllPresets, setShowAllPresets] = useState(false)
 
   function toggleMealCard(index: number) {
     setExpandedMealCards(prev => {
@@ -237,6 +239,7 @@ export default function SettingsScreen() {
       setDraftMeals(meals.map(m => ({
         meal_index: m.meal_index, name: m.name, scheduled_time: m.scheduled_time,
         kcal: m.kcal ?? null, protein_g: m.protein_g ?? null, fat_g: m.fat_g ?? null, carb_g: m.carb_g ?? null,
+        notify_enabled: m.notify_enabled ?? true,
       })))
     }
 
@@ -587,6 +590,7 @@ export default function SettingsScreen() {
       protein_g: m.protein_g ?? null,
       fat_g: m.fat_g ?? null,
       carb_g: m.carb_g ?? null,
+      notify_enabled: m.notify_enabled ?? true,
     }))
     await supabase.from('meal_templates').delete().eq('user_id', userId).gte('meal_index', draftMeals.length)
     const { error } = await supabase.from('meal_templates').upsert(toSave, { onConflict: 'user_id,meal_index' })
@@ -599,7 +603,7 @@ export default function SettingsScreen() {
     if (draftMeals.length >= 8) return
     const i = draftMeals.length
     const def = MEAL_DEFAULTS[i] ?? { name: `Meal ${i + 1}`, time: '12:00' }
-    setDraftMeals(prev => [...prev, { meal_index: i, name: def.name, scheduled_time: def.time, kcal: null, protein_g: null, fat_g: null, carb_g: null }])
+    setDraftMeals(prev => [...prev, { meal_index: i, name: def.name, scheduled_time: def.time, kcal: null, protein_g: null, fat_g: null, carb_g: null, notify_enabled: true }])
   }
 
   function removeMeal() {
@@ -1640,6 +1644,21 @@ export default function SettingsScreen() {
                       ))}
                     </View>
 
+                    {/* ── Notification toggle ── */}
+                    <Pressable
+                      style={styles.notifyToggleRow}
+                      onPress={() => setDraftMeals(prev => prev.map((m, j) => j === i ? { ...m, notify_enabled: !m.notify_enabled } : m))}
+                    >
+                      <Ionicons
+                        name={meal.notify_enabled ? 'notifications-outline' : 'notifications-off-outline'}
+                        size={18}
+                        color={meal.notify_enabled ? C.accent : C.text3}
+                      />
+                      <Text style={[styles.notifyToggleText, !meal.notify_enabled && { color: C.text3 }]}>
+                        {meal.notify_enabled ? 'Reminder on' : 'Reminder off'}
+                      </Text>
+                    </Pressable>
+
                     {/* ── Meal presets ── */}
                     <View style={styles.presetSection}>
                       <Text style={styles.presetSectionLabel}>Presets</Text>
@@ -1733,41 +1752,70 @@ export default function SettingsScreen() {
             {/* ── Global preset management ── */}
             {allPresets.length > 0 && (
               <View style={[styles.presetSection, { marginTop: 8 }]}>
-                <Text style={styles.presetSectionLabel}>All presets</Text>
-                <Text style={styles.presetSectionNote}>
-                  Edit or delete presets here. Link them to meals using the "Link preset" button on each meal card.
-                </Text>
-                {allPresets.map(preset => {
-                  const items = preset.items ?? []
-                  const total = items.reduce((acc, it) => ({
-                    kcal: acc.kcal + it.kcal,
-                    protein: acc.protein + (it.protein_g ?? 0),
-                    fat: acc.fat + (it.fat_g ?? 0),
-                    carb: acc.carb + (it.carb_g ?? 0),
-                  }), { kcal: 0, protein: 0, fat: 0, carb: 0 })
-                  const usedIn = draftMeals.filter(m => (presetLinks[m.meal_index] ?? []).includes(preset.id)).map(m => m.name)
-                  return (
-                    <View key={preset.id} style={styles.presetCard}>
-                      <View style={styles.presetCardHeader}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.presetName}>{preset.name}</Text>
-                          <Text style={styles.presetCollapsedMeta}>
-                            {hideCalories ? '' : `${total.kcal} kcal · `}{items.length} ingredient{items.length !== 1 ? 's' : ''}
-                            {usedIn.length > 0 ? ` · linked to ${usedIn.join(', ')}` : ''}
-                          </Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                          <Pressable onPress={() => openPresetEditor(preset)} hitSlop={10}>
-                            <Ionicons name="pencil-outline" size={16} color={C.accent2} />
-                          </Pressable>
-                          <Pressable onPress={() => deletePreset(preset)} hitSlop={10}>
-                            <Ionicons name="trash-outline" size={16} color={C.danger} />
-                          </Pressable>
-                        </View>
-                      </View>
+                <Pressable style={styles.allPresetsHeader} onPress={() => setShowAllPresets(v => !v)}>
+                  <Text style={styles.presetSectionLabel}>All presets</Text>
+                  <Ionicons name={showAllPresets ? 'chevron-up' : 'chevron-down'} size={16} color={C.text3} />
+                </Pressable>
+                {!showAllPresets && (
+                  <Text style={styles.presetSectionNote}>
+                    Edit or delete presets here. Link them to meals using the "Link preset" button on each meal card.
+                  </Text>
+                )}
+                {showAllPresets && (() => {
+                  // Build grouped preset list
+                  const groups: Array<{ label: string; presets: MealPreset[] }> = []
+                  for (const meal of draftMeals) {
+                    const linked = allPresets
+                      .filter(p => (presetLinks[meal.meal_index] ?? []).includes(p.id))
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                    if (linked.length > 0) {
+                      groups.push({ label: meal.name || `Meal ${meal.meal_index + 1}`, presets: linked })
+                    }
+                  }
+                  const linkedIds = new Set(draftMeals.flatMap(m => presetLinks[m.meal_index] ?? []))
+                  const otherPresets = allPresets
+                    .filter(p => !linkedIds.has(p.id))
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                  if (otherPresets.length > 0) {
+                    groups.push({ label: 'Other', presets: otherPresets })
+                  }
+                  return groups.map(group => (
+                    <View key={group.label}>
+                      <Text style={styles.presetGroupLabel}>{group.label}</Text>
+                      {group.presets.map(preset => {
+                        const items = preset.items ?? []
+                        const total = items.reduce((acc, it) => ({
+                          kcal: acc.kcal + it.kcal,
+                          protein: acc.protein + (it.protein_g ?? 0),
+                          fat: acc.fat + (it.fat_g ?? 0),
+                          carb: acc.carb + (it.carb_g ?? 0),
+                        }), { kcal: 0, protein: 0, fat: 0, carb: 0 })
+                        const usedIn = draftMeals.filter(m => (presetLinks[m.meal_index] ?? []).includes(preset.id)).map(m => m.name)
+                        return (
+                          <View key={preset.id} style={styles.presetCard}>
+                            <View style={styles.presetCardHeader}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.presetName}>{preset.name}</Text>
+                                <Text style={styles.presetCollapsedMeta}>
+                                  {hideCalories ? '' : `${total.kcal} kcal · `}{items.length} ingredient{items.length !== 1 ? 's' : ''}
+                                  {usedIn.length > 0 ? ` · linked to ${usedIn.join(', ')}` : ''}
+                                </Text>
+                              </View>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                <Pressable onPress={() => openPresetEditor(preset)} hitSlop={10}>
+                                  <Ionicons name="pencil-outline" size={16} color={C.accent2} />
+                                </Pressable>
+                                <Pressable onPress={() => deletePreset(preset)} hitSlop={10}>
+                                  <Ionicons name="trash-outline" size={16} color={C.danger} />
+                                </Pressable>
+                              </View>
+                            </View>
+                          </View>
+                        )
+                      })}
                     </View>
-                  )
-                })}
+                  ))
+                })()}
               </View>
             )}
 
@@ -2482,6 +2530,10 @@ const styles = StyleSheet.create({
   },
   presetSectionLabel: { fontSize: 11, fontWeight: '700', color: C.text2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
   presetSectionNote: { fontSize: 12, color: C.text3, marginBottom: 10 },
+  allPresetsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  presetGroupLabel: { fontSize: 11, fontWeight: '700', color: C.accent, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 10, marginBottom: 4 },
+  notifyToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.divider, marginTop: 8 },
+  notifyToggleText: { fontSize: 13, color: C.accent, fontWeight: '600' },
   presetCard: {
     backgroundColor: C.surface2, borderRadius: 10, padding: 10,
     borderWidth: 1, borderColor: C.border, marginBottom: 8,

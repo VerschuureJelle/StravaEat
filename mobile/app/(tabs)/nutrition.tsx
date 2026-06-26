@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import {
   View, Text, TextInput, Pressable, ScrollView,
@@ -8,7 +8,7 @@ import {
 import Svg, { Rect, Line, Text as SvgText } from 'react-native-svg'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { AppDrawer, HamburgerBtn } from '../../components/DrawerNav'
-import { useRouter } from 'expo-router'
+import { useRouter, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
@@ -226,6 +226,7 @@ interface TodayActivity { id: string; name: string; type: string; total_kcal: nu
 interface MealItem {
   meal_index: number; name: string; scheduled_time: string; checked: boolean
   kcal: number | null; protein_g: number | null; fat_g: number | null; carb_g: number | null
+  notify_enabled: boolean
 }
 
 export default function NutritionScreen() {
@@ -294,6 +295,11 @@ export default function NutritionScreen() {
   const [fatPctInput, setFatPctInput] = useState('')
 
   const todayStr = localDate()
+  const [logEntryDate, setLogEntryDate] = useState(todayStr)
+
+  useFocusEffect(useCallback(() => {
+    setLogEntryDate(localDate())
+  }, []))
 
   const target = baseline != null ? baseline + burnedKcal + plannedKcal : null
   const consumed = logs.reduce((s, l) => s + l.kcal, 0)
@@ -428,7 +434,7 @@ export default function NutritionScreen() {
   async function loadMeals(uid: string) {
     setMealsLoading(true)
     const [templatesRes, checksRes, presetsRes] = await Promise.all([
-      supabase.from('meal_templates').select('id, meal_index, name, scheduled_time, kcal, protein_g, fat_g, carb_g').eq('user_id', uid).order('meal_index'),
+      supabase.from('meal_templates').select('id, meal_index, name, scheduled_time, kcal, protein_g, fat_g, carb_g, notify_enabled').eq('user_id', uid).order('meal_index'),
       supabase.from('meal_checks').select('meal_index').eq('user_id', uid).eq('date', todayStr),
       supabase.from('meal_slot_presets').select('meal_index, sort_order, preset:meal_presets(*, items:meal_preset_items(*))').eq('user_id', uid).order('sort_order'),
     ])
@@ -450,6 +456,7 @@ export default function NutritionScreen() {
       protein_g: t.protein_g ?? null,
       fat_g: t.fat_g ?? null,
       carb_g: t.carb_g ?? null,
+      notify_enabled: t.notify_enabled ?? true,
     }))
     setMeals(items)
     const inputs: Record<number, string> = {}
@@ -458,7 +465,7 @@ export default function NutritionScreen() {
     }
     setMealKcalInputs(inputs)
     setMealsLoading(false)
-    await scheduleMealNotifications(items.map(m => ({
+    await scheduleMealNotifications(items.filter(m => m.notify_enabled !== false).map(m => ({
       meal_index: m.meal_index,
       name: m.name,
       scheduled_time: m.scheduled_time,
@@ -494,7 +501,7 @@ export default function NutritionScreen() {
     const carb    = rawCarb    != null ? Math.round(rawCarb    * servings * 10) / 10 : null
     const name = servings !== 1 ? `${servings % 1 === 0 ? servings : servings.toFixed(1)}× ${foodName.trim()}` : foodName.trim()
     const { data: inserted, error } = await supabase.from('food_logs').insert({
-      user_id: userId, date: todayStr, name, kcal,
+      user_id: userId, date: logEntryDate, name, kcal,
       protein_g: isNaN(protein as number) ? null : protein,
       fat_g: isNaN(fat as number) ? null : fat,
       carb_g: isNaN(carb as number) ? null : carb,
@@ -593,18 +600,22 @@ export default function NutritionScreen() {
       { onConflict: 'user_id,meal_index,date' },
     )
     await cancelMealNotification(meal.meal_index)
-    const { data: inserted } = await supabase.from('food_logs').insert({
-      user_id: userId, date: todayStr,
-      name: preset.name,
-      kcal: totals.kcal,
+    const rows = (preset.items ?? []).map(item => ({
+      user_id: userId!, date: todayStr,
+      name: item.amount_label ? `${item.amount_label} ${item.name}` : item.name,
+      kcal: item.kcal,
       meal_index: meal.meal_index,
-      protein_g: totals.protein_g > 0 ? totals.protein_g : null,
-      fat_g: totals.fat_g > 0 ? totals.fat_g : null,
-      carb_g: totals.carb_g > 0 ? totals.carb_g : null,
-    }).select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').single()
+      protein_g: item.protein_g ?? null,
+      fat_g: item.fat_g ?? null,
+      carb_g: item.carb_g ?? null,
+    }))
+    const { data: insertedRows } = await supabase
+      .from('food_logs')
+      .insert(rows)
+      .select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at')
     setMealKcalInputs(prev => ({ ...prev, [meal.meal_index]: String(totals.kcal) }))
     setMeals(prev => prev.map(m => m.meal_index === meal.meal_index ? { ...m, checked: true } : m))
-    if (inserted) setLogs(prev => [...prev, inserted as FoodLog])
+    if (insertedRows) setLogs(prev => [...prev, ...(insertedRows as FoodLog[])])
     setChecking(null)
   }
 
@@ -617,10 +628,12 @@ export default function NutritionScreen() {
       supabase.from('food_logs').delete()
         .eq('user_id', userId).eq('meal_index', meal.meal_index).eq('date', todayStr),
     ])
-    const [hh, mm] = meal.scheduled_time.split(':').map(Number)
-    const [y, mo, d] = todayStr.split('-').map(Number)
-    if (new Date(y, mo - 1, d, hh + 1, mm, 0, 0).getTime() > Date.now()) {
-      await scheduleMealNotifications([{ ...meal, date: todayStr, checked: false }])
+    if (meal.notify_enabled !== false) {
+      const [hh, mm] = meal.scheduled_time.split(':').map(Number)
+      const [y, mo, d] = todayStr.split('-').map(Number)
+      if (new Date(y, mo - 1, d, hh + 1, mm, 0, 0).getTime() > Date.now()) {
+        await scheduleMealNotifications([{ ...meal, date: todayStr, checked: false }])
+      }
     }
     setMeals(prev => prev.map(m => m.meal_index === meal.meal_index ? { ...m, checked: false } : m))
     setLogs(prev => prev.filter(l => l.meal_index !== meal.meal_index))
@@ -660,6 +673,26 @@ export default function NutritionScreen() {
               <HamburgerBtn onPress={openDrawer} />
               <Text style={st.topBarTitle}>Food log</Text>
               <View style={{ width: 40 }} />
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 8 }}>
+              <Pressable onPress={() => {
+                const d = new Date(logEntryDate + 'T12:00:00')
+                d.setDate(d.getDate() - 1)
+                setLogEntryDate(d.toISOString().split('T')[0])
+              }} hitSlop={12}>
+                <Ionicons name="chevron-back" size={18} color={C.text2} />
+              </Pressable>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: logEntryDate === todayStr ? C.text2 : C.accent }}>
+                {logEntryDate === todayStr ? 'Today' : new Date(logEntryDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+              </Text>
+              <Pressable onPress={() => {
+                const d = new Date(logEntryDate + 'T12:00:00')
+                d.setDate(d.getDate() + 1)
+                const next = d.toISOString().split('T')[0]
+                if (next <= todayStr) setLogEntryDate(next)
+              }} hitSlop={12} disabled={logEntryDate === todayStr}>
+                <Ionicons name="chevron-forward" size={18} color={logEntryDate === todayStr ? C.text3 : C.text2} />
+              </Pressable>
             </View>
             <ScrollView contentContainerStyle={st.histContent}>
               <HistoryView userId={userId} />
@@ -1005,6 +1038,13 @@ function HistoryView({ userId }: { userId: string | null }) {
   const [hideCalories, setHideCalories] = useState(false)
   const [expandedDate, setExpandedDate] = useState<string | null>(null)
 
+  // 7-day rolling averages (always last 7 calendar days, independent of period view)
+  const [rolling7Consumed, setRolling7Consumed] = useState<number | null>(null)
+  const [rolling7Target, setRolling7Target] = useState<number | null>(null)
+  const [rolling7Protein, setRolling7Protein] = useState<number | null>(null)
+  const [rolling7Fat, setRolling7Fat] = useState<number | null>(null)
+  const [rolling7Carb, setRolling7Carb] = useState<number | null>(null)
+
   useEffect(() => {
     if (!userId) return
     load()
@@ -1071,6 +1111,47 @@ function HistoryView({ userId }: { userId: string | null }) {
       }
     })
     setDays(result)
+
+    // ── 7-day rolling average (always last 7 calendar days from today) ──────
+    const rolling7End = todayStr
+    const rolling7StartDate = new Date(); rolling7StartDate.setDate(rolling7StartDate.getDate() - 6)
+    const rolling7Start = toDateStr(rolling7StartDate)
+
+    const [r7FoodRes, r7ActsRes] = await Promise.all([
+      supabase.from('food_logs').select('date, kcal, protein_g, fat_g, carb_g').eq('user_id', userId!)
+        .gte('date', rolling7Start).lte('date', rolling7End),
+      supabase.from('activities').select('date, total_kcal').eq('user_id', userId!)
+        .gte('date', `${rolling7Start}T00:00:00`).lte('date', `${rolling7End}T23:59:59`)
+        .not('total_kcal', 'is', null),
+    ])
+    const r7FoodByDate: Record<string, { kcal: number; protein: number; fat: number; carb: number }> = {}
+    for (const row of (r7FoodRes.data ?? [])) {
+      if (!r7FoodByDate[row.date]) r7FoodByDate[row.date] = { kcal: 0, protein: 0, fat: 0, carb: 0 }
+      r7FoodByDate[row.date].kcal += row.kcal
+      r7FoodByDate[row.date].protein += row.protein_g ?? 0
+      r7FoodByDate[row.date].fat += row.fat_g ?? 0
+      r7FoodByDate[row.date].carb += row.carb_g ?? 0
+    }
+    const r7BurnedByDate: Record<string, number> = {}
+    for (const row of (r7ActsRes.data ?? [])) {
+      const d = (row.date as string).slice(0, 10)
+      r7BurnedByDate[d] = (r7BurnedByDate[d] ?? 0) + (row.total_kcal ?? 0)
+    }
+    // Build 7 days (today included), include all days (even without food) for a true rolling avg
+    const r7Days = generateDays(rolling7Start, rolling7End).filter(d => !d.isFuture)
+    const r7Consumed = r7Days.map(d => r7FoodByDate[d.dateStr]?.kcal ?? 0)
+    const r7Target = r7Days.map(d => baseline != null ? baseline + Math.round(r7BurnedByDate[d.dateStr] ?? 0) : null)
+    const r7Protein = r7Days.map(d => r7FoodByDate[d.dateStr]?.protein ?? 0)
+    const r7Fat     = r7Days.map(d => r7FoodByDate[d.dateStr]?.fat ?? 0)
+    const r7Carb    = r7Days.map(d => r7FoodByDate[d.dateStr]?.carb ?? 0)
+    const r7n = r7Days.length
+    setRolling7Consumed(r7n > 0 ? Math.round(r7Consumed.reduce((a, b) => a + b, 0) / r7n) : null)
+    const validTargets = r7Target.filter(t => t != null) as number[]
+    setRolling7Target(validTargets.length > 0 ? Math.round(validTargets.reduce((a, b) => a + b, 0) / validTargets.length) : null)
+    setRolling7Protein(r7n > 0 ? Math.round(r7Protein.reduce((a, b) => a + b, 0) / r7n) : null)
+    setRolling7Fat(r7n > 0 ? Math.round(r7Fat.reduce((a, b) => a + b, 0) / r7n) : null)
+    setRolling7Carb(r7n > 0 ? Math.round(r7Carb.reduce((a, b) => a + b, 0) / r7n) : null)
+
     setLoading(false)
   }
 
@@ -1099,20 +1180,6 @@ function HistoryView({ userId }: { userId: string | null }) {
 
   const isFixed = period !== 'total' && period !== 'custom'
   const daysWithData = days.filter(d => !d.isFuture && d.consumed > 0)
-  const metCount = daysWithData.filter(d => {
-    if (!d.target) return false
-    const r = d.consumed / d.target
-    return r >= 0.9 && r <= 1.15
-  }).length
-  const n = daysWithData.length
-  const avgConsumed = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.consumed, 0) / n) : null
-  const daysWithTarget = daysWithData.filter(d => d.target != null)
-  const avgTarget = daysWithTarget.length > 0
-    ? Math.round(daysWithTarget.reduce((s, d) => s + d.target!, 0) / daysWithTarget.length)
-    : null
-  const avgProtein = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.protein_g, 0) / n) : null
-  const avgFat     = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.fat_g, 0) / n) : null
-  const avgCarb    = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.carb_g, 0) / n) : null
 
   // Group by month for total / custom views
   const monthGroups: { key: string; label: string; days: DayData[] }[] = []
@@ -1175,52 +1242,46 @@ function HistoryView({ userId }: { userId: string | null }) {
 
       {!loading && (
         <>
-          {/* Summary */}
-          {daysWithData.length > 0 && (
+          {/* 7-day rolling summary — always shown when there's any data */}
+          {(rolling7Consumed != null) && (
             <View style={hv.summaryCard}>
               {hideCalories ? (
                 <Text style={hv.summaryHiddenMsg}>
-                  {metCount === daysWithData.length
-                    ? `Great week — you hit your target all ${daysWithData.length} logged day${daysWithData.length !== 1 ? 's' : ''}.`
-                    : metCount === 0
-                      ? `You logged ${daysWithData.length} day${daysWithData.length !== 1 ? 's' : ''} this period. Keep going — consistency is key.`
-                      : `You hit your target ${metCount} out of ${daysWithData.length} logged day${daysWithData.length !== 1 ? 's' : ''} this period.`}
+                  {daysWithData.length > 0
+                    ? `You logged ${daysWithData.length} day${daysWithData.length !== 1 ? 's' : ''} this period. Keep going — consistency is key.`
+                    : 'No data logged yet.'}
                 </Text>
               ) : (
                 <>
+                  <Text style={hv.summaryRollingLabel}>7-day rolling average</Text>
                   <View style={hv.summaryRow}>
                     <View style={hv.summaryItem}>
-                      <Text style={hv.summaryNum}>{metCount}/{daysWithData.length}</Text>
-                      <Text style={hv.summaryLabel}>days on target</Text>
+                      <Text style={hv.summaryNum}>{rolling7Consumed?.toLocaleString() ?? '—'}</Text>
+                      <Text style={hv.summaryLabel}>kcal eaten/day</Text>
                     </View>
                     <View style={hv.summaryDivider} />
                     <View style={hv.summaryItem}>
-                      <Text style={hv.summaryNum}>{avgConsumed?.toLocaleString() ?? '—'}</Text>
-                      <Text style={hv.summaryLabel}>avg eaten/day</Text>
-                    </View>
-                    <View style={hv.summaryDivider} />
-                    <View style={hv.summaryItem}>
-                      <Text style={hv.summaryNum}>{avgTarget?.toLocaleString() ?? '—'}</Text>
-                      <Text style={hv.summaryLabel}>avg target/day</Text>
+                      <Text style={hv.summaryNum}>{rolling7Target?.toLocaleString() ?? '—'}</Text>
+                      <Text style={hv.summaryLabel}>kcal target/day</Text>
                     </View>
                   </View>
-                  {(avgProtein != null || avgFat != null || avgCarb != null) && (
+                  {(rolling7Protein != null || rolling7Fat != null || rolling7Carb != null) && (
                     <>
                       <View style={hv.summaryMacroDivider} />
                       <View style={hv.summaryRow}>
                         <View style={hv.summaryItem}>
-                          <Text style={hv.summaryNum}>{avgProtein ?? '—'}</Text>
-                          <Text style={hv.summaryLabel}>average grams of protein per day</Text>
+                          <Text style={hv.summaryNum}>{rolling7Protein ?? '—'}</Text>
+                          <Text style={hv.summaryLabel}>avg protein g/day</Text>
                         </View>
                         <View style={hv.summaryDivider} />
                         <View style={hv.summaryItem}>
-                          <Text style={hv.summaryNum}>{avgFat ?? '—'}</Text>
-                          <Text style={hv.summaryLabel}>average grams of fat per day</Text>
+                          <Text style={hv.summaryNum}>{rolling7Fat ?? '—'}</Text>
+                          <Text style={hv.summaryLabel}>avg fat g/day</Text>
                         </View>
                         <View style={hv.summaryDivider} />
                         <View style={hv.summaryItem}>
-                          <Text style={hv.summaryNum}>{avgCarb ?? '—'}</Text>
-                          <Text style={hv.summaryLabel}>average grams of carbs per day</Text>
+                          <Text style={hv.summaryNum}>{rolling7Carb ?? '—'}</Text>
+                          <Text style={hv.summaryLabel}>avg carbs g/day</Text>
                         </View>
                       </View>
                     </>
@@ -1322,6 +1383,7 @@ const hv = StyleSheet.create({
   summaryNum: { fontSize: 22, fontWeight: '800', color: C.text1, marginBottom: 2 },
   summaryLabel:     { fontSize: 11, color: C.text3, textAlign: 'center' },
   summaryHiddenMsg: { fontSize: 14, color: C.text2, lineHeight: 22, textAlign: 'center', paddingVertical: 4 },
+  summaryRollingLabel: { fontSize: 11, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.6, textAlign: 'center', marginBottom: 12 },
   monthHeader: { fontSize: 16, fontWeight: '800', color: C.text1, paddingVertical: 4 },
   daysCard: {
     backgroundColor: C.surface, borderRadius: 18, paddingHorizontal: 18,

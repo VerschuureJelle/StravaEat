@@ -107,6 +107,19 @@ Deno.serve(async (req) => {
       .order('created_at', { ascending: false })
       .limit(20)
 
+    // ── scheduled workouts this coach has assigned (via coach_notes linkage) ──
+    const noteWithWorkout = (notes ?? []).filter(n => n.planned_workout_id)
+    const workoutIds = noteWithWorkout.map(n => n.planned_workout_id)
+    let scheduled_workouts: any[] = []
+    if (workoutIds.length > 0) {
+      const { data: pwData } = await supabase
+        .from('planned_workouts')
+        .select('id, sport_type, target_kcal, target_duration_min, workout_description, planned_for, status')
+        .in('id', workoutIds)
+        .order('planned_for', { ascending: false })
+      scheduled_workouts = pwData ?? []
+    }
+
     return new Response(
       JSON.stringify({
         profile,
@@ -121,6 +134,7 @@ Deno.serve(async (req) => {
         nutrition,
         meal_templates,
         notes: notes ?? [],
+        scheduled_workouts,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )

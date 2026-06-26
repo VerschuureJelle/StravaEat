@@ -14,10 +14,13 @@ const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
 type HrStreamData = {
   sample_count: number
   expected_samples: number
+  last_timestamp: number | null
+  avg_interval_sec: number | null
   min_hr: number
   max_hr: number
   avg_hr: number
   stream: number[]
+  time_stream?: number[]
 }
 
 const ZONE_COLORS = [C.swim, C.success, C.warning, C.run, C.danger]
@@ -339,8 +342,14 @@ export default function ActivityDetailScreen() {
           )}
 
           {hrStream && (() => {
-            const truncated = hrStream.sample_count < hrStream.expected_samples * 0.9
-            const coveragePct = Math.round((hrStream.sample_count / Math.max(hrStream.expected_samples, 1)) * 100)
+            const duration = activity.duration_sec
+            const truncated = hrStream.last_timestamp != null
+              ? hrStream.last_timestamp < duration * 0.9
+              : hrStream.sample_count < hrStream.expected_samples * 0.9
+            const coveragePct = hrStream.last_timestamp != null
+              ? Math.round((hrStream.last_timestamp / Math.max(duration, 1)) * 100)
+              : Math.round((hrStream.sample_count / Math.max(hrStream.expected_samples, 1)) * 100)
+            const isSmartRecording = !truncated && hrStream.avg_interval_sec != null && hrStream.avg_interval_sec > 1.5
             const zones = sortedSplits.map(s => s.zone).sort((a, b) => a.zone_number - b.zone_number)
 
             return (
@@ -349,7 +358,7 @@ export default function ActivityDetailScreen() {
                   <View style={styles.streamWarn}>
                     <Ionicons name="warning-outline" size={15} color={C.warning} />
                     <Text style={styles.streamWarnText}>
-                      Only {hrStream.sample_count} of {hrStream.expected_samples} expected samples received ({coveragePct}%). Strava returned a truncated HR stream — this is the main reason kcal is low.
+                      HR stream covers only {coveragePct}% of the activity — Strava returned a truncated stream. Calorie accuracy may be reduced.
                     </Text>
                   </View>
                 )}
@@ -361,10 +370,12 @@ export default function ActivityDetailScreen() {
                     </Text>
                     <Text style={styles.streamStatLbl}>samples</Text>
                   </View>
-                  <View style={styles.streamStat}>
-                    <Text style={styles.streamStatVal}>{hrStream.expected_samples}</Text>
-                    <Text style={styles.streamStatLbl}>expected</Text>
-                  </View>
+                  {hrStream.avg_interval_sec != null && (
+                    <View style={styles.streamStat}>
+                      <Text style={styles.streamStatVal}>{hrStream.avg_interval_sec}s</Text>
+                      <Text style={styles.streamStatLbl}>{isSmartRecording ? 'smart rec.' : 'interval'}</Text>
+                    </View>
+                  )}
                   <View style={styles.streamStat}>
                     <Text style={styles.streamStatVal}>{hrStream.min_hr}</Text>
                     <Text style={styles.streamStatLbl}>min bpm</Text>
@@ -382,6 +393,8 @@ export default function ActivityDetailScreen() {
                 {hrStream.stream.length >= 2 && (
                   <HrSparkline
                     stream={hrStream.stream}
+                    timeStream={hrStream.time_stream}
+                    totalDurationSec={duration}
                     zones={zones}
                     width={width - 32}
                   />
@@ -398,9 +411,11 @@ export default function ActivityDetailScreen() {
 const ZONE_COLORS_CHART = ['#64B5F6', '#81C784', '#FFD54F', '#FF8A65', '#EF5350']
 
 function HrSparkline({
-  stream, zones, width,
+  stream, timeStream, totalDurationSec, zones, width,
 }: {
   stream: number[]
+  timeStream?: number[]
+  totalDurationSec: number
   zones: Array<{ zone_number: number; min_bpm: number; max_bpm: number }>
   width: number
 }) {
@@ -409,17 +424,26 @@ function HrSparkline({
   const chartW = Math.max(width - PAD.left - PAD.right, 1)
   const chartH = H - PAD.top - PAD.bottom
 
-  // Downsample to max 400 points for performance
+  // Downsample to max 400 points for performance, keeping time stream in sync
   const MAX = 400
-  const sampled = stream.length <= MAX
-    ? stream
-    : Array.from({ length: MAX }, (_, i) => stream[Math.round(i * (stream.length - 1) / (MAX - 1))])
+  const indices = stream.length <= MAX
+    ? Array.from({ length: stream.length }, (_, i) => i)
+    : Array.from({ length: MAX }, (_, i) => Math.round(i * (stream.length - 1) / (MAX - 1)))
+
+  const sampled = indices.map(i => stream[i])
+  const sampledTimes = timeStream && timeStream.length === stream.length
+    ? indices.map(i => timeStream[i])
+    : null
 
   const hrMin = Math.min(...sampled) - 5
   const hrMax = Math.max(...sampled) + 5
   const hrRange = hrMax - hrMin || 1
 
-  const toX = (i: number) => PAD.left + (i / (sampled.length - 1)) * chartW
+  const chartDuration = sampledTimes ? sampledTimes[sampledTimes.length - 1] : sampled.length - 1
+  const toX = (i: number) => {
+    const t = sampledTimes ? sampledTimes[i] : i
+    return PAD.left + (t / Math.max(chartDuration, 1)) * chartW
+  }
   const toY = (hr: number) => PAD.top + chartH - ((hr - hrMin) / hrRange) * chartH
 
   const points = sampled.map((hr, i) => `${toX(i).toFixed(1)},${toY(hr).toFixed(1)}`).join(' ')
@@ -485,7 +509,7 @@ function HrSparkline({
         <SvgPolyline points={points} fill="none" stroke={C.accent} strokeWidth={1.5} strokeLinejoin="round" />
         {/* X axis labels: start / middle / end time */}
         {[0, 0.5, 1].map(f => {
-          const sec = Math.round(f * (stream.length - 1))
+          const sec = Math.round(f * totalDurationSec)
           const label = sec >= 3600
             ? `${Math.floor(sec / 3600)}h${Math.floor((sec % 3600) / 60)}m`
             : `${Math.floor(sec / 60)}m`
