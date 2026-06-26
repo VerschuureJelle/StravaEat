@@ -1038,6 +1038,13 @@ function HistoryView({ userId }: { userId: string | null }) {
   const [hideCalories, setHideCalories] = useState(false)
   const [expandedDate, setExpandedDate] = useState<string | null>(null)
 
+  // 7-day rolling averages (always last 7 calendar days, independent of period view)
+  const [rolling7Consumed, setRolling7Consumed] = useState<number | null>(null)
+  const [rolling7Target, setRolling7Target] = useState<number | null>(null)
+  const [rolling7Protein, setRolling7Protein] = useState<number | null>(null)
+  const [rolling7Fat, setRolling7Fat] = useState<number | null>(null)
+  const [rolling7Carb, setRolling7Carb] = useState<number | null>(null)
+
   useEffect(() => {
     if (!userId) return
     load()
@@ -1104,6 +1111,47 @@ function HistoryView({ userId }: { userId: string | null }) {
       }
     })
     setDays(result)
+
+    // ── 7-day rolling average (always last 7 calendar days from today) ──────
+    const rolling7End = todayStr
+    const rolling7StartDate = new Date(); rolling7StartDate.setDate(rolling7StartDate.getDate() - 6)
+    const rolling7Start = toDateStr(rolling7StartDate)
+
+    const [r7FoodRes, r7ActsRes] = await Promise.all([
+      supabase.from('food_logs').select('date, kcal, protein_g, fat_g, carb_g').eq('user_id', userId!)
+        .gte('date', rolling7Start).lte('date', rolling7End),
+      supabase.from('activities').select('date, total_kcal').eq('user_id', userId!)
+        .gte('date', `${rolling7Start}T00:00:00`).lte('date', `${rolling7End}T23:59:59`)
+        .not('total_kcal', 'is', null),
+    ])
+    const r7FoodByDate: Record<string, { kcal: number; protein: number; fat: number; carb: number }> = {}
+    for (const row of (r7FoodRes.data ?? [])) {
+      if (!r7FoodByDate[row.date]) r7FoodByDate[row.date] = { kcal: 0, protein: 0, fat: 0, carb: 0 }
+      r7FoodByDate[row.date].kcal += row.kcal
+      r7FoodByDate[row.date].protein += row.protein_g ?? 0
+      r7FoodByDate[row.date].fat += row.fat_g ?? 0
+      r7FoodByDate[row.date].carb += row.carb_g ?? 0
+    }
+    const r7BurnedByDate: Record<string, number> = {}
+    for (const row of (r7ActsRes.data ?? [])) {
+      const d = (row.date as string).slice(0, 10)
+      r7BurnedByDate[d] = (r7BurnedByDate[d] ?? 0) + (row.total_kcal ?? 0)
+    }
+    // Build 7 days (today included), include all days (even without food) for a true rolling avg
+    const r7Days = generateDays(rolling7Start, rolling7End).filter(d => !d.isFuture)
+    const r7Consumed = r7Days.map(d => r7FoodByDate[d.dateStr]?.kcal ?? 0)
+    const r7Target = r7Days.map(d => baseline != null ? baseline + Math.round(r7BurnedByDate[d.dateStr] ?? 0) : null)
+    const r7Protein = r7Days.map(d => r7FoodByDate[d.dateStr]?.protein ?? 0)
+    const r7Fat     = r7Days.map(d => r7FoodByDate[d.dateStr]?.fat ?? 0)
+    const r7Carb    = r7Days.map(d => r7FoodByDate[d.dateStr]?.carb ?? 0)
+    const r7n = r7Days.length
+    setRolling7Consumed(r7n > 0 ? Math.round(r7Consumed.reduce((a, b) => a + b, 0) / r7n) : null)
+    const validTargets = r7Target.filter(t => t != null) as number[]
+    setRolling7Target(validTargets.length > 0 ? Math.round(validTargets.reduce((a, b) => a + b, 0) / validTargets.length) : null)
+    setRolling7Protein(r7n > 0 ? Math.round(r7Protein.reduce((a, b) => a + b, 0) / r7n) : null)
+    setRolling7Fat(r7n > 0 ? Math.round(r7Fat.reduce((a, b) => a + b, 0) / r7n) : null)
+    setRolling7Carb(r7n > 0 ? Math.round(r7Carb.reduce((a, b) => a + b, 0) / r7n) : null)
+
     setLoading(false)
   }
 
@@ -1132,20 +1180,6 @@ function HistoryView({ userId }: { userId: string | null }) {
 
   const isFixed = period !== 'total' && period !== 'custom'
   const daysWithData = days.filter(d => !d.isFuture && d.consumed > 0)
-  const metCount = daysWithData.filter(d => {
-    if (!d.target) return false
-    const r = d.consumed / d.target
-    return r >= 0.9
-  }).length
-  const n = daysWithData.length
-  const avgConsumed = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.consumed, 0) / n) : null
-  const daysWithTarget = daysWithData.filter(d => d.target != null)
-  const avgTarget = daysWithTarget.length > 0
-    ? Math.round(daysWithTarget.reduce((s, d) => s + d.target!, 0) / daysWithTarget.length)
-    : null
-  const avgProtein = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.protein_g, 0) / n) : null
-  const avgFat     = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.fat_g, 0) / n) : null
-  const avgCarb    = n > 0 ? Math.round(daysWithData.reduce((s, d) => s + d.carb_g, 0) / n) : null
 
   // Group by month for total / custom views
   const monthGroups: { key: string; label: string; days: DayData[] }[] = []
@@ -1208,52 +1242,46 @@ function HistoryView({ userId }: { userId: string | null }) {
 
       {!loading && (
         <>
-          {/* Summary */}
-          {daysWithData.length > 0 && (
+          {/* 7-day rolling summary — always shown when there's any data */}
+          {(rolling7Consumed != null) && (
             <View style={hv.summaryCard}>
               {hideCalories ? (
                 <Text style={hv.summaryHiddenMsg}>
-                  {metCount === daysWithData.length
-                    ? `Great week — you hit your target all ${daysWithData.length} logged day${daysWithData.length !== 1 ? 's' : ''}.`
-                    : metCount === 0
-                      ? `You logged ${daysWithData.length} day${daysWithData.length !== 1 ? 's' : ''} this period. Keep going — consistency is key.`
-                      : `You hit your target ${metCount} out of ${daysWithData.length} logged day${daysWithData.length !== 1 ? 's' : ''} this period.`}
+                  {daysWithData.length > 0
+                    ? `You logged ${daysWithData.length} day${daysWithData.length !== 1 ? 's' : ''} this period. Keep going — consistency is key.`
+                    : 'No data logged yet.'}
                 </Text>
               ) : (
                 <>
+                  <Text style={hv.summaryRollingLabel}>7-day rolling average</Text>
                   <View style={hv.summaryRow}>
                     <View style={hv.summaryItem}>
-                      <Text style={hv.summaryNum}>{metCount}/{daysWithData.length}</Text>
-                      <Text style={hv.summaryLabel}>days on target</Text>
+                      <Text style={hv.summaryNum}>{rolling7Consumed?.toLocaleString() ?? '—'}</Text>
+                      <Text style={hv.summaryLabel}>kcal eaten/day</Text>
                     </View>
                     <View style={hv.summaryDivider} />
                     <View style={hv.summaryItem}>
-                      <Text style={hv.summaryNum}>{avgConsumed?.toLocaleString() ?? '—'}</Text>
-                      <Text style={hv.summaryLabel}>avg eaten/day</Text>
-                    </View>
-                    <View style={hv.summaryDivider} />
-                    <View style={hv.summaryItem}>
-                      <Text style={hv.summaryNum}>{avgTarget?.toLocaleString() ?? '—'}</Text>
-                      <Text style={hv.summaryLabel}>avg target/day</Text>
+                      <Text style={hv.summaryNum}>{rolling7Target?.toLocaleString() ?? '—'}</Text>
+                      <Text style={hv.summaryLabel}>kcal target/day</Text>
                     </View>
                   </View>
-                  {(avgProtein != null || avgFat != null || avgCarb != null) && (
+                  {(rolling7Protein != null || rolling7Fat != null || rolling7Carb != null) && (
                     <>
                       <View style={hv.summaryMacroDivider} />
                       <View style={hv.summaryRow}>
                         <View style={hv.summaryItem}>
-                          <Text style={hv.summaryNum}>{avgProtein ?? '—'}</Text>
-                          <Text style={hv.summaryLabel}>average grams of protein per day</Text>
+                          <Text style={hv.summaryNum}>{rolling7Protein ?? '—'}</Text>
+                          <Text style={hv.summaryLabel}>avg protein g/day</Text>
                         </View>
                         <View style={hv.summaryDivider} />
                         <View style={hv.summaryItem}>
-                          <Text style={hv.summaryNum}>{avgFat ?? '—'}</Text>
-                          <Text style={hv.summaryLabel}>average grams of fat per day</Text>
+                          <Text style={hv.summaryNum}>{rolling7Fat ?? '—'}</Text>
+                          <Text style={hv.summaryLabel}>avg fat g/day</Text>
                         </View>
                         <View style={hv.summaryDivider} />
                         <View style={hv.summaryItem}>
-                          <Text style={hv.summaryNum}>{avgCarb ?? '—'}</Text>
-                          <Text style={hv.summaryLabel}>average grams of carbs per day</Text>
+                          <Text style={hv.summaryNum}>{rolling7Carb ?? '—'}</Text>
+                          <Text style={hv.summaryLabel}>avg carbs g/day</Text>
                         </View>
                       </View>
                     </>
@@ -1355,6 +1383,7 @@ const hv = StyleSheet.create({
   summaryNum: { fontSize: 22, fontWeight: '800', color: C.text1, marginBottom: 2 },
   summaryLabel:     { fontSize: 11, color: C.text3, textAlign: 'center' },
   summaryHiddenMsg: { fontSize: 14, color: C.text2, lineHeight: 22, textAlign: 'center', paddingVertical: 4 },
+  summaryRollingLabel: { fontSize: 11, fontWeight: '700', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.6, textAlign: 'center', marginBottom: 12 },
   monthHeader: { fontSize: 16, fontWeight: '800', color: C.text1, paddingVertical: 4 },
   daysCard: {
     backgroundColor: C.surface, borderRadius: 18, paddingHorizontal: 18,

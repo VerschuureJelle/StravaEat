@@ -44,28 +44,53 @@ Deno.serve(async (req) => {
     const accessToken = await getValidStravaToken(supabase, user.id, profile)
 
     const streamRes = await fetch(
-      `${STRAVA_API}/activities/${strava_activity_id}/streams?keys=heartrate&key_by_type=true`,
+      `${STRAVA_API}/activities/${strava_activity_id}/streams?keys=heartrate,time&key_by_type=true`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     )
     if (!streamRes.ok) throw new Error(`Strava API error: ${streamRes.status}`)
 
     const streamBody = await streamRes.json()
     const stream: number[] = streamBody?.heartrate?.data ?? []
+    const timeStream: number[] = streamBody?.time?.data ?? []
+
+    const hasTimeStream = timeStream.length === stream.length && stream.length >= 2
+    const last_timestamp: number | null = hasTimeStream ? timeStream[timeStream.length - 1] : null
 
     const min_hr = stream.length > 0 ? Math.min(...stream) : null
     const max_hr = stream.length > 0 ? Math.max(...stream) : null
-    const avg_hr = stream.length > 0
-      ? Math.round(stream.reduce((s, v) => s + v, 0) / stream.length)
+
+    let avg_hr: number | null = null
+    if (stream.length > 0) {
+      if (hasTimeStream) {
+        let weightedSum = 0, totalWeight = 0
+        for (let i = 0; i < stream.length; i++) {
+          const dur = i < stream.length - 1
+            ? timeStream[i + 1] - timeStream[i]
+            : timeStream[i] - timeStream[i - 1]
+          weightedSum += stream[i] * dur
+          totalWeight += dur
+        }
+        avg_hr = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : Math.round(stream.reduce((s, v) => s + v, 0) / stream.length)
+      } else {
+        avg_hr = Math.round(stream.reduce((s, v) => s + v, 0) / stream.length)
+      }
+    }
+
+    const avg_interval_sec = hasTimeStream
+      ? Math.round(((timeStream[timeStream.length - 1] - timeStream[0]) / (stream.length - 1)) * 10) / 10
       : null
 
     return new Response(
       JSON.stringify({
         sample_count: stream.length,
         expected_samples: activity.duration_sec,
+        last_timestamp,
+        avg_interval_sec,
         min_hr,
         max_hr,
         avg_hr,
         stream,
+        time_stream: hasTimeStream ? timeStream : undefined,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )

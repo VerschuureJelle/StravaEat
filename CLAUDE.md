@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-StravaEat is a React Native app that connects to Strava, calculates precise energy expenditure from heart rate data, and helps athletes plan their nutrition around training. Calories are computed per heart rate zone using either MET × weight or a user-defined custom burn schema (HR → kcal/hr). The app shows daily weather, an AI-powered workout planner, and a dynamic daily calorie target that updates with completed and planned workouts.
+StravaEat is a React Native app that connects to Strava, calculates precise energy expenditure from heart rate data, and helps athletes plan their nutrition around training. Calories are computed per heart rate zone using either MET × weight or a user-defined custom burn schema (HR → kcal/hr). The app shows an AI-powered workout planner, a dynamic daily calorie target that updates with completed and planned workouts, meal scheduling with notifications, and a full food logging system with barcode scanning.
+
+The app has two modes (athlete / coach) and includes training program generation, calendar integrations (Google, Microsoft, Apple), period/cycle tracking with calorie adjustments, and a RevenueCat-backed subscription + AI credit system.
 
 ## Development Commands
 
@@ -35,6 +37,9 @@ supabase secrets list
 | Charts | react-native-svg |
 | Maps | react-native-maps |
 | AI Coach | Anthropic API (claude-opus-4-7) via `ai-coach` Edge Function |
+| Subscriptions | RevenueCat (`lib/purchases.ts`) — subscription checks + AI credit system |
+| Calendar | Google Cal, Microsoft Cal, Apple Cal integrations (`lib/*CalAuth.ts`) |
+| Barcode scanning | `expo-camera` CameraView + OpenFoodFacts API (session-level cache) |
 
 ## Environment Variables
 
@@ -120,32 +125,46 @@ Widget shows `projectedTotal` as the main number. Breakdown row: "X baseline + Y
 
 | File | Tab | Icon |
 |---|---|---|
-| `(tabs)/home.tsx` | Home | home-outline |
-| `(tabs)/index.tsx` | Activities | flash-outline |
-| `(tabs)/planner.tsx` | Planner | calculator-outline |
-| `(tabs)/nutrition.tsx` | Nutrition | restaurant-outline |
+| `(tabs)/today.tsx` | Today | sunny-outline |
+| `(tabs)/planner.tsx` | Planner | barbell-outline |
+| `(tabs)/index.tsx` | History | flash-outline |
 | `(tabs)/settings.tsx` | Settings | settings-outline |
+| `(tabs)/nutrition.tsx` | — | hidden (href: null) |
+| `(tabs)/calendar.tsx` | — | hidden (href: null) |
+| `(tabs)/coach.tsx` | — | hidden (href: null) |
+| `(tabs)/meals.tsx` | — | hidden (href: null) |
+| `(tabs)/home.tsx` | — | hidden (href: null) |
 | `(tabs)/zones.tsx` | — | hidden (href: null) |
 | `(tabs)/profile.tsx` | — | hidden (href: null) |
+| `(tabs)/paywall.tsx` | — | hidden (href: null) |
 
 ## Key Screens
 
-- **Home** (`home.tsx`): greeting, calorie widget (tappable modal — baseline + burned activities + projected planned workouts), weather card (Today/Week toggle + hourly scroll + 7-day forecast + workout recommendation), today's workout card (shows `planned_workouts` from DB — AI Coach plans show description text, regular plans show chips)
-- **Activities** (`index.tsx`): period dropdown (All/Day/Week/Month/Year/Custom), sport-colored cards with left border + icon, summary card, collapsible month calendars. Custom range: DD-MM-YYYY or DD/MM/YYYY format.
+- **Today** (`today.tsx`): main daily screen — calorie progress, today's meals (from `meal_templates`), food logging with barcode scanner, today's planned workout card, manual workout logging, past-unresolved workout resolution, period mode banner, AI skip-analysis (`progressionEngine`). Drawer via hamburger.
+- **History** (`index.tsx`): period dropdown (All/Day/Week/Month/Year/Custom), sport-colored cards with left border + icon, summary card, collapsible month calendars. Custom range: DD-MM-YYYY or DD/MM/YYYY format. Also includes food history view (`FoodHistoryView`).
 - **Activity Detail** (`activity/[id].tsx`): map, HR stats, fat/carb breakdown, zone split bar, laps table
-- **Planner** (`planner.tsx`): 3 modes selected via segmented toggle:
+- **Planner** (`planner.tsx`): workout planning + training program management. Modes:
   1. *Target kcal* — enter kcal → per-zone duration/distance/pace suggestions → "Plan for today"
   2. *Describe workout* — enter distance + pick zone → estimates kcal/duration from historical avg pace → "Plan for today"
   3. *AI Coach* — natural language → `ai-coach` Edge Function → structured plan → "Save as today's plan" (stores `workout_description`)
-- **Settings** (`settings.tsx`): segmented Personal Info / Heart Rate Zones. Personal Info: name/age/weight/height/max HR/resting HR/daily kcal target + Strava connect + sign out. Heart Rate Zones: zone cards (inline edit) + per-sport energy method (Standard / Custom / Same as…). Custom → `/energy/[sport]`.
-- **Nutrition** (`nutrition.tsx`): progress bar (consumed vs. target = baseline + burned + planned), quick-add form (name + kcal + optional protein_g), today's food log list with delete. Target breakdown chips mirror the home calorie widget.
+  4. *Training Program* — generate multi-week plans (`generate-training-plan` Edge Function), view weekly sessions, mark complete, push to calendar
+- **Settings** (`settings.tsx`): three tabs — *Profile* (name/age/weight/height/sex/max HR/resting HR/FTP/daily kcal target/goal macros/avatar/Strava/calendar connections/app mode/language), *Heart Rate Zones* (zone cards inline edit + per-sport energy method), *Meals* (meal template editor + meal presets with items)
+- **Nutrition** (`nutrition.tsx`): multi-tab — nutrition log, meal templates, weekly overview, calorie estimate tool. Progress bar (consumed vs. target = baseline + burned + planned).
 - **Burn Schema Editor** (`energy/[sport].tsx`): table of HR→kcal/hr points, SVG line chart, add/delete rows
+- **Coach screens** (`coach/index.tsx`, `coach/athlete/[id].tsx`): coach-mode athlete roster and per-athlete data view (requires `isCoach` mode)
+- **Calendar** (`calendar.tsx`): view/manage calendar events from connected Google/Microsoft/Apple calendars
 
 ## Edge Functions
 
-- **`sync-recent`**: fetches Strava activities + HR streams + laps. Computes zone splits using standard MET or custom burn schema. Respects `linked_sport_type` when loading burn schema points.
-- **`strava-callback`**: handles Strava OAuth, stores tokens on `users` table.
-- **`ai-coach`**: receives `{message, sport}`. Fetches user profile + zones + historical paces. Calls Anthropic API (`claude-opus-4-7`). Returns `{plan: string, estimated_kcal: number|null}`.
+- **`sync-recent`**: fetches Strava activities + HR streams + laps. Computes zone splits using standard MET or custom burn schema. Respects `linked_sport_type` when loading burn schema points. Uses atomic `claim_strava_sync()` RPC for dedup (20s cooldown).
+- **`strava-callback`** / **`strava-auth`**: handles Strava OAuth, stores tokens on `users` table.
+- **`ai-coach`**: receives `{message, sport, period_severity, customGuidelines}`. Burst-limited (5/min). Deducts 1 credit atomically before calling Anthropic. Returns `{plan: string, estimated_kcal: number|null}`.
+- **`generate-training-plan`**: generates multi-week training programs via Anthropic API.
+- **`coach-invite`** / **`coach-athlete-data`** / **`coach-push-workout`**: coach-mode functions for managing athletes and pushing workouts.
+- **`cal-*`** (7 functions): Google/Microsoft calendar OAuth callbacks, event CRUD (`cal-create-event`, `cal-update-event`, `cal-delete-event`, `cal-get-events`), push workouts to calendar (`cal-push-workout`), webhook receiver (`cal-webhook-receiver`), subscription renewal (`cal-renew-subscriptions`).
+- **`revenuecat-webhook`**: handles RevenueCat subscription events, updates user entitlements.
+- **`adjust-plan-for-period`**: adjusts training plan intensity based on period severity.
+- **`hr-stream`**: fetches raw HR stream data for an activity from Strava on demand.
 
 ## Push Notifications
 
@@ -162,13 +181,17 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 ## Sport Colors & Icons
 
+Active theme is `themeWarm.ts` (imported as `W as C`). Sport colors from that theme:
+
 | Pattern | Color | MaterialCommunityIcons |
 |---|---|---|
-| swim | #29B6F6 | swim |
-| run / jog | #EF5350 | run |
-| walk | #FF8A65 | walk |
-| ride / bike / cycling / virtual | #66BB6A | bike |
-| default | #90A4AE | lightning-bolt |
+| swim | #0EA5E9 | swim |
+| run / jog | #EF4444 | run |
+| walk | #F97316 | walk |
+| ride / bike / cycling / virtual | #22C55E | bike |
+| default | #94A3B8 | lightning-bolt |
+
+`lib/theme.ts` (Deep Space Navy/indigo, `C`) exists but is no longer used — do not import from it.
 
 ## Key Design Decisions
 
@@ -176,6 +199,17 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 - **Zone changes are non-retroactive** — editing zones only affects future syncs
 - **Sport linking** — `linked_sport_type` on `sport_energy_settings` lets e.g. Virtual Ride reuse Ride's burn schema
 - **Planned workouts replace** — saving a new plan for the same sport+date deletes the previous one (delete + insert)
-- **AI Coach plans** — identified by non-null `workout_description`; shown with purple border + sparkles icon on home screen
+- **AI Coach plans** — identified by non-null `workout_description`; shown with distinct border + sparkles icon
+- **AI credits** — each `ai-coach` call deducts 1 credit via atomic `deduct_credit()` RPC; burst-limited to 5/min. Credits managed via RevenueCat.
+- **Coach / Athlete mode** — toggled in Settings, persisted in AsyncStorage (`@stravaeat_app_mode`). Coach mode unlocks athlete roster and `coach-*` Edge Functions.
+- **Period tracking** — `on_period` + `period_severity` on `users` row; calorie targets and training intensity adjust via `lib/periodConfig.ts` and `adjust-plan-for-period` Edge Function.
+- **Meal templates** — `meal_templates` table stores scheduled meals with times and macros; `lib/notifications.ts` schedules local notifications per meal.
+- **Meal presets** — `meal_presets` + `meal_preset_items` allow saving reusable meal combinations; items link to `ingredients` table for accurate macro scaling.
+- **Custom ingredients** — `ingredients` table (kcal/100g + macros); used in meal presets and food logging with amount-based scaling.
+- **Barcode scanning** — `expo-camera` CameraView scans EAN codes → OpenFoodFacts API → auto-fills food entry. Session-level `Map` cache prevents duplicate lookups.
+- **Calendar sync** — workouts can be pushed to Google/Microsoft/Apple Cal. OAuth tokens stored server-side; webhook receiver keeps local state in sync.
+- **Manual workouts** — users can log workouts without Strava (gym, cycling, running, etc.) by picking sport + intensity; stored as activities with `source: 'manual'`.
+- **Training programs** — multi-week structured plans stored in `training_programs` + `training_program_sessions`. `currentProgramWeek()` computes current week from `start_date`.
+- **Progression engine** — `lib/progressionEngine.ts` (`analyzeSkip`) analyses skipped workouts and suggests adjustments.
 - **TrainingPeaks / Runna** — currently placeholder UI only; no API access
-- **Weather** uses Open-Meteo (no API key); location via expo-location foreground permission
+- **Drawer navigation** — hamburger button (`DrawerNav.tsx`) gives access to Calendar, HR Zones, Profile (hidden tabs)

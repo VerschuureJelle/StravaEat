@@ -51,6 +51,18 @@ const _barcodeCache = new Map<string, {
 
 // ─── Manual workout constants ─────────────────────────────────────────────────
 
+const PORTION_OPTIONS = [
+  { label: '¼', value: 0.25 },
+  { label: '⅓', value: 1 / 3 },
+  { label: '½', value: 0.5 },
+  { label: '⅔', value: 2 / 3 },
+  { label: '¾', value: 0.75 },
+  { label: '1',  value: 1 },
+  { label: '1½', value: 1.5 },
+  { label: '2',  value: 2 },
+  { label: '3',  value: 3 },
+]
+
 const MANUAL_SPORT_OPTIONS = [
   { type: 'WeightTraining', label: 'Gym',      mets: [3.5, 5.0, 6.0, 8.0] },
   { type: 'Cycling',        label: 'Cycling',   mets: [4.0, 6.8, 10.0, 12.0] },
@@ -137,6 +149,9 @@ export default function TodayScreen() {
   // Unified food logger
   const [showFoodLogger, setShowFoodLogger] = useState(false)
   const [foodLoggerMealIndex, setFoodLoggerMealIndex] = useState<number | null>(null)
+
+  // Coach inbox
+  const [coachNotes, setCoachNotes] = useState<{ id: string; content: string; note_type: string; created_at: string; coach_name: string | null }[]>([])
 
   // Calorie modal
   const [calorieModalOpen, setCalorieModalOpen] = useState(false)
@@ -303,6 +318,21 @@ export default function TodayScreen() {
 
     setCustomFoods((customRes.data ?? []) as CustomFood[])
     setAllPresets((allPresetsRes.data ?? []) as MealPreset[])
+
+    // Coach inbox — fetch recent notes sent to this athlete
+    const { data: notesData } = await supabase
+      .from('coach_notes')
+      .select('id, content, note_type, created_at, coach:coach_id(name)')
+      .eq('athlete_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+    if (notesData) {
+      setCoachNotes(notesData.map((n: any) => ({
+        id: n.id, content: n.content, note_type: n.note_type,
+        created_at: n.created_at, coach_name: n.coach?.name ?? null,
+      })))
+    }
+
     lastLoadRef.current = Date.now()
     setLoading(false)
   }
@@ -955,6 +985,33 @@ export default function TodayScreen() {
               )}
             </LinearGradient>
           </Pressable>
+
+          {/* ── Coach inbox ── */}
+          {coachNotes.length > 0 && (
+            <View style={st.card}>
+              <Text style={st.cardTitle}>
+                {coachNotes[0].coach_name ? `From ${coachNotes[0].coach_name}` : 'From your coach'}
+              </Text>
+              {coachNotes.map(n => {
+                const isWorkout = n.note_type === 'workout'
+                const isNutrition = n.note_type === 'nutrition'
+                const color = isWorkout ? C.accent : isNutrition ? C.success : C.ride
+                const icon: any = isWorkout ? 'flash' : isNutrition ? 'restaurant' : 'chatbubble-ellipses'
+                const label = isWorkout ? 'Workout' : isNutrition ? 'Nutrition' : 'Note'
+                const dateStr = new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                return (
+                  <View key={n.id} style={[st.coachNoteRow, { borderLeftColor: color }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                      <Ionicons name={icon} size={12} color={color} />
+                      <Text style={[st.coachNoteTag, { color }]}>{label}</Text>
+                      <Text style={st.coachNoteDate}>{dateStr}</Text>
+                    </View>
+                    <Text style={st.coachNoteContent}>{n.content}</Text>
+                  </View>
+                )
+              })}
+            </View>
+          )}
 
           {/* ── Today's workouts ── */}
           <View style={st.card}>
@@ -1765,6 +1822,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   const [saveAsPreset, setSaveAsPreset] = useState(false)
   const [recentFoods, setRecentFoods] = useState<Array<{ name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null }>>([])
   const [pendingQtyMode, setPendingQtyMode] = useState<'fraction' | 'gram'>('fraction')
+  const [portionsOpen, setPortionsOpen] = useState(false)
   const [saveMyFoodsMode, setSaveMyFoodsMode] = useState<'gram' | 'unit'>('unit')
   const [saveMyFoodsKcal100g, setSaveMyFoodsKcal100g] = useState('')
   // Serving options for manual tab
@@ -1798,7 +1856,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
       setManualMode('total')
       setSaveToMyFoods(false); setSaveAsPreset(false)
       setSaveMyFoodsMode('unit'); setSaveMyFoodsKcal100g('')
-      setPendingQtyMode('fraction')
+      setPendingQtyMode('fraction'); setPortionsOpen(false)
       setManualServings([]); setNewServingLabel(''); setNewServingKcal('')
       setNewServingProtein(''); setNewServingFat(''); setNewServingCarb('')
       setSelectedServingOption(null)
@@ -1828,10 +1886,24 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   const searchResults = useMemo(() => {
     const q = search.trim()
     if (!q) return []
+    const recentHits = recentFoods.filter(f => fuzzyFoodMatch(f.name, q))
     const customHits = customFoods.filter(f => fuzzyFoodMatch(f.name, q))
     const commonHits = COMMON_FOOD_CATEGORIES.flatMap(c => c.items).filter(f => fuzzyFoodMatch(f.name, q))
-    return [...customHits, ...commonHits].slice(0, 20) as (CommonFood & { amount_label?: string | null })[]
-  }, [search, customFoods])
+    const seen = new Set<string>()
+    const all = [...recentHits, ...customHits, ...commonHits].filter(f => {
+      const key = f.name.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    return all.slice(0, 20) as (CommonFood & { amount_label?: string | null })[]
+  }, [search, customFoods, recentFoods])
+
+  const presetSearchResults = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return []
+    return allPresets.filter(p => p.name.toLowerCase().includes(q))
+  }, [search, allPresets])
 
   function selectFood(food: CommonFood & { amount_label?: string | null }) {
     setPendingFood(food)
@@ -2309,27 +2381,36 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                                 </View>
 
                                 {pendingQtyMode === 'fraction' ? (
-                                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                                    {([
-                                      { label: '¼', value: 0.25 },
-                                      { label: '⅓', value: 1/3 },
-                                      { label: '½', value: 0.5 },
-                                      { label: '⅔', value: 2/3 },
-                                      { label: '¾', value: 0.75 },
-                                      { label: '1',  value: 1 },
-                                      { label: '1½', value: 1.5 },
-                                      { label: '2',  value: 2 },
-                                      { label: '3',  value: 3 },
-                                    ]).map(chip => {
-                                      const active = Math.abs(qty - chip.value) < 0.02
-                                      return (
-                                        <Pressable key={chip.label}
-                                          style={[loggerSt.servingChip, active && loggerSt.servingChipActive]}
-                                          onPress={() => setServingQty(String(chip.value))}>
-                                          <Text style={[loggerSt.servingChipText, active && { color: '#fff' }]}>{chip.label}</Text>
-                                        </Pressable>
-                                      )
-                                    })}
+                                  <View>
+                                    <Pressable
+                                      style={loggerSt.portionDropdown}
+                                      onPress={() => setPortionsOpen(o => !o)}
+                                    >
+                                      <Text style={loggerSt.portionDropdownText}>Portion size</Text>
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                        <Text style={{ fontSize: 14, fontWeight: '700', color: C.accent }}>
+                                          {PORTION_OPTIONS.find(c => Math.abs(qty - c.value) < 0.02)?.label ?? '1'}
+                                        </Text>
+                                        <Ionicons name={portionsOpen ? 'chevron-up' : 'chevron-down'} size={16} color={C.text2} />
+                                      </View>
+                                    </Pressable>
+                                    {portionsOpen && (
+                                      <View style={loggerSt.portionDropdownList}>
+                                        {PORTION_OPTIONS.map(opt => {
+                                          const active = Math.abs(qty - opt.value) < 0.02
+                                          return (
+                                            <Pressable
+                                              key={opt.label}
+                                              style={[loggerSt.portionDropdownItem, active && { backgroundColor: C.accentBg }]}
+                                              onPress={() => { setServingQty(String(opt.value)); setPortionsOpen(false) }}
+                                            >
+                                              <Text style={[loggerSt.portionDropdownItemText, active && { color: C.accent, fontWeight: '700' }]}>{opt.label}</Text>
+                                              {active && <Ionicons name="checkmark" size={15} color={C.accent} />}
+                                            </Pressable>
+                                          )
+                                        })}
+                                      </View>
+                                    )}
                                   </View>
                                 ) : (
                                   <>
@@ -2446,14 +2527,31 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                       </View>
                       {search.trim() ? (
                         <>
-                          {searchResults.length > 0 ? (
-                            searchResults.map((food, i) => (
-                              <Pressable key={food.name + i} style={[loggerSt.resultRow, i > 0 && loggerSt.resultRowBorder]} onPress={() => selectFood(food)}>
-                                <Text style={loggerSt.resultName}>{food.name}</Text>
-                                {!hideCalories && <Text style={loggerSt.resultMeta}>{food.kcal} kcal</Text>}
-                              </Pressable>
-                            ))
-                          ) : (
+                          {searchResults.length > 0 && searchResults.map((food, i) => (
+                            <Pressable key={food.name + i} style={[loggerSt.resultRow, i > 0 && loggerSt.resultRowBorder]} onPress={() => selectFood(food)}>
+                              <Text style={loggerSt.resultName}>{food.name}</Text>
+                              {!hideCalories && <Text style={loggerSt.resultMeta}>{food.kcal} kcal</Text>}
+                            </Pressable>
+                          ))}
+                          {presetSearchResults.length > 0 && (
+                            <>
+                              {searchResults.length > 0 && <Text style={[loggerSt.sectionLabel, { marginTop: 12 }]}>My Meals</Text>}
+                              {presetSearchResults.map((preset, i) => {
+                                const total = (preset.items ?? []).reduce((s, it) => s + it.kcal, 0)
+                                return (
+                                  <Pressable
+                                    key={preset.id}
+                                    style={[loggerSt.resultRow, (i > 0 || searchResults.length > 0) && loggerSt.resultRowBorder]}
+                                    onPress={async () => { await onLogPreset(preset); onClose() }}
+                                  >
+                                    <Text style={loggerSt.resultName}>{preset.name}</Text>
+                                    {!hideCalories && <Text style={loggerSt.resultMeta}>{total} kcal · meal</Text>}
+                                  </Pressable>
+                                )
+                              })}
+                            </>
+                          )}
+                          {searchResults.length === 0 && presetSearchResults.length === 0 && (
                             <Text style={st.emptyNote}>No results for "{search}"</Text>
                           )}
                         </>
@@ -2775,35 +2873,10 @@ function MealPresetPickerModal({ meal, presets, onSelect, onManage, onClose }: {
 }) {
   const [selected, setSelected] = useState<MealPreset | null>(null)
   const [qty, setQty] = useState(1)
-  const [inputGrams, setInputGrams] = useState('')
 
-  const itemBaseGrams = (selected?.items ?? []).map(it => parseItemBaseGrams(it.amount_label ?? null))
-  const isGramMode = itemBaseGrams.length > 0 && itemBaseGrams.every(g => g != null)
-  const totalBaseGrams = isGramMode ? itemBaseGrams.reduce((s, g) => s! + g!, 0)! : null
-
-  function pick(preset: MealPreset) {
-    setSelected(preset)
-    setQty(1)
-    setInputGrams('')
+  function pickPreset(p: MealPreset) {
+    if (selected?.id === p.id) { setSelected(null) } else { setSelected(p); setQty(1) }
   }
-
-  const baseKcal = (selected?.items ?? []).reduce((acc, it) => acc + it.kcal, 0)
-  const enteredG = parseFloat(inputGrams)
-  const previewKcal = isGramMode && enteredG > 0 && totalBaseGrams
-    ? Math.round(baseKcal * enteredG / totalBaseGrams)
-    : Math.round(baseKcal * qty)
-
-  function confirm() {
-    if (!selected) return
-    if (isGramMode) {
-      if (isNaN(enteredG) || enteredG <= 0) return
-      onSelect(selected, 1, enteredG)
-    } else {
-      onSelect(selected, qty)
-    }
-  }
-
-  const canConfirm = selected && (isGramMode ? (enteredG > 0) : true)
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -2817,59 +2890,49 @@ function MealPresetPickerModal({ meal, presets, onSelect, onManage, onClose }: {
             <Text style={{ fontSize: 13, color: C.accent2, fontWeight: '600' }}>Edit</Text>
           </Pressable>
         </View>
-        <Text style={{ fontSize: 13, color: C.text2, marginBottom: 14 }}>Choose a preset</Text>
         <ScrollView>
           {presets.map(preset => {
             const total = (preset.items ?? []).reduce((acc, it) => acc + it.kcal, 0)
             const isSelected = selected?.id === preset.id
             return (
-              <Pressable key={preset.id} style={[st.pickerRow, isSelected && st.pickerRowSelected]} onPress={() => pick(preset)}>
-                <View style={{ flex: 1 }}>
-                  <Text style={st.pickerRowName}>{preset.name}</Text>
-                  <Text style={st.pickerRowMeta}>{(preset.items ?? []).length} items · {total} kcal</Text>
-                </View>
-                {isSelected
-                  ? <Ionicons name="checkmark-circle" size={18} color={C.accent} />
-                  : <Ionicons name="chevron-forward" size={16} color={C.text3} />
-                }
-              </Pressable>
+              <View key={preset.id}>
+                <Pressable
+                  style={[st.pickerRow, isSelected && { backgroundColor: C.accentBg }]}
+                  onPress={() => pickPreset(preset)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={st.pickerRowName}>{preset.name}</Text>
+                    <Text style={st.pickerRowMeta}>{(preset.items ?? []).length} items · {total} kcal</Text>
+                  </View>
+                  <Ionicons name={isSelected ? 'checkmark-circle' : 'add-circle-outline'} size={20} color={C.accent2} />
+                </Pressable>
+                {isSelected && (
+                  <View style={st.presetStepperRow}>
+                    <Pressable
+                      style={st.presetStepperBtn}
+                      onPress={() => setQty(q => Math.max(1, q - 1))}
+                    >
+                      <Ionicons name="remove" size={20} color={C.text1} />
+                    </Pressable>
+                    <Text style={st.presetStepperQty}>{qty}×</Text>
+                    <Pressable
+                      style={st.presetStepperBtn}
+                      onPress={() => setQty(q => q + 1)}
+                    >
+                      <Ionicons name="add" size={20} color={C.text1} />
+                    </Pressable>
+                    <Pressable
+                      style={st.presetStepperAdd}
+                      onPress={() => { onSelect(preset, qty); onClose() }}
+                    >
+                      <Text style={st.presetStepperAddText}>Add</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
             )
           })}
         </ScrollView>
-
-        {selected && (
-          <View style={st.pickerQtyRow}>
-            {isGramMode ? (
-              <>
-                <TextInput
-                  style={[st.qtyInput, { flex: 1, marginRight: 8 }]}
-                  value={inputGrams}
-                  onChangeText={setInputGrams}
-                  placeholder={`Amount in g (base: ${totalBaseGrams}g)`}
-                  keyboardType="decimal-pad"
-                  placeholderTextColor={C.text3}
-                  autoFocus
-                />
-                <Pressable style={[st.pickerAddBtn, !canConfirm && { opacity: 0.4 }]} onPress={confirm} disabled={!canConfirm}>
-                  <Text style={st.pickerAddBtnText}>Add · {previewKcal} kcal</Text>
-                </Pressable>
-              </>
-            ) : (
-              <>
-                <Pressable style={st.pickerQtyBtn} onPress={() => setQty(q => Math.max(1, q - 1))} hitSlop={8}>
-                  <Ionicons name="remove" size={18} color={C.text1} />
-                </Pressable>
-                <Text style={st.pickerQtyNum}>{qty}×</Text>
-                <Pressable style={st.pickerQtyBtn} onPress={() => setQty(q => Math.min(20, q + 1))} hitSlop={8}>
-                  <Ionicons name="add" size={18} color={C.text1} />
-                </Pressable>
-                <Pressable style={st.pickerAddBtn} onPress={confirm}>
-                  <Text style={st.pickerAddBtnText}>Add · {previewKcal} kcal</Text>
-                </Pressable>
-              </>
-            )}
-          </View>
-        )}
       </View>
     </Modal>
   )
@@ -3161,6 +3224,13 @@ function CalorieBreakdownModal({ visible, dailyTarget, burned, planned, consumed
   const [editFat, setEditFat] = useState('')
   const [editCarb, setEditCarb] = useState('')
   const [editSaving, setEditSaving] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [addName, setAddName] = useState('')
+  const [addKcal, setAddKcal] = useState('')
+  const [addProtein, setAddProtein] = useState('')
+  const [addFat, setAddFat] = useState('')
+  const [addCarb, setAddCarb] = useState('')
+  const [addSaving, setAddSaving] = useState(false)
   const insets = useSafeAreaInsets()
 
   useEffect(() => { if (visible) setSelectedDate(todayStr) }, [visible])
@@ -3184,7 +3254,47 @@ function CalorieBreakdownModal({ visible, dailyTarget, burned, planned, consumed
     const d = new Date(selectedDate + 'T12:00:00')
     d.setDate(d.getDate() + delta)
     const next = d.toISOString().split('T')[0]
-    if (next <= todayStr) setSelectedDate(next)
+    if (next <= todayStr) { setSelectedDate(next); setShowAddForm(false); setEditingLog(null) }
+  }
+
+  async function deleteHistoryLog(log: FoodLog) {
+    Alert.alert('Remove entry?', `Remove "${log.name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => {
+        setHistoryLogs(prev => prev.filter(l => l.id !== log.id))
+        await supabase.from('food_logs').delete().eq('id', log.id)
+      }},
+    ])
+  }
+
+  async function saveHistoryEdit() {
+    if (!editingLog) return
+    const k = parseInt(editKcal)
+    if (!editName.trim() || isNaN(k) || k <= 0) return
+    setEditSaving(true)
+    const { data: updated } = await supabase.from('food_logs')
+      .update({ name: editName.trim(), kcal: k, protein_g: editProtein ? parseFloat(editProtein) : null, fat_g: editFat ? parseFloat(editFat) : null, carb_g: editCarb ? parseFloat(editCarb) : null })
+      .eq('id', editingLog.id)
+      .select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at')
+      .single()
+    if (updated) setHistoryLogs(prev => prev.map(l => l.id === editingLog.id ? updated as FoodLog : l))
+    setEditSaving(false)
+    setEditingLog(null)
+  }
+
+  async function submitAddForm() {
+    if (!userId) return
+    const k = parseInt(addKcal)
+    if (!addName.trim() || isNaN(k) || k <= 0) return
+    setAddSaving(true)
+    const { data: inserted } = await supabase.from('food_logs')
+      .insert({ user_id: userId, date: selectedDate, name: addName.trim(), kcal: k, protein_g: addProtein ? parseFloat(addProtein) : null, fat_g: addFat ? parseFloat(addFat) : null, carb_g: addCarb ? parseFloat(addCarb) : null })
+      .select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at')
+      .single()
+    if (inserted) setHistoryLogs(prev => [...prev, inserted as FoodLog])
+    setAddSaving(false)
+    setShowAddForm(false)
+    setAddName(''); setAddKcal(''); setAddProtein(''); setAddFat(''); setAddCarb('')
   }
 
   const dateLabel = isToday
@@ -3264,13 +3374,21 @@ function CalorieBreakdownModal({ visible, dailyTarget, burned, planned, consumed
               }} hitSlop={8} style={{ marginRight: 6 }}>
                 <Ionicons name="pencil-outline" size={15} color={C.accent2} />
               </Pressable>
-              {isToday && (
-                <Pressable onPress={() => onDeleteLog(log.id)} hitSlop={8}>
-                  <Ionicons name="trash-outline" size={15} color={C.danger} />
-                </Pressable>
-              )}
+              <Pressable onPress={() => isToday ? onDeleteLog(log.id) : deleteHistoryLog(log)} hitSlop={8}>
+                <Ionicons name="trash-outline" size={15} color={C.danger} />
+              </Pressable>
             </View>
           ))}
+
+          {!isToday && !historyLoading && !showAddForm && (
+            <Pressable
+              onPress={() => setShowAddForm(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 12, marginTop: 4 }}
+            >
+              <Ionicons name="add-circle-outline" size={18} color={C.accent2} />
+              <Text style={{ fontSize: 14, color: C.accent2, fontWeight: '600' }}>Add entry</Text>
+            </Pressable>
+          )}
         </ScrollView>
 
         {editingLog && (
@@ -3290,21 +3408,41 @@ function CalorieBreakdownModal({ visible, dailyTarget, burned, planned, consumed
               <Pressable
                 style={[st.addFormBtn, { flex: 1 }, editSaving && { opacity: 0.6 }]}
                 onPress={async () => {
-                  const k = parseInt(editKcal)
-                  if (!editName.trim() || isNaN(k) || k <= 0) return
-                  setEditSaving(true)
-                  await onEditLog(
-                    editingLog.id, editName.trim(), k,
-                    editProtein ? parseFloat(editProtein) : null,
-                    editFat ? parseFloat(editFat) : null,
-                    editCarb ? parseFloat(editCarb) : null,
-                  )
-                  setEditSaving(false)
-                  setEditingLog(null)
+                  if (isToday) {
+                    const k = parseInt(editKcal)
+                    if (!editName.trim() || isNaN(k) || k <= 0) return
+                    setEditSaving(true)
+                    await onEditLog(editingLog.id, editName.trim(), k, editProtein ? parseFloat(editProtein) : null, editFat ? parseFloat(editFat) : null, editCarb ? parseFloat(editCarb) : null)
+                    setEditSaving(false)
+                    setEditingLog(null)
+                  } else {
+                    await saveHistoryEdit()
+                  }
                 }}
                 disabled={editSaving}
               >
                 <Text style={st.addFormBtnText}>{editSaving ? 'Saving…' : 'Save'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {showAddForm && (
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: C.bg, padding: 20, gap: 10, zIndex: 10 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: C.text1, marginBottom: 4 }}>Add entry — {dateLabel}</Text>
+            <TextInput style={st.addFormInput} value={addName} onChangeText={setAddName} placeholder="Name" placeholderTextColor={C.text3} autoFocus />
+            <TextInput style={st.addFormInput} value={addKcal} onChangeText={setAddKcal} placeholder="kcal" keyboardType="numeric" placeholderTextColor={C.text3} />
+            <View style={st.addFormMacroRow}>
+              <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={addProtein} onChangeText={setAddProtein} placeholder="Protein g" keyboardType="decimal-pad" placeholderTextColor={C.text3} />
+              <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={addFat} onChangeText={setAddFat} placeholder="Fat g" keyboardType="decimal-pad" placeholderTextColor={C.text3} />
+              <TextInput style={[st.addFormInput, st.addFormMacroInput]} value={addCarb} onChangeText={setAddCarb} placeholder="Carbs g" keyboardType="decimal-pad" placeholderTextColor={C.text3} />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+              <Pressable style={[st.addFormBtn, { flex: 1, backgroundColor: C.surface2 }]} onPress={() => { setShowAddForm(false); setAddName(''); setAddKcal(''); setAddProtein(''); setAddFat(''); setAddCarb('') }}>
+                <Text style={[st.addFormBtnText, { color: C.text2 }]}>Cancel</Text>
+              </Pressable>
+              <Pressable style={[st.addFormBtn, { flex: 1 }, addSaving && { opacity: 0.6 }]} onPress={submitAddForm} disabled={addSaving}>
+                <Text style={st.addFormBtnText}>{addSaving ? 'Saving…' : 'Add'}</Text>
               </Pressable>
             </View>
           </View>
@@ -3836,6 +3974,15 @@ const st = StyleSheet.create({
   planBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 10, marginTop: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider },
   planBtnText: { fontSize: 13, fontWeight: '600', color: C.accent2 },
 
+  // Coach notes
+  coachNoteRow: {
+    borderLeftWidth: 3, borderRadius: 6, paddingVertical: 8, paddingHorizontal: 10,
+    backgroundColor: C.surface2, marginBottom: 8,
+  },
+  coachNoteTag: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  coachNoteDate: { fontSize: 11, color: C.text3, marginLeft: 'auto' as any },
+  coachNoteContent: { fontSize: 13, color: C.text1, lineHeight: 19 },
+
   // Activities
   activityRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingLeft: 10,
@@ -3937,6 +4084,11 @@ const st = StyleSheet.create({
   pickerRowSelected: { backgroundColor: C.accent + '0e' },
   pickerRowName: { fontSize: 14, fontWeight: '700', color: C.text1 },
   pickerRowMeta: { fontSize: 12, color: C.text3, marginTop: 2 },
+  presetStepperRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider },
+  presetStepperBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface2, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
+  presetStepperQty: { fontSize: 17, fontWeight: '700', color: C.text1, minWidth: 32, textAlign: 'center' },
+  presetStepperAdd: { flex: 1, backgroundColor: C.accent, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  presetStepperAddText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   pickerQtyRow:    { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider, marginTop: 4 },
   pickerQtyBtn:    { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
   pickerQtyNum:    { fontSize: 18, fontWeight: '800', color: C.text1, minWidth: 32, textAlign: 'center' },
@@ -4106,4 +4258,9 @@ const loggerSt = StyleSheet.create({
   servingChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface2 },
   servingChipActive: { backgroundColor: C.accent, borderColor: C.accent },
   servingChipText: { fontSize: 12, fontWeight: '600', color: C.text2 },
+  portionDropdown: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.surface2, borderRadius: 10, borderWidth: 1, borderColor: C.border, paddingHorizontal: 14, paddingVertical: 11 },
+  portionDropdownText: { fontSize: 14, fontWeight: '600', color: C.text1 },
+  portionDropdownList: { backgroundColor: C.surface, borderRadius: 10, borderWidth: 1, borderColor: C.border, marginTop: 4, overflow: 'hidden' },
+  portionDropdownItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.divider },
+  portionDropdownItemText: { fontSize: 14, color: C.text1 },
 })

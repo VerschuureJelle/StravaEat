@@ -22,10 +22,22 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
     if (authErr || !user) throw new Error('Unauthorized')
 
-    const { athlete_id, content, note_type = 'note', planned_workout_id = null } = await req.json()
+    const {
+      athlete_id, content, note_type = 'note',
+      // Structured workout scheduling (optional)
+      schedule_workout = false,
+      planned_for = null,       // YYYY-MM-DD
+      sport_type = null,
+      target_kcal = null,
+      target_duration_min = null,
+    } = await req.json()
     if (!athlete_id) throw new Error('athlete_id is required')
     if (!content?.trim()) throw new Error('content is required')
     if (!['note', 'workout', 'nutrition'].includes(note_type)) throw new Error('invalid note_type')
+    if (schedule_workout) {
+      if (!planned_for || !/^\d{4}-\d{2}-\d{2}$/.test(planned_for)) throw new Error('planned_for (YYYY-MM-DD) is required when schedule_workout is true')
+      if (!sport_type?.trim()) throw new Error('sport_type is required when schedule_workout is true')
+    }
 
     // Verify active coach relationship
     const { data: rel } = await supabase
@@ -38,6 +50,30 @@ Deno.serve(async (req) => {
 
     if (!rel) throw new Error('Not connected to this athlete')
 
+    // Optionally create a planned_workout for the athlete
+    let planned_workout_id: string | null = null
+    if (schedule_workout) {
+      const { data: pw, error: pwErr } = await supabase
+        .from('planned_workouts')
+        .insert({
+          user_id: athlete_id,
+          sport_type: sport_type.trim(),
+          target_kcal: target_kcal ?? 0,
+          target_duration_min: target_duration_min ?? null,
+          workout_description: content.trim(),
+          planned_for,
+          zone_id: null,
+          target_hr: null,
+          distance_m: null,
+          is_key: false,
+          status: null,
+        })
+        .select('id')
+        .single()
+      if (pwErr) throw pwErr
+      planned_workout_id = pw.id
+    }
+
     // Insert the note
     const { data: note, error: noteErr } = await supabase
       .from('coach_notes')
@@ -46,7 +82,7 @@ Deno.serve(async (req) => {
         athlete_id,
         content: content.trim(),
         note_type,
-        planned_workout_id: planned_workout_id ?? null,
+        planned_workout_id,
       })
       .select()
       .single()
@@ -83,7 +119,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, note_id: note.id }),
+      JSON.stringify({ success: true, note_id: note.id, planned_workout_id }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   } catch (err) {
