@@ -931,9 +931,9 @@ function KcalBarChart({ days }: { days: DayData[] }) {
 
 // ─── History view ──────────────────────────────────────────────────────────
 
-function DayRow({ day, last, hideCalories, expanded, onPress }: {
+function DayRow({ day, last, hideCalories, expanded, onPress, onAddFood }: {
   day: DayData; last: boolean; hideCalories: boolean
-  expanded: boolean; onPress: () => void
+  expanded: boolean; onPress: () => void; onAddFood: () => void
 }) {
   const ratio = day.target && day.consumed > 0 ? day.consumed / day.target : 0
   const isMet = ratio >= 0.9 && ratio <= 1.15
@@ -947,10 +947,10 @@ function DayRow({ day, last, hideCalories, expanded, onPress }: {
     : C.surface3
   const fillPct = day.isFuture ? 0 : Math.min(ratio, 1) * 100
   const hasMacros = !day.isFuture && day.consumed > 0 && (day.protein_g > 0 || day.fat_g > 0 || day.carb_g > 0)
-  const canExpand = !hideCalories && !day.isFuture && day.consumed > 0 && (day.items.length > 0 || hasMacros)
+  const canExpand = !hideCalories && !day.isFuture && (day.items.length > 0 || hasMacros)
   return (
     <Pressable
-      onPress={canExpand ? onPress : undefined}
+      onPress={!day.isFuture ? onPress : undefined}
       style={[hv.dayRow, !last && { borderBottomWidth: 1, borderBottomColor: C.divider }]}
     >
       <View style={hv.dayLabelCol}>
@@ -970,7 +970,7 @@ function DayRow({ day, last, hideCalories, expanded, onPress }: {
               </Text>
               {day.target != null && <Text style={hv.dayTarget}>/ {day.target.toLocaleString()} kcal</Text>}
             </View>
-            {expanded && (hasMacros || day.items.length > 0) && (
+            {expanded && (
               <>
                 {hasMacros && (
                   <View style={hv.dayMacros}>
@@ -1002,6 +1002,10 @@ function DayRow({ day, last, hideCalories, expanded, onPress }: {
                     ))}
                   </View>
                 )}
+                <Pressable style={hv.addFoodBtn} onPress={(e) => { e.stopPropagation?.(); onAddFood() }}>
+                  <Ionicons name="add" size={14} color={C.accent} />
+                  <Text style={hv.addFoodBtnText}>Add food</Text>
+                </Pressable>
               </>
             )}
           </>
@@ -1014,11 +1018,12 @@ function DayRow({ day, last, hideCalories, expanded, onPress }: {
         )}
       </View>
       <View style={hv.statusCol}>
-        {day.isToday && <View style={[hv.statusDot, { backgroundColor: C.accent }]} />}
-        {!day.isToday && isMet && day.consumed > 0 && <Ionicons name="checkmark-circle" size={18} color={C.success} />}
-        {!day.isToday && isOver && <Ionicons name="arrow-up-circle" size={18} color={C.danger} />}
-        {!day.isToday && isUnder && <Ionicons name="remove-circle" size={18} color={C.warning} />}
-        {!day.isToday && !isMet && !isOver && !isUnder && <Ionicons name="ellipse-outline" size={18} color={C.text3} />}
+        {!day.isFuture && (
+          <Pressable onPress={(e) => { e.stopPropagation?.(); onAddFood() }} hitSlop={8}>
+            <Ionicons name="add-circle-outline" size={20} color={C.accent} />
+          </Pressable>
+        )}
+        {day.isFuture && <Ionicons name="ellipse-outline" size={18} color={C.text3} />}
       </View>
     </Pressable>
   )
@@ -1037,6 +1042,45 @@ function HistoryView({ userId }: { userId: string | null }) {
   const [loading, setLoading] = useState(false)
   const [hideCalories, setHideCalories] = useState(false)
   const [expandedDate, setExpandedDate] = useState<string | null>(null)
+
+  // Add food to past date
+  const [addModalDate, setAddModalDate] = useState<string | null>(null)
+  const [addName, setAddName] = useState('')
+  const [addKcal, setAddKcal] = useState('')
+  const [addProtein, setAddProtein] = useState('')
+  const [addFat, setAddFat] = useState('')
+  const [addCarb, setAddCarb] = useState('')
+  const [addSaving, setAddSaving] = useState(false)
+
+  function openAddModal(dateStr: string) {
+    setAddModalDate(dateStr)
+    setAddName(''); setAddKcal(''); setAddProtein(''); setAddFat(''); setAddCarb('')
+  }
+
+  function closeAddModal() {
+    setAddModalDate(null)
+    setAddName(''); setAddKcal(''); setAddProtein(''); setAddFat(''); setAddCarb('')
+  }
+
+  async function submitAdd() {
+    if (!userId || !addModalDate) return
+    const k = parseInt(addKcal)
+    if (!addName.trim() || isNaN(k) || k <= 0) return
+    setAddSaving(true)
+    const { error } = await supabase.from('food_logs').insert({
+      user_id: userId,
+      date: addModalDate,
+      name: addName.trim(),
+      kcal: k,
+      protein_g: addProtein ? parseFloat(addProtein) : null,
+      fat_g: addFat ? parseFloat(addFat) : null,
+      carb_g: addCarb ? parseFloat(addCarb) : null,
+    })
+    setAddSaving(false)
+    if (error) { Alert.alert('Error', error.message); return }
+    closeAddModal()
+    load()
+  }
 
   // 7-day rolling averages (always last 7 calendar days, independent of period view)
   const [rolling7Consumed, setRolling7Consumed] = useState<number | null>(null)
@@ -1301,14 +1345,14 @@ function HistoryView({ userId }: { userId: string | null }) {
           {/* Day rows — flat for week/month/year, grouped by month for total/custom */}
           {isFixed && days.length > 0 && (
             <View style={hv.daysCard}>
-              {days.map((d, i) => <DayRow key={d.dateStr} day={d} last={i === days.length - 1} hideCalories={hideCalories} expanded={expandedDate === d.dateStr} onPress={() => setExpandedDate(p => p === d.dateStr ? null : d.dateStr)} />)}
+              {days.map((d, i) => <DayRow key={d.dateStr} day={d} last={i === days.length - 1} hideCalories={hideCalories} expanded={expandedDate === d.dateStr} onPress={() => setExpandedDate(p => p === d.dateStr ? null : d.dateStr)} onAddFood={() => openAddModal(d.dateStr)} />)}
             </View>
           )}
           {!isFixed && monthGroups.map(g => (
             <View key={g.key}>
               <Text style={hv.monthHeader}>{g.label}</Text>
               <View style={hv.daysCard}>
-                {g.days.map((d, i) => <DayRow key={d.dateStr} day={d} last={i === g.days.length - 1} hideCalories={hideCalories} expanded={expandedDate === d.dateStr} onPress={() => setExpandedDate(p => p === d.dateStr ? null : d.dateStr)} />)}
+                {g.days.map((d, i) => <DayRow key={d.dateStr} day={d} last={i === g.days.length - 1} hideCalories={hideCalories} expanded={expandedDate === d.dateStr} onPress={() => setExpandedDate(p => p === d.dateStr ? null : d.dateStr)} onAddFood={() => openAddModal(d.dateStr)} />)}
               </View>
             </View>
           ))}
@@ -1334,6 +1378,50 @@ function HistoryView({ userId }: { userId: string | null }) {
           )}
         </>
       )}
+
+      {/* Add food to past date modal */}
+      <Modal visible={!!addModalDate} transparent animationType="slide" onRequestClose={closeAddModal}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <Pressable style={hv.modalOverlay} onPress={closeAddModal} />
+          <View style={hv.addFoodSheet}>
+            <View style={hv.addFoodHandle} />
+            <Text style={hv.addFoodTitle}>
+              Add food — {addModalDate ? new Date(addModalDate + 'T12:00:00').toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' }) : ''}
+            </Text>
+            <TextInput
+              style={hv.addFoodInput}
+              value={addName}
+              onChangeText={setAddName}
+              placeholder="Name"
+              placeholderTextColor={C.text3}
+              autoFocus
+            />
+            <TextInput
+              style={hv.addFoodInput}
+              value={addKcal}
+              onChangeText={setAddKcal}
+              placeholder="kcal (required)"
+              keyboardType="numeric"
+              placeholderTextColor={C.text3}
+            />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput style={[hv.addFoodInput, { flex: 1 }]} value={addProtein} onChangeText={setAddProtein} placeholder="Protein g" keyboardType="decimal-pad" placeholderTextColor={C.text3} />
+              <TextInput style={[hv.addFoodInput, { flex: 1 }]} value={addFat} onChangeText={setAddFat} placeholder="Fat g" keyboardType="decimal-pad" placeholderTextColor={C.text3} />
+              <TextInput style={[hv.addFoodInput, { flex: 1 }]} value={addCarb} onChangeText={setAddCarb} placeholder="Carb g" keyboardType="decimal-pad" placeholderTextColor={C.text3} />
+            </View>
+            <Pressable
+              style={[hv.addFoodConfirm, (!addName.trim() || !addKcal.trim() || addSaving) && { opacity: 0.4 }]}
+              onPress={submitAdd}
+              disabled={!addName.trim() || !addKcal.trim() || addSaving}
+            >
+              {addSaving
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={hv.addFoodConfirmText}>Add entry</Text>
+              }
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Period dropdown */}
       <Modal visible={dropdownOpen} transparent animationType="fade">
@@ -1420,6 +1508,14 @@ const hv = StyleSheet.create({
   itemRight: { alignItems: 'flex-end', gap: 1 },
   itemKcal: { fontSize: 12, fontWeight: '700', color: C.text1 },
   itemMacros: { fontSize: 10, color: C.text3 },
+  addFoodBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10, paddingVertical: 6, borderTopWidth: 1, borderTopColor: C.divider },
+  addFoodBtnText: { fontSize: 12, fontWeight: '700', color: C.accent },
+  addFoodSheet: { backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36, gap: 10 },
+  addFoodHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 8 },
+  addFoodTitle: { fontSize: 15, fontWeight: '700', color: C.text1, marginBottom: 4 },
+  addFoodInput: { borderWidth: 1.5, borderColor: C.border, borderRadius: 10, padding: 11, fontSize: 14, color: C.text1, backgroundColor: C.surface2 },
+  addFoodConfirm: { backgroundColor: C.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  addFoodConfirmText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   emptyNote: { fontSize: 13, color: C.text3, textAlign: 'center', paddingVertical: 24, fontStyle: 'italic' },
   modalOverlay: { flex: 1, backgroundColor: C.overlay, justifyContent: 'flex-end' },
   dropdownSheet: {
