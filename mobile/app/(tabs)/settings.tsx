@@ -138,6 +138,9 @@ export default function SettingsScreen() {
   const [expandedMealCards, setExpandedMealCards] = useState<Set<number>>(new Set())
   const [showAllPresets, setShowAllPresets] = useState(false)
 
+  // Custom foods (My Foods)
+  const [customFoods, setCustomFoods] = useState<{ id: string; name: string; kcal: number }[]>([])
+
   function toggleMealCard(index: number) {
     setExpandedMealCards(prev => {
       const next = new Set(prev)
@@ -190,7 +193,7 @@ export default function SettingsScreen() {
     if (!user) return
     setUserId(user.id)
 
-    const [profileRes, zonesRes, activitiesRes, settingsRes, mealRes, userSportsRes, fuelingRes, presetsRes, slotPresetsRes] = await Promise.all([
+    const [profileRes, zonesRes, activitiesRes, settingsRes, mealRes, userSportsRes, fuelingRes, presetsRes, slotPresetsRes, customFoodsRes] = await Promise.all([
       supabase.from('users').select('*').eq('id', user.id).single(),
       supabase.from('heart_rate_zones').select('*').eq('user_id', user.id).order('zone_number'),
       supabase.from('activities').select('type').eq('user_id', user.id),
@@ -200,6 +203,7 @@ export default function SettingsScreen() {
       supabase.from('fueling_settings').select('sport_type, threshold_min, carbs_per_interval_g, interval_min').eq('user_id', user.id),
       supabase.from('meal_presets').select('*, items:meal_preset_items(*)').eq('user_id', user.id).order('sort_order'),
       supabase.from('meal_slot_presets').select('meal_index, preset_id').eq('user_id', user.id),
+      supabase.from('custom_foods').select('id, name, kcal').eq('user_id', user.id).order('name'),
     ])
 
     if (profileRes.data) {
@@ -279,6 +283,18 @@ export default function SettingsScreen() {
       links[row.meal_index].push(row.preset_id)
     }
     setPresetLinks(links)
+    setCustomFoods((customFoodsRes.data ?? []) as { id: string; name: string; kcal: number }[])
+  }
+
+  async function deleteCustomFood(id: string) {
+    await supabase.from('custom_foods').delete().eq('id', id)
+    setCustomFoods(prev => prev.filter(f => f.id !== id))
+  }
+
+  async function clearAllCustomFoods() {
+    if (!userId) return
+    await supabase.from('custom_foods').delete().eq('user_id', userId)
+    setCustomFoods([])
   }
 
   async function handleStravaDeepLink(event: { url: string }) {
@@ -1819,6 +1835,61 @@ export default function SettingsScreen() {
               </View>
             )}
 
+            {/* My Foods */}
+            <View style={{ marginTop: 32 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Text style={styles.sectionHeader}>My Foods</Text>
+                {customFoods.length > 0 && (
+                  <Pressable
+                    hitSlop={10}
+                    onPress={() => Alert.alert(
+                      'Clear all custom foods',
+                      'This removes all your saved foods. This cannot be undone.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Clear all', style: 'destructive', onPress: clearAllCustomFoods },
+                      ]
+                    )}
+                  >
+                    <Text style={{ fontSize: 13, color: C.danger, fontWeight: '600' }}>Clear all</Text>
+                  </Pressable>
+                )}
+              </View>
+              <Text style={styles.sectionNote}>Foods you've saved via "Save to My Foods" in the food logger.</Text>
+              {customFoods.length === 0 ? (
+                <Text style={{ fontSize: 13, color: C.text3, marginTop: 8 }}>No custom foods saved yet.</Text>
+              ) : (
+                customFoods.map((food, i) => (
+                  <View
+                    key={food.id}
+                    style={[
+                      styles.mealCard,
+                      { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14 },
+                      i === 0 && { marginTop: 8 },
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: C.text1 }}>{food.name}</Text>
+                      {!hideCalories && <Text style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>{food.kcal} kcal</Text>}
+                    </View>
+                    <Pressable
+                      hitSlop={10}
+                      onPress={() => Alert.alert(
+                        'Delete food',
+                        `Remove "${food.name}" from My Foods?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Delete', style: 'destructive', onPress: () => deleteCustomFood(food.id) },
+                        ]
+                      )}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={C.danger} />
+                    </Pressable>
+                  </View>
+                ))
+              )}
+            </View>
+
           </>
         )}
 
@@ -2055,12 +2126,12 @@ export default function SettingsScreen() {
                   protein: food.protein_g != null ? String(food.protein_g) : '',
                   fat: food.fat_g != null ? String(food.fat_g) : '',
                   carb: food.carb_g != null ? String(food.carb_g) : '',
-                  kcalPerUnit: pu(food.kcal),
-                  proteinPerUnit: pu(food.protein_g),
-                  fatPerUnit: pu(food.fat_g),
-                  carbPerUnit: pu(food.carb_g),
-                  ingredient_id: null,
-                  amount_g: null,
+                  kcalPerUnit: food.ingredient_id && food.amount_g ? food.kcal / food.amount_g : pu(food.kcal),
+                  proteinPerUnit: food.ingredient_id && food.amount_g && food.protein_g != null ? food.protein_g / food.amount_g : pu(food.protein_g),
+                  fatPerUnit: food.ingredient_id && food.amount_g && food.fat_g != null ? food.fat_g / food.amount_g : pu(food.fat_g),
+                  carbPerUnit: food.ingredient_id && food.amount_g && food.carb_g != null ? food.carb_g / food.amount_g : pu(food.carb_g),
+                  ingredient_id: food.ingredient_id ?? null,
+                  amount_g: food.amount_g ?? null,
                 } : it),
               } : d)
               setFoodPickerTargetIdx(null)

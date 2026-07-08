@@ -16,12 +16,22 @@ export type FoodPickResult = {
   protein_g: number | null
   fat_g: number | null
   carb_g: number | null
+  ingredient_id?: string | null
+  amount_g?: number | null
 }
 
 interface CustomFood {
   id: string; name: string; kcal: number
   protein_g: number | null; fat_g: number | null; carb_g: number | null
   category: string | null
+}
+
+interface IngredientFood {
+  id: string; name: string
+  kcal_per_100g: number
+  protein_per_100g: number | null
+  fat_per_100g: number | null
+  carb_per_100g: number | null
 }
 
 interface ScannedProduct {
@@ -47,6 +57,11 @@ interface PendingItem {
   carbBase: number | null
   baseAmount: number
   unit: string
+  ingredient_id?: string | null
+  kcal_per_100g?: number | null
+  protein_per_100g?: number | null
+  fat_per_100g?: number | null
+  carb_per_100g?: number | null
 }
 
 function parseBaseAmount(name: string): { amount: number; unit: string } {
@@ -62,6 +77,7 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
   const [mode, setMode] = useState<'browse' | 'scan'>('browse')
   const [search, setSearch] = useState('')
   const [customFoods, setCustomFoods] = useState<CustomFood[]>([])
+  const [ingredients, setIngredients] = useState<IngredientFood[]>([])
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [loadingFoods, setLoadingFoods] = useState(false)
 
@@ -96,8 +112,12 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
 
   async function loadCustomFoods() {
     setLoadingFoods(true)
-    const { data } = await supabase.from('custom_foods').select('id, name, kcal, protein_g, fat_g, carb_g, category').eq('user_id', userId).order('name')
-    setCustomFoods(data ?? [])
+    const [customRes, ingredientsRes] = await Promise.all([
+      supabase.from('custom_foods').select('id, name, kcal, protein_g, fat_g, carb_g, category').eq('user_id', userId).order('name'),
+      supabase.from('ingredients').select('id, name, kcal_per_100g, protein_per_100g, fat_per_100g, carb_per_100g').eq('user_id', userId).order('name'),
+    ])
+    setCustomFoods(customRes.data ?? [])
+    setIngredients(ingredientsRes.data ?? [])
     setLoadingFoods(false)
   }
 
@@ -170,16 +190,22 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
     })
   }
 
-  function openPending(item: { name: string; kcal: number; protein_g?: number | null; fat_g?: number | null; carb_g?: number | null }) {
-    const { amount, unit } = parseBaseAmount(item.name)
+  function openPending(item: { name: string; kcal: number; protein_g?: number | null; fat_g?: number | null; carb_g?: number | null; ingredient_id?: string | null; kcal_per_100g?: number | null; protein_per_100g?: number | null; fat_per_100g?: number | null; carb_per_100g?: number | null }) {
+    const isIngredient = !!item.ingredient_id
+    const { amount, unit } = isIngredient ? { amount: 100, unit: 'g' } : parseBaseAmount(item.name)
     setPendingItem({
       name: item.name,
-      kcalBase: item.kcal,
-      proteinBase: item.protein_g ?? null,
-      fatBase: item.fat_g ?? null,
-      carbBase: item.carb_g ?? null,
-      baseAmount: amount,
-      unit,
+      kcalBase: isIngredient ? (item.kcal_per_100g ?? item.kcal) : item.kcal,
+      proteinBase: isIngredient ? (item.protein_per_100g ?? item.protein_g ?? null) : (item.protein_g ?? null),
+      fatBase: isIngredient ? (item.fat_per_100g ?? item.fat_g ?? null) : (item.fat_g ?? null),
+      carbBase: isIngredient ? (item.carb_per_100g ?? item.carb_g ?? null) : (item.carb_g ?? null),
+      baseAmount: isIngredient ? 100 : amount,
+      unit: isIngredient ? 'g' : unit,
+      ingredient_id: item.ingredient_id ?? null,
+      kcal_per_100g: item.kcal_per_100g ?? null,
+      protein_per_100g: item.protein_per_100g ?? null,
+      fat_per_100g: item.fat_per_100g ?? null,
+      carb_per_100g: item.carb_per_100g ?? null,
     })
     setPendingAmountStr(String(amount))
   }
@@ -207,12 +233,15 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
         ? (amt === 1 ? '1 serving' : `${amt}×`)
         : `${pendingAmountStr}${pendingItem.unit}`,
       ...c,
+      ingredient_id: pendingItem.ingredient_id ?? null,
+      amount_g: pendingItem.ingredient_id ? amt : null,
     })
     setPendingItem(null)
   }
 
   const q = search.toLowerCase()
   const uncategorizedCustom = customFoods.filter(f => !f.category && (!q || f.name.toLowerCase().includes(q)))
+  const filteredIngredients = ingredients.filter(ing => !q || ing.name.toLowerCase().includes(q))
 
   // Merge custom foods with category into common food categories
   const allCategories: { category: string; items: { name: string; kcal: number; protein_g?: number | null; fat_g?: number | null; carb_g?: number | null; isCustom?: boolean }[]; hasCustom?: boolean }[] =
@@ -301,6 +330,42 @@ export default function FoodPickerModal({ visible, userId, onSelect, onClose }: 
                           {food.protein_g != null ? ` · P ${food.protein_g}g` : ''}
                           {food.fat_g != null ? ` · F ${food.fat_g}g` : ''}
                           {food.carb_g != null ? ` · C ${food.carb_g}g` : ''}
+                        </Text>
+                      </View>
+                      <Ionicons name="add-circle-outline" size={20} color={C.accent} />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+
+              {/* Ingredients (from ingredient library) */}
+              {filteredIngredients.length > 0 && (
+                <View style={fp.section}>
+                  <Text style={fp.sectionTitle}>My Ingredients</Text>
+                  {filteredIngredients.map((ing, i) => (
+                    <Pressable
+                      key={ing.id}
+                      style={[fp.foodRow, i < filteredIngredients.length - 1 && fp.foodRowBorder]}
+                      onPress={() => openPending({
+                        name: ing.name,
+                        kcal: ing.kcal_per_100g,
+                        protein_g: ing.protein_per_100g,
+                        fat_g: ing.fat_per_100g,
+                        carb_g: ing.carb_per_100g,
+                        ingredient_id: ing.id,
+                        kcal_per_100g: ing.kcal_per_100g,
+                        protein_per_100g: ing.protein_per_100g,
+                        fat_per_100g: ing.fat_per_100g,
+                        carb_per_100g: ing.carb_per_100g,
+                      })}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={fp.foodName}>{ing.name}</Text>
+                        <Text style={fp.foodMeta}>
+                          {ing.kcal_per_100g} kcal/100g
+                          {ing.protein_per_100g != null ? ` · P ${ing.protein_per_100g}g` : ''}
+                          {ing.fat_per_100g != null ? ` · F ${ing.fat_per_100g}g` : ''}
+                          {ing.carb_per_100g != null ? ` · C ${ing.carb_per_100g}g` : ''}
                         </Text>
                       </View>
                       <Ionicons name="add-circle-outline" size={20} color={C.accent} />

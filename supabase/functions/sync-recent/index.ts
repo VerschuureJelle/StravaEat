@@ -189,22 +189,35 @@ Deno.serve(async (req) => {
     const hrStream: number[] | null = streamBody?.heartrate?.data ?? null
     const timeStream: number[] | null = streamBody?.time?.data ?? null
 
-    // Build per-sample durations so variable-rate recordings (e.g. Garmin Smart Recording)
-    // are weighted correctly instead of always counting as 1 second each.
-    function buildDurations(times: number[], totalSec: number): number[] {
+    // Build per-sample durations accounting for variable-rate recording (Garmin Smart Recording)
+    // and pauses. Any inter-sample gap longer than PAUSE_THRESHOLD is capped — this prevents
+    // manual pause stops (coffee, traffic) from inflating zone time and calories.
+    function buildDurations(times: number[], movingSec: number): number[] {
       const n = times.length
       if (n === 0) return []
-      if (n === 1) return [totalSec]
+      if (n === 1) return [movingSec]
+
+      // Typical inter-sample interval (median of first 20 gaps, min 1s)
+      const sampleGaps: number[] = []
+      for (let i = 0; i < Math.min(n - 1, 20); i++) sampleGaps.push(times[i + 1] - times[i])
+      sampleGaps.sort((a, b) => a - b)
+      const medianInterval = sampleGaps[Math.floor(sampleGaps.length / 2)] || 1
+      // Treat any gap > 3× median interval (min 15s) as a pause — cap it
+      const pauseThreshold = Math.max(medianInterval * 3, 15)
+
       return times.map((t, i) => {
-        if (i < n - 1) return times[i + 1] - t
-        const remaining = totalSec - t
-        return remaining > 0 ? remaining : times[n - 1] - times[n - 2]
+        if (i < n - 1) {
+          const gap = times[i + 1] - t
+          return gap > pauseThreshold ? medianInterval : gap
+        }
+        const remaining = movingSec - t
+        return remaining > 0 ? Math.min(remaining, pauseThreshold) : medianInterval
       })
     }
 
     const durations: number[] | null =
       timeStream && timeStream.length === hrStream?.length
-        ? buildDurations(timeStream, act.elapsed_time)
+        ? buildDurations(timeStream, act.moving_time ?? act.elapsed_time)
         : null
 
     const { data: activity } = await supabase

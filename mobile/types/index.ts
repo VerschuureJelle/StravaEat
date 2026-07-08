@@ -69,6 +69,12 @@ export interface MealPresetItem {
   sort_order: number
   ingredient_id?: string | null
   amount_g?: number | null
+  ingredient?: {
+    kcal_per_100g: number
+    protein_per_100g: number | null
+    fat_per_100g: number | null
+    carb_per_100g: number | null
+  } | null
 }
 
 export interface MealPreset {

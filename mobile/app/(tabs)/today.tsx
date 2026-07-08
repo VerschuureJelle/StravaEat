@@ -139,6 +139,7 @@ export default function TodayScreen() {
   const [meals, setMeals] = useState<MealItem[]>([])
   const [presetsMap, setPresetsMap] = useState<Record<number, MealPreset[]>>({})
   const [pickerMeal, setPickerMeal] = useState<MealItem | null>(null)
+  const [amountPreset, setAmountPreset] = useState<{ preset: MealPreset; meal: MealItem | null; mealIndex: number | null } | null>(null)
 
   // Food log
   const [logs, setLogs] = useState<FoodLog[]>([])
@@ -226,9 +227,9 @@ export default function TodayScreen() {
       supabase.from('food_logs').select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at').eq('user_id', user.id).eq('date', todayStr).order('logged_at'),
       supabase.from('meal_templates').select('id, meal_index, name, scheduled_time, kcal, protein_g, fat_g, carb_g, notify_enabled').eq('user_id', user.id).order('meal_index'),
       supabase.from('meal_checks').select('meal_index').eq('user_id', user.id).eq('date', todayStr),
-      supabase.from('meal_slot_presets').select('meal_index, sort_order, preset:meal_presets(*, items:meal_preset_items(*))').eq('user_id', user.id).order('sort_order'),
+      supabase.from('meal_slot_presets').select('meal_index, sort_order, preset:meal_presets(*, items:meal_preset_items(*, ingredient:ingredients(kcal_per_100g, protein_per_100g, fat_per_100g, carb_per_100g)))').eq('user_id', user.id).order('sort_order'),
       supabase.from('custom_foods').select('id, name, kcal, protein_g, fat_g, carb_g, amount_label, category, serving_options, kcal_per_100g, protein_per_100g, fat_per_100g, carb_per_100g').eq('user_id', user.id).order('name'),
-      supabase.from('meal_presets').select('id, name, sort_order, items:meal_preset_items(id, preset_id, name, kcal, protein_g, fat_g, carb_g, amount_label, sort_order)').eq('user_id', user.id).order('name'),
+      supabase.from('meal_presets').select('id, name, sort_order, items:meal_preset_items(id, preset_id, name, kcal, protein_g, fat_g, carb_g, amount_label, sort_order, ingredient_id, amount_g, ingredient:ingredients(kcal_per_100g, protein_per_100g, fat_per_100g, carb_per_100g))').eq('user_id', user.id).order('name'),
     ])
 
     if (profileRes.data) {
@@ -317,7 +318,7 @@ export default function TodayScreen() {
     setPresetsMap(pMap)
 
     setCustomFoods((customRes.data ?? []) as CustomFood[])
-    setAllPresets((allPresetsRes.data ?? []) as MealPreset[])
+    setAllPresets((allPresetsRes.data ?? []) as unknown as MealPreset[])
 
     // Coach inbox — fetch recent notes sent to this athlete
     const { data: notesData } = await supabase
@@ -609,6 +610,36 @@ export default function TodayScreen() {
     setPickerMeal(null)
   }
 
+  async function logPresetWithAmounts(
+    meal: MealItem | null,
+    mealIndex: number | null,
+    computedItems: { name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null }[],
+  ) {
+    if (!userId) return
+    const rows = computedItems.map(item => ({
+      user_id: userId!,
+      date: todayStr,
+      ...item,
+      meal_index: mealIndex,
+      meal_name: meal?.name ?? null,
+    }))
+    const totalKcal = computedItems.reduce((s, it) => s + it.kcal, 0)
+    const logPromise = supabase.from('food_logs').insert(rows).select('id, user_id, date, name, kcal, protein_g, fat_g, carb_g, meal_name, meal_index, logged_at')
+    if (mealIndex != null) {
+      await Promise.all([logPromise, supabase.from('meal_checks').upsert({ user_id: userId, meal_index: mealIndex, date: todayStr }, { onConflict: 'user_id,meal_index,date' })])
+    }
+    const logRes = await logPromise
+    if (logRes.data) {
+      setLogs(prev => [...prev, ...(logRes.data as FoodLog[])])
+      setConsumedKcal(prev => prev + totalKcal)
+    }
+    if (meal) {
+      setMeals(prev => prev.map(m => m.meal_index === meal.meal_index ? { ...m, checked: true } : m))
+    }
+    setPickerMeal(null)
+    setAmountPreset(null)
+  }
+
   async function toggleMealCheck(meal: MealItem) {
     if (!userId) return
     const nowChecking = !meal.checked
@@ -670,6 +701,17 @@ export default function TodayScreen() {
     if (data) setCustomFoods(prev => [...prev, data as CustomFood].sort((a, b) => a.name.localeCompare(b.name)))
   }
 
+  async function deleteCustomFood(id: string) {
+    await supabase.from('custom_foods').delete().eq('id', id)
+    setCustomFoods(prev => prev.filter(f => f.id !== id))
+  }
+
+  async function clearAllCustomFoods() {
+    if (!userId) return
+    await supabase.from('custom_foods').delete().eq('user_id', userId)
+    setCustomFoods([])
+  }
+
   async function savePresetFromFood(name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) {
     if (!userId) return
     const { data: preset } = await supabase.from('meal_presets').insert({
@@ -694,8 +736,8 @@ export default function TodayScreen() {
 
   async function refreshPresets(uid: string) {
     const [presetsRes, allPresetsRes] = await Promise.all([
-      supabase.from('meal_slot_presets').select('meal_index, sort_order, preset:meal_presets(*, items:meal_preset_items(*))').eq('user_id', uid).order('sort_order'),
-      supabase.from('meal_presets').select('id, name, sort_order, items:meal_preset_items(id, preset_id, name, kcal, protein_g, fat_g, carb_g, amount_label, sort_order)').eq('user_id', uid).order('name'),
+      supabase.from('meal_slot_presets').select('meal_index, sort_order, preset:meal_presets(*, items:meal_preset_items(*, ingredient:ingredients(kcal_per_100g, protein_per_100g, fat_per_100g, carb_per_100g)))').eq('user_id', uid).order('sort_order'),
+      supabase.from('meal_presets').select('id, name, sort_order, items:meal_preset_items(id, preset_id, name, kcal, protein_g, fat_g, carb_g, amount_label, sort_order, ingredient_id, amount_g, ingredient:ingredients(kcal_per_100g, protein_per_100g, fat_per_100g, carb_per_100g))').eq('user_id', uid).order('name'),
     ])
     const pMap: Record<number, MealPreset[]> = {}
     for (const row of (presetsRes.data ?? []) as any[]) {
@@ -704,7 +746,7 @@ export default function TodayScreen() {
       pMap[row.meal_index].push(row.preset as MealPreset)
     }
     setPresetsMap(pMap)
-    setAllPresets((allPresetsRes.data ?? []) as MealPreset[])
+    setAllPresets((allPresetsRes.data ?? []) as unknown as MealPreset[])
   }
 
   // ── Cycle helpers ──────────────────────────────────────────────────────────
@@ -1239,10 +1281,12 @@ export default function TodayScreen() {
                   const total = (preset.items ?? []).reduce((s, it) => s + it.kcal, 0)
                   return (
                     <View key={preset.id} style={st.mealPresetRow}>
-                      <Pressable style={{ flex: 1 }} onPress={() => logMealBundle(preset)}>
+                      <Pressable style={{ flex: 1 }} onPress={() => setAmountPreset({ preset, meal: null, mealIndex: null })}>
                         <Text style={st.mealPresetName}>{preset.name}</Text>
                         <Text style={st.mealPresetMeta}>
-                          {(preset.items ?? []).length} items{!hideCalories ? ` · ${total} kcal` : ''}
+                          {(preset.items ?? []).filter(it => it.ingredient_id).length > 0
+                            ? `${(preset.items ?? []).length} ingredients · tap to enter amounts`
+                            : `${(preset.items ?? []).length} items${!hideCalories ? ` · ${total} kcal` : ''}`}
                         </Text>
                       </Pressable>
                       <Pressable onPress={() => setEditingPreset(preset)} hitSlop={10} style={{ padding: 6 }}>
@@ -1251,7 +1295,7 @@ export default function TodayScreen() {
                       <Pressable onPress={() => deleteMealPreset(preset)} hitSlop={10} style={{ padding: 6 }}>
                         <Ionicons name="trash-outline" size={16} color={C.danger} />
                       </Pressable>
-                      <Pressable onPress={() => logMealBundle(preset)} hitSlop={10} style={{ paddingLeft: 2 }}>
+                      <Pressable onPress={() => setAmountPreset({ preset, meal: null, mealIndex: null })} hitSlop={10} style={{ paddingLeft: 2 }}>
                         <Ionicons name="add-circle-outline" size={20} color={C.accent2} />
                       </Pressable>
                     </View>
@@ -1307,9 +1351,20 @@ export default function TodayScreen() {
         <MealPresetPickerModal
           meal={pickerMeal}
           presets={presetsMap[pickerMeal.meal_index] ?? []}
-          onSelect={(preset, qty, grams) => logPreset(preset, pickerMeal, qty, grams)}
+          onOpenAmounts={(preset) => {
+            setPickerMeal(null)
+            setAmountPreset({ preset, meal: pickerMeal, mealIndex: pickerMeal.meal_index })
+          }}
           onManage={() => { setPickerMeal(null); router.push('/(tabs)/settings') }}
           onClose={() => setPickerMeal(null)}
+        />
+      )}
+
+      {amountPreset && (
+        <PresetAmountModal
+          preset={amountPreset.preset}
+          onConfirm={(items) => logPresetWithAmounts(amountPreset.meal, amountPreset.mealIndex, items)}
+          onClose={() => setAmountPreset(null)}
         />
       )}
 
@@ -1323,7 +1378,10 @@ export default function TodayScreen() {
         onAdd={async (name, kcal, protein, fat, carb, mealIdx, qty, date) => {
           await addFood(name, kcal, protein, fat, carb, mealIdx, qty ?? 1, date ?? todayStr)
         }}
-        onLogPreset={(preset) => logMealBundle(preset, foodLoggerMealIndex)}
+        onOpenPresetAmounts={(preset) => {
+          setShowFoodLogger(false)
+          setAmountPreset({ preset, meal: null, mealIndex: foodLoggerMealIndex })
+        }}
         onSaveToMyFoods={(name, kcal, protein, fat, carb, servings, k100, p100, f100, c100) =>
           saveCustomFood(name, kcal, protein, fat, carb, servings, k100, p100, f100, c100)
         }
@@ -1778,7 +1836,7 @@ function defaultServingLabel(food: { name: string; amount_label?: string | null 
 
 // ─── Unified food logger ───────────────────────────────────────────────────────
 
-function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods, hideCalories, onAdd, onLogPreset, onSaveToMyFoods, onSaveAsPreset, onClose }: {
+function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods, hideCalories, onAdd, onOpenPresetAmounts, onSaveToMyFoods, onSaveAsPreset, onClose }: {
   visible: boolean
   mealIndex: number | null
   meals: MealItem[]
@@ -1786,7 +1844,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
   customFoods: CustomFood[]
   hideCalories: boolean
   onAdd: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, mealIdx: number | null, qty?: number, date?: string) => Promise<void>
-  onLogPreset: (preset: MealPreset) => Promise<void>
+  onOpenPresetAmounts: (preset: MealPreset) => void
   onSaveToMyFoods: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null, servingOptions?: ServingOption[], kcal_per_100g?: number | null, protein_per_100g?: number | null, fat_per_100g?: number | null, carb_per_100g?: number | null) => Promise<void>
   onSaveAsPreset: (name: string, kcal: number, protein: number | null, fat: number | null, carb: number | null) => Promise<void>
   onClose: () => void
@@ -2542,7 +2600,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                                   <Pressable
                                     key={preset.id}
                                     style={[loggerSt.resultRow, (i > 0 || searchResults.length > 0) && loggerSt.resultRowBorder]}
-                                    onPress={async () => { await onLogPreset(preset); onClose() }}
+                                    onPress={() => { onOpenPresetAmounts(preset); onClose() }}
                                   >
                                     <Text style={loggerSt.resultName}>{preset.name}</Text>
                                     {!hideCalories && <Text style={loggerSt.resultMeta}>{total} kcal · meal</Text>}
@@ -2597,7 +2655,7 @@ function UnifiedFoodLogger({ visible, mealIndex, meals, allPresets, customFoods,
                                   <Pressable
                                     key={preset.id}
                                     style={[loggerSt.resultRow, i > 0 && loggerSt.resultRowBorder]}
-                                    onPress={async () => { await onLogPreset(preset); onClose() }}
+                                    onPress={() => { onOpenPresetAmounts(preset); onClose() }}
                                   >
                                     <Text style={loggerSt.resultName}>{preset.name}</Text>
                                     {!hideCalories && <Text style={loggerSt.resultMeta}>{total} kcal</Text>}
@@ -2867,17 +2925,10 @@ function parseItemBaseGrams(amountLabel: string | null): number | null {
   return m ? parseFloat(m[1]) : null
 }
 
-function MealPresetPickerModal({ meal, presets, onSelect, onManage, onClose }: {
+function MealPresetPickerModal({ meal, presets, onOpenAmounts, onManage, onClose }: {
   meal: MealItem; presets: MealPreset[]
-  onSelect: (p: MealPreset, qty: number, grams?: number) => void; onManage: () => void; onClose: () => void
+  onOpenAmounts: (p: MealPreset) => void; onManage: () => void; onClose: () => void
 }) {
-  const [selected, setSelected] = useState<MealPreset | null>(null)
-  const [qty, setQty] = useState(1)
-
-  function pickPreset(p: MealPreset) {
-    if (selected?.id === p.id) { setSelected(null) } else { setSelected(p); setQty(1) }
-  }
-
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={st.modalOverlay} onPress={onClose} />
@@ -2892,48 +2943,120 @@ function MealPresetPickerModal({ meal, presets, onSelect, onManage, onClose }: {
         </View>
         <ScrollView>
           {presets.map(preset => {
+            const ingredientCount = (preset.items ?? []).filter(it => it.ingredient_id).length
             const total = (preset.items ?? []).reduce((acc, it) => acc + it.kcal, 0)
-            const isSelected = selected?.id === preset.id
             return (
-              <View key={preset.id}>
-                <Pressable
-                  style={[st.pickerRow, isSelected && { backgroundColor: C.accentBg }]}
-                  onPress={() => pickPreset(preset)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={st.pickerRowName}>{preset.name}</Text>
-                    <Text style={st.pickerRowMeta}>{(preset.items ?? []).length} items · {total} kcal</Text>
-                  </View>
-                  <Ionicons name={isSelected ? 'checkmark-circle' : 'add-circle-outline'} size={20} color={C.accent2} />
-                </Pressable>
-                {isSelected && (
-                  <View style={st.presetStepperRow}>
-                    <Pressable
-                      style={st.presetStepperBtn}
-                      onPress={() => setQty(q => Math.max(1, q - 1))}
-                    >
-                      <Ionicons name="remove" size={20} color={C.text1} />
-                    </Pressable>
-                    <Text style={st.presetStepperQty}>{qty}×</Text>
-                    <Pressable
-                      style={st.presetStepperBtn}
-                      onPress={() => setQty(q => q + 1)}
-                    >
-                      <Ionicons name="add" size={20} color={C.text1} />
-                    </Pressable>
-                    <Pressable
-                      style={st.presetStepperAdd}
-                      onPress={() => { onSelect(preset, qty); onClose() }}
-                    >
-                      <Text style={st.presetStepperAddText}>Add</Text>
-                    </Pressable>
-                  </View>
-                )}
-              </View>
+              <Pressable
+                key={preset.id}
+                style={st.pickerRow}
+                onPress={() => { onOpenAmounts(preset); onClose() }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={st.pickerRowName}>{preset.name}</Text>
+                  <Text style={st.pickerRowMeta}>
+                    {ingredientCount > 0
+                      ? `${ingredientCount} ingredient${ingredientCount !== 1 ? 's' : ''} · enter amounts`
+                      : `${(preset.items ?? []).length} items · ${total} kcal`}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={C.text3} />
+              </Pressable>
             )
           })}
         </ScrollView>
       </View>
+    </Modal>
+  )
+}
+
+// ─── Preset amount modal ──────────────────────────────────────────────────────
+
+function PresetAmountModal({ preset, onConfirm, onClose }: {
+  preset: MealPreset
+  onConfirm: (items: { name: string; kcal: number; protein_g: number | null; fat_g: number | null; carb_g: number | null }[]) => Promise<void>
+  onClose: () => void
+}) {
+  const items = preset.items ?? []
+  const [amounts, setAmounts] = useState<Record<string, string>>(
+    () => Object.fromEntries(items.map(it => [it.id, String(it.amount_g ?? 100)]))
+  )
+  const [saving, setSaving] = useState(false)
+
+  const computedItems = items.map(it => {
+    if (it.ingredient_id && it.ingredient) {
+      const g = parseFloat(amounts[it.id] || '0') || 0
+      const factor = g / 100
+      return {
+        name: `${g}g ${it.name}`,
+        kcal: Math.round((it.ingredient.kcal_per_100g ?? 0) * factor),
+        protein_g: it.ingredient.protein_per_100g != null ? Math.round(it.ingredient.protein_per_100g * factor * 10) / 10 : null,
+        fat_g: it.ingredient.fat_per_100g != null ? Math.round(it.ingredient.fat_per_100g * factor * 10) / 10 : null,
+        carb_g: it.ingredient.carb_per_100g != null ? Math.round(it.ingredient.carb_per_100g * factor * 10) / 10 : null,
+      }
+    }
+    return {
+      name: it.name,
+      kcal: it.kcal,
+      protein_g: it.protein_g ?? null,
+      fat_g: it.fat_g ?? null,
+      carb_g: it.carb_g ?? null,
+    }
+  })
+
+  const totalKcal = computedItems.reduce((s, it) => s + it.kcal, 0)
+
+  async function confirm() {
+    setSaving(true)
+    try { await onConfirm(computedItems) } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={st.modalOverlay} onPress={onClose} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ justifyContent: 'flex-end' }}>
+        <View style={[st.pickerSheet, { maxHeight: '85%' }]}>
+          <View style={st.pickerHandle} />
+          <Text style={[st.pickerTitle, { marginBottom: 4 }]}>{preset.name}</Text>
+          <Text style={[st.pickerRowMeta, { marginBottom: 16 }]}>Enter amounts per ingredient</Text>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {items.map(it => {
+              const hasIngredient = !!(it.ingredient_id && it.ingredient)
+              const g = parseFloat(amounts[it.id] || '0') || 0
+              const previewKcal = hasIngredient && it.ingredient
+                ? Math.round((it.ingredient.kcal_per_100g ?? 0) * g / 100)
+                : it.kcal
+              return (
+                <View key={it.id} style={st.amountRow}>
+                  <Text style={st.amountIngredientName} numberOfLines={2}>{it.name}</Text>
+                  {hasIngredient ? (
+                    <View style={st.amountInputGroup}>
+                      <TextInput
+                        style={st.amountInput}
+                        value={amounts[it.id]}
+                        onChangeText={v => setAmounts(a => ({ ...a, [it.id]: v.replace(/[^0-9.]/g, '') }))}
+                        keyboardType="numeric"
+                        selectTextOnFocus
+                        placeholder="0"
+                        placeholderTextColor={C.text3}
+                      />
+                      <Text style={st.amountUnit}>g</Text>
+                      <Text style={st.amountKcal}>{previewKcal} kcal</Text>
+                    </View>
+                  ) : (
+                    <Text style={st.amountKcal}>{it.kcal} kcal</Text>
+                  )}
+                </View>
+              )
+            })}
+          </ScrollView>
+          <View style={st.amountFooter}>
+            <Text style={st.amountTotal}>Total: {totalKcal} kcal</Text>
+            <Pressable style={st.amountAddBtn} onPress={confirm} disabled={saving}>
+              <Text style={st.amountAddBtnText}>{saving ? 'Adding…' : 'Add to log'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   )
 }
@@ -4089,6 +4212,18 @@ const st = StyleSheet.create({
   presetStepperQty: { fontSize: 17, fontWeight: '700', color: C.text1, minWidth: 32, textAlign: 'center' },
   presetStepperAdd: { flex: 1, backgroundColor: C.accent, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   presetStepperAddText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+
+  // Preset amount modal
+  amountRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider, gap: 12 },
+  amountIngredientName: { flex: 1, fontSize: 14, fontWeight: '600', color: C.text1 },
+  amountInputGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  amountInput: { width: 64, borderWidth: 1, borderColor: C.border, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, fontSize: 14, fontWeight: '700', color: C.text1, backgroundColor: C.surface2, textAlign: 'center' },
+  amountUnit: { fontSize: 13, color: C.text3, width: 14 },
+  amountKcal: { fontSize: 12, color: C.text3, minWidth: 56, textAlign: 'right' },
+  amountFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider, gap: 12 },
+  amountTotal: { fontSize: 15, fontWeight: '700', color: C.text1 },
+  amountAddBtn: { flex: 1, backgroundColor: C.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  amountAddBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   pickerQtyRow:    { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.divider, marginTop: 4 },
   pickerQtyBtn:    { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
   pickerQtyNum:    { fontSize: 18, fontWeight: '800', color: C.text1, minWidth: 32, textAlign: 'center' },
